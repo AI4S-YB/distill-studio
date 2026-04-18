@@ -1,0 +1,6 @@
+{
+  "min_question_chars": 12,
+  "min_answer_chars": 40,
+  "dedupe_on_question": true,
+  "min_topic_keyword_hits": 2
+}

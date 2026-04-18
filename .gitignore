@@ -1,0 +1,20 @@
+.DS_Store
+
+# Node / frontend artifacts
+node_modules/
+dist/
+
+# Rust / Tauri artifacts
+target/
+
+# Local secrets and machine-specific config
+.env.local
+config/local/gui.pipeline.json
+config/local/profiles/
+
+# Runtime outputs
+output/
+src-tauri/output/
+
+# Misc
+*.log

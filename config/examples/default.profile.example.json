@@ -1,0 +1,23 @@
+{
+  "prompt": "Soybean seed oil and protein improvement under planting density and breeding strategy.",
+  "topicTags": [
+    "plant_breeding",
+    "crop_genomics"
+  ],
+  "targetCount": 100,
+  "planLimit": 120,
+  "outputDir": "./output/gui_run",
+  "provider": "openai-compatible",
+  "model": "qwen-max",
+  "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "apiKey": null,
+  "apiKeyEnv": null,
+  "temperature": 0.8,
+  "maxTokens": 2400,
+  "shardSize": 1000,
+  "batchSize": 8,
+  "maxInFlight": 4,
+  "maxRetries": 3,
+  "requestTimeoutSecs": 180,
+  "resume": true
+}

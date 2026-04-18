@@ -1,0 +1,19 @@
+{
+  "provider": {
+    "provider": "openai-compatible",
+    "model": "qwen-max",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "temperature": 0.8,
+    "max_tokens": 800
+  },
+  "runtime": {
+    "target_count": 10000,
+    "shard_size": 1000,
+    "batch_size": 24,
+    "max_in_flight": 16,
+    "max_retries": 3,
+    "request_timeout_secs": 120,
+    "resume": true
+  }
+}

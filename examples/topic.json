@@ -1,0 +1,38 @@
+{
+  "user_intent": "Soybean seed oil and protein improvement under planting density and breeding strategy.",
+  "topic_name": "Soybean seed oil and protein improvement under planting density and breeding strategy",
+  "goal": "Generate roughly 100000 QA pairs around the topic.",
+  "keywords": [
+    "breeding",
+    "density",
+    "improvement",
+    "planting",
+    "protein",
+    "seed",
+    "soybean",
+    "strategy"
+  ],
+  "subtopics": [
+    {
+      "name": "breeding",
+      "intent": "Expand the role of `breeding` inside the user topic."
+    },
+    {
+      "name": "density",
+      "intent": "Expand the role of `density` inside the user topic."
+    },
+    {
+      "name": "improvement",
+      "intent": "Expand the role of `improvement` inside the user topic."
+    }
+  ],
+  "question_axes": [
+    "definition",
+    "mechanism",
+    "comparison",
+    "application",
+    "experimental_design",
+    "risk_and_limitation"
+  ],
+  "target_count": 100000
+}
