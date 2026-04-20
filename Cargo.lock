@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "distill-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "distill-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "distill-runtime"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "distill-core",
@@ -762,7 +762,7 @@ dependencies = [
 
 [[package]]
 name = "distill-studio-tauri"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "distill-core",
