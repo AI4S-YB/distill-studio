@@ -1,0 +1,6 @@
+{
+  "pubkey": "PASTE_TAURI_UPDATER_PUBLIC_KEY_HERE",
+  "endpoints": [
+    "https://github.com/AI4S-YB/distill-studio/releases/latest/download/latest.json"
+  ]
+}

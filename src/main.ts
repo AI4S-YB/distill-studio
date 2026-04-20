@@ -48,6 +48,22 @@ type ConfigProfileSummary = {
   path: string;
 };
 
+type AppUpdateCheckResponse = {
+  configured: boolean;
+  updateAvailable: boolean;
+  currentVersion: string;
+  version: string | null;
+  body: string | null;
+  date: string | null;
+  sourcePath: string | null;
+};
+
+type AppUpdateProgressEvent = {
+  stage: string;
+  status: string;
+  message: string;
+};
+
 type UiTab = "topic" | "model" | "runtime";
 
 type ProviderPresetId = "custom" | "qwen_dashscope" | "stub_local";
@@ -133,6 +149,7 @@ const translations: Record<Lang, Record<string, string>> = {
     nav_copy: "像应用程序一样切换设置页。",
     actions_setup: "配置动作",
     actions_run: "运行动作",
+    action_check_update: "检查更新",
     telemetry_title: "运行遥测",
     telemetry_copy: "实时查看 Rust 后端发出的阶段进度和日志。",
     setup_title: "当前配置",
@@ -200,6 +217,7 @@ const translations: Record<Lang, Record<string, string>> = {
     status_idle: "空闲",
     status_previewing: "预览中",
     status_running: "运行中",
+    status_updating: "更新中",
     preview_generating: "正在生成预览...",
     running_pipeline: "正在运行流水线...",
     validation_failed: "运行前检查未通过",
@@ -226,6 +244,13 @@ const translations: Record<Lang, Record<string, string>> = {
     log_copy_failed: "复制失败",
     log_applied_preset: "已应用预设",
     log_validation_failed: "运行前检查未通过",
+    log_update_not_configured: "自动更新尚未配置。请先准备本地 updater.json。",
+    log_update_source: "自动更新配置文件",
+    log_update_available: "发现新版本",
+    log_update_not_available: "当前已是最新版本",
+    log_update_declined: "已取消安装更新。",
+    log_update_installing: "正在安装更新",
+    log_update_failed: "自动更新失败",
     summary_topic_name: "Topic 名称",
     summary_goal: "目标",
     summary_target_count: "目标数量",
@@ -287,6 +312,7 @@ const translations: Record<Lang, Record<string, string>> = {
     nav_copy: "Switch settings pages like a desktop app.",
     actions_setup: "Setup Actions",
     actions_run: "Run Actions",
+    action_check_update: "Check Update",
     telemetry_title: "Run Telemetry",
     telemetry_copy: "Live stage progress and backend log messages from the Rust pipeline.",
     setup_title: "Current Setup",
@@ -354,6 +380,7 @@ const translations: Record<Lang, Record<string, string>> = {
     status_idle: "Idle",
     status_previewing: "Previewing",
     status_running: "Running",
+    status_updating: "Updating",
     preview_generating: "Generating preview...",
     running_pipeline: "Running pipeline...",
     validation_failed: "Run validation failed",
@@ -380,6 +407,13 @@ const translations: Record<Lang, Record<string, string>> = {
     log_copy_failed: "Failed to copy value",
     log_applied_preset: "Applied preset",
     log_validation_failed: "Run validation failed",
+    log_update_not_configured: "Auto update is not configured yet. Add a local updater.json first.",
+    log_update_source: "Updater config file",
+    log_update_available: "Update available",
+    log_update_not_available: "Already on the latest version",
+    log_update_declined: "Update install was cancelled.",
+    log_update_installing: "Installing update",
+    log_update_failed: "Auto update failed",
     summary_topic_name: "Topic Name",
     summary_goal: "Goal",
     summary_target_count: "Target Count",
@@ -440,7 +474,7 @@ let currentLang: Lang =
       ? "zh"
       : "en";
 let currentTab: UiTab = "topic";
-let currentStatus: "idle" | "previewing" | "running" = "idle";
+let currentStatus: "idle" | "previewing" | "running" | "updating" = "idle";
 let outputState: OutputState = { kind: "idle" };
 let topicTags: string[] = [];
 let apiKeyVisible = false;
@@ -503,6 +537,7 @@ app.innerHTML = `
             <div class="actions">
               <button id="load-config">Load Config</button>
               <button id="save-config">Save Config</button>
+              <button id="check-update">Check Update</button>
             </div>
           </section>
           <section class="action-group">
@@ -695,6 +730,7 @@ const tabPanels = Array.from(document.querySelectorAll<HTMLElement>("[data-tab-p
 const previewButton = document.querySelector<HTMLButtonElement>("#preview");
 const loadConfigButton = document.querySelector<HTMLButtonElement>("#load-config");
 const saveConfigButton = document.querySelector<HTMLButtonElement>("#save-config");
+const checkUpdateButton = document.querySelector<HTMLButtonElement>("#check-update");
 const runButton = document.querySelector<HTMLButtonElement>("#run");
 const output = document.querySelector<HTMLElement>("#output");
 const setupSummary = document.querySelector<HTMLElement>("#setup-summary");
@@ -735,6 +771,7 @@ if (
   !previewButton ||
   !loadConfigButton ||
   !saveConfigButton ||
+  !checkUpdateButton ||
   !runButton ||
   !output ||
   !setupSummary ||
@@ -1254,6 +1291,7 @@ function applyTranslations() {
   previewButton.textContent = t("preview");
   loadConfigButton.textContent = t("load_config");
   saveConfigButton.textContent = t("save_config");
+  checkUpdateButton.textContent = t("action_check_update");
   browseOutputButton.textContent = t("browse");
   runButton.textContent = t("run_pipeline");
   addTopicTagButton.textContent = t("add_tag");
@@ -1277,13 +1315,14 @@ function readNumber(input: HTMLInputElement): number {
   return Number.parseInt(input.value, 10);
 }
 
-function setStatus(nextStatus: "idle" | "previewing" | "running", busy = false) {
+function setStatus(nextStatus: "idle" | "previewing" | "running" | "updating", busy = false) {
   currentStatus = nextStatus;
   status.textContent = t(`status_${nextStatus}`);
   status.dataset.busy = busy ? "true" : "false";
   previewButton.disabled = busy;
   loadConfigButton.disabled = busy;
   saveConfigButton.disabled = busy;
+  checkUpdateButton.disabled = busy;
   browseOutputButton.disabled = busy;
   runButton.disabled = busy;
 }
@@ -1401,6 +1440,10 @@ void listen<PipelineProgressEvent>("pipeline-progress", (event) => {
   const statusKey = `event_${payload.status.replace(/-/g, "_")}`;
   setProgress(payload.currentStep, payload.totalSteps);
   appendLog(`${t(stageKey)} [${t(statusKey)}] ${payload.message}`);
+});
+
+void listen<AppUpdateProgressEvent>("app-update-progress", (event) => {
+  appendLog(event.payload.message);
 });
 
 async function loadConfig(auto = false) {
@@ -1575,6 +1618,75 @@ saveConfigButton.addEventListener("click", async () => {
     appendLog(`${t("log_saved_profile")} ${saved.name} -> ${saved.path}`);
   } catch (error) {
     appendLog(`${t("log_save_failed")}: ${String(error)}`);
+  }
+});
+
+function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
+  const lines = [
+    currentLang === "zh"
+      ? `当前版本：${response.currentVersion}`
+      : `Current version: ${response.currentVersion}`,
+    currentLang === "zh"
+      ? `最新版本：${response.version ?? "unknown"}`
+      : `Latest version: ${response.version ?? "unknown"}`
+  ];
+
+  if (response.date) {
+    lines.push(
+      currentLang === "zh"
+        ? `发布时间：${response.date}`
+        : `Release date: ${response.date}`
+    );
+  }
+
+  if (response.body) {
+    const notes = response.body.trim();
+    if (notes) {
+      lines.push("");
+      lines.push(currentLang === "zh" ? "更新说明：" : "Release notes:");
+      lines.push(notes);
+    }
+  }
+
+  lines.push("");
+  lines.push(currentLang === "zh" ? "现在安装这个更新吗？" : "Install this update now?");
+  return lines.join("\n");
+}
+
+checkUpdateButton.addEventListener("click", async () => {
+  setStatus("updating", true);
+
+  try {
+    const response = await invoke<AppUpdateCheckResponse>("check_for_app_update");
+    if (!response.configured) {
+      appendLog(t("log_update_not_configured"));
+      setStatus("idle", false);
+      return;
+    }
+
+    if (response.sourcePath) {
+      appendLog(`${t("log_update_source")}: ${response.sourcePath}`);
+    }
+
+    if (!response.updateAvailable) {
+      appendLog(`${t("log_update_not_available")} (${response.currentVersion})`);
+      setStatus("idle", false);
+      return;
+    }
+
+    appendLog(`${t("log_update_available")} ${response.version ?? ""}`.trim());
+    const shouldInstall = window.confirm(buildUpdatePrompt(response));
+    if (!shouldInstall) {
+      appendLog(t("log_update_declined"));
+      setStatus("idle", false);
+      return;
+    }
+
+    appendLog(`${t("log_update_installing")} ${response.version ?? ""}`.trim());
+    await invoke("install_app_update");
+  } catch (error) {
+    appendLog(`${t("log_update_failed")}: ${String(error)}`);
+    setStatus("idle", false);
   }
 });
 

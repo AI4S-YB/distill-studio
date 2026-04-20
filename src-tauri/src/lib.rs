@@ -1,3 +1,4 @@
+use anyhow::Context;
 use distill_core::{
     bootstrap_topic, default_pack_config, draft_question_plans, pack_qa_records, GenerateConfig,
     GenerateSummary, GeneratedQa, PackConfig, ProviderConfig, QaShard, RuntimeConfig, TopicSpec,
@@ -8,6 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager, Window};
+use tauri_plugin_updater::UpdaterExt;
+use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +67,32 @@ struct PipelineProgressEvent {
 struct ConfigProfileSummary {
     name: String,
     path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UpdaterRuntimeConfig {
+    pubkey: String,
+    endpoints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppUpdateCheckResponse {
+    configured: bool,
+    update_available: bool,
+    current_version: String,
+    version: Option<String>,
+    body: Option<String>,
+    date: Option<String>,
+    source_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppUpdateProgressEvent {
+    stage: String,
+    status: String,
+    message: String,
 }
 
 #[tauri::command]
@@ -193,6 +222,154 @@ fn open_path(app: AppHandle, path: String) -> Result<(), String> {
 
     command.spawn().map_err(error_to_string)?;
     Ok(())
+}
+
+#[tauri::command]
+async fn check_for_app_update(
+    app: AppHandle,
+    window: Window,
+) -> Result<AppUpdateCheckResponse, String> {
+    let current_version = app.package_info().version.to_string();
+    let (updater, source_path) = match build_effective_updater(&app).map_err(error_to_string)? {
+        Some(value) => value,
+        None => {
+            emit_app_update_event(
+                &window,
+                "check",
+                "skipped",
+                "Updater is not configured. Add a local updater.json or ship a release build updater config first.",
+            );
+            return Ok(AppUpdateCheckResponse {
+                configured: false,
+                update_available: false,
+                current_version,
+                version: None,
+                body: None,
+                date: None,
+                source_path: None,
+            });
+        }
+    };
+
+    emit_app_update_event(&window, "check", "running", "Checking for app updates.");
+    let update = updater.check().await.map_err(error_to_string)?;
+
+    if let Some(update) = update {
+        emit_app_update_event(
+            &window,
+            "check",
+            "completed",
+            &format!("Update {} is available.", update.version),
+        );
+        Ok(AppUpdateCheckResponse {
+            configured: true,
+            update_available: true,
+            current_version,
+            version: Some(update.version),
+            body: update.body,
+            date: update.date.map(|value| value.to_string()),
+            source_path: source_path.map(|value| value.display().to_string()),
+        })
+    } else {
+        emit_app_update_event(
+            &window,
+            "check",
+            "completed",
+            &format!("No update found. Current version is {}.", current_version),
+        );
+        Ok(AppUpdateCheckResponse {
+            configured: true,
+            update_available: false,
+            current_version,
+            version: None,
+            body: None,
+            date: None,
+            source_path: source_path.map(|value| value.display().to_string()),
+        })
+    }
+}
+
+#[tauri::command]
+async fn install_app_update(app: AppHandle, window: Window) -> Result<(), String> {
+    let Some((updater, _)) = build_effective_updater(&app).map_err(error_to_string)? else {
+        return Err(
+            "Updater is not configured. Add updater.json or ship a release build updater config before trying to install updates."
+                .to_string(),
+        );
+    };
+
+    emit_app_update_event(&window, "install", "running", "Preparing update installation.");
+    let Some(update) = updater.check().await.map_err(error_to_string)? else {
+        emit_app_update_event(
+            &window,
+            "install",
+            "skipped",
+            "No update is currently available.",
+        );
+        return Err("No update is currently available.".to_string());
+    };
+
+    let target_version = update.version.clone();
+    emit_app_update_event(
+        &window,
+        "install",
+        "running",
+        &format!("Downloading update {}.", target_version),
+    );
+
+    let progress_window = window.clone();
+    let mut downloaded = 0usize;
+    let mut next_percent_mark = 10usize;
+    update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length;
+                let Some(total_bytes) = content_length else {
+                    return;
+                };
+                if total_bytes == 0 {
+                    return;
+                }
+
+                let percent = downloaded.saturating_mul(100) / total_bytes as usize;
+                if percent >= next_percent_mark {
+                    emit_app_update_event(
+                        &progress_window,
+                        "download",
+                        "running",
+                        &format!("Update download progress: {}%.", percent.min(100)),
+                    );
+                    while next_percent_mark <= percent {
+                        next_percent_mark += 10;
+                    }
+                }
+            },
+            {
+                let ready_window = window.clone();
+                let ready_version = target_version.clone();
+                move || {
+                    emit_app_update_event(
+                        &ready_window,
+                        "download",
+                        "completed",
+                        &format!("Update {} has been downloaded.", ready_version),
+                    );
+                }
+            },
+        )
+        .await
+        .map_err(error_to_string)?;
+
+    emit_app_update_event(
+        &window,
+        "install",
+        "completed",
+        &format!(
+            "Update {} installed. The app will restart to finish the upgrade.",
+            target_version
+        ),
+    );
+    app.restart();
 }
 
 #[tauri::command]
@@ -396,6 +573,11 @@ fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<Gener
     Ok((topic_name, records))
 }
 
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
+    let content = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&content)?)
+}
+
 fn error_to_string<E>(error: E) -> String
 where
     E: Into<anyhow::Error>,
@@ -449,6 +631,14 @@ fn resolve_app_relative_path(app: &AppHandle, path: &str) -> anyhow::Result<Path
         Ok(target)
     } else {
         Ok(runtime_data_root(app)?.join(target))
+    }
+}
+
+fn updater_runtime_config_path(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    if let Some(root) = dev_app_root() {
+        Ok(root.join("config/local/updater.json"))
+    } else {
+        Ok(runtime_config_root(app)?.join("updater.json"))
     }
 }
 
@@ -508,6 +698,71 @@ fn normalize_profile_name(profile_name: Option<String>) -> String {
     }
 }
 
+fn load_updater_runtime_config(
+    app: &AppHandle,
+) -> anyhow::Result<Option<(UpdaterRuntimeConfig, PathBuf)>> {
+    let path = updater_runtime_config_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let config: UpdaterRuntimeConfig = read_json(&path)?;
+    let pubkey = config.pubkey.trim().to_string();
+    let endpoints = config
+        .endpoints
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+
+    if pubkey.is_empty() {
+        anyhow::bail!("updater pubkey is empty in {}", path.display());
+    }
+    if endpoints.is_empty() {
+        anyhow::bail!("updater endpoints are empty in {}", path.display());
+    }
+
+    Ok(Some((
+        UpdaterRuntimeConfig { pubkey, endpoints },
+        path,
+    )))
+}
+
+fn build_runtime_updater(
+    app: &AppHandle,
+    config: &UpdaterRuntimeConfig,
+) -> anyhow::Result<tauri_plugin_updater::Updater> {
+    let endpoints = config
+        .endpoints
+        .iter()
+        .map(|value| {
+            Url::parse(value)
+                .with_context(|| format!("invalid updater endpoint URL `{value}`"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(app
+        .updater_builder()
+        .pubkey(config.pubkey.clone())
+        .endpoints(endpoints)?
+        .build()?)
+}
+
+fn build_effective_updater(
+    app: &AppHandle,
+) -> anyhow::Result<Option<(tauri_plugin_updater::Updater, Option<PathBuf>)>> {
+    if let Some((config, source_path)) = load_updater_runtime_config(app)? {
+        let updater = build_runtime_updater(app, &config)?;
+        return Ok(Some((updater, Some(source_path))));
+    }
+
+    match app.updater_builder().build() {
+        Ok(updater) => Ok(Some((updater, None))),
+        Err(tauri_plugin_updater::Error::EmptyEndpoints) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn emit_pipeline_event(
     window: &Window,
     stage: &str,
@@ -528,8 +783,24 @@ fn emit_pipeline_event(
     );
 }
 
+fn emit_app_update_event(window: &Window, stage: &str, status: &str, message: &str) {
+    let _ = window.emit(
+        "app-update-progress",
+        AppUpdateProgressEvent {
+            stage: stage.to_string(),
+            status: status.to_string(),
+            message: message.to_string(),
+        },
+    );
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             health_check,
@@ -538,7 +809,9 @@ pub fn run() {
             load_local_pipeline_config,
             list_local_pipeline_profiles,
             open_path,
-            run_pipeline
+            run_pipeline,
+            check_for_app_update,
+            install_app_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

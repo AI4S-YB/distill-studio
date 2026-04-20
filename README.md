@@ -8,6 +8,7 @@
 
 - GUI：基于 `Tauri + TypeScript` 的跨平台桌面应用，适合在 macOS、Linux、Windows 上直接操作
 - CLI：基于 Rust 的批处理入口，适合脚本化、调试和后续扩展
+- Updater：已接入 Tauri v2 应用内更新基础能力，可进一步接到 `GitHub Releases + latest.json`
 
 ## 项目结构
 
@@ -137,6 +138,48 @@ npm run tauri:build
 
 - [发布前准备](./docs/发布前准备.md)
 - [本地配置与密钥管理](./docs/本地配置与密钥管理.md)
+- [自动更新](./docs/自动更新.md)
+
+## 自动更新与发布工作流
+
+项目已经提供自动更新基础接入和 GitHub Actions 发布脚手架：
+
+- 应用内 `检查更新`
+- 本地 updater 覆盖配置：`config/local/updater.json`
+- GitHub Actions 工作流：
+  - `.github/workflows/release.yml`
+
+发布链路默认约定：
+
+- Git tag 格式：`app-v*`
+- updater endpoint：`https://github.com/<owner>/<repo>/releases/latest/download/latest.json`
+- GitHub Actions 需要的 secrets：
+  - `TAURI_SIGNING_PRIVATE_KEY`
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+  - `TAURI_UPDATER_PUBLIC_KEY`
+
+本地手动生成 release 配置并打包的命令：
+
+```bash
+cd /Users/kentnf/projects/ai4s/distill-studio
+export TAURI_UPDATER_PUBLIC_KEY='...'
+export TAURI_UPDATER_ENDPOINT='https://github.com/AI4S-YB/distill-studio/releases/latest/download/latest.json'
+npm run tauri:build:release
+```
+
+发布前还可以先跑一次本地预检查：
+
+```bash
+cd /Users/kentnf/projects/ai4s/distill-studio
+npm run release:preflight
+```
+
+如果本机已经安装并登录 `gh`，还可以直接同步 GitHub secrets：
+
+```bash
+cd /Users/kentnf/projects/ai4s/distill-studio
+npm run github:sync-secrets
+```
 
 ## Git 发布建议
 
