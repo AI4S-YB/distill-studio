@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title>Distill Studio App Icon</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11243b" />
+      <stop offset="100%" stop-color="#1f6f8b" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5b971" />
+      <stop offset="100%" stop-color="#f2d096" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <path d="M148 116h74c78 0 131 46 131 119 0 74-54 121-135 121h-70V116zm73 182c43 0 69-22 69-63 0-40-27-61-67-61h-13v124h11z" fill="#f7f4ea"/>
+  <path d="M301 145h66l-34 53h-51l19-53zm-15 95h78l-76 156h-66l64-126h-62l62-30z" fill="url(#accent)"/>
+</svg>
