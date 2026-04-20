@@ -1,13 +1,15 @@
 use anyhow::Context;
 use distill_core::{
     bootstrap_topic, default_pack_config, draft_question_plans, pack_qa_records, GenerateConfig,
-    GenerateSummary, GeneratedQa, PackConfig, ProviderConfig, QaShard, RuntimeConfig, TopicSpec,
+    GenerateSummary, GeneratedQa, PackConfig, PackedDataset, ProviderConfig, QaShard,
+    RuntimeConfig, TopicSpec,
 };
 use distill_runtime::generate_to_directory;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
@@ -35,6 +37,12 @@ struct PipelineRequest {
     max_retries: u32,
     request_timeout_secs: u64,
     resume: bool,
+    #[serde(default)]
+    qa_upload_url: Option<String>,
+    #[serde(default)]
+    literature_api_url: Option<String>,
+    #[serde(default)]
+    literature_api_auth_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +75,66 @@ struct PipelineProgressEvent {
 struct ConfigProfileSummary {
     name: String,
     path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaBatchSummary {
+    id: String,
+    name: String,
+    topic_name: String,
+    prompt: String,
+    kept_count: usize,
+    total_count: usize,
+    provider: Option<String>,
+    model: Option<String>,
+    output_dir: String,
+    updated_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaRecordSummary {
+    id: String,
+    question: String,
+    subtopic: String,
+    axis: String,
+    question_type: String,
+    difficulty: String,
+    audience: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaRecordPage {
+    batch: QaBatchSummary,
+    items: Vec<QaRecordSummary>,
+    page: usize,
+    page_size: usize,
+    total_items: usize,
+    total_pages: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaRecordDetail {
+    batch: QaBatchSummary,
+    item: GeneratedQa,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaBatchUploadPayload {
+    batch: QaBatchSummary,
+    items: Vec<GeneratedQa>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaBatchUploadResponse {
+    status: u16,
+    uploaded_count: usize,
+    url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +255,131 @@ fn list_local_pipeline_profiles(app: AppHandle) -> Result<Vec<ConfigProfileSumma
 
     profiles.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(profiles)
+}
+
+#[tauri::command]
+fn list_qa_batches(app: AppHandle) -> Result<Vec<QaBatchSummary>, String> {
+    let mut batches = load_qa_batches(&app).map_err(error_to_string)?;
+    batches.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
+    Ok(batches)
+}
+
+#[tauri::command]
+fn delete_qa_batch(app: AppHandle, batch_id: String) -> Result<(), String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    fs::remove_dir_all(&batch_dir).map_err(error_to_string)?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn upload_qa_batch(
+    app: AppHandle,
+    batch_id: String,
+    upload_url: String,
+) -> Result<QaBatchUploadResponse, String> {
+    let upload_url = upload_url.trim();
+    if upload_url.is_empty() {
+        return Err("upload url is empty".to_string());
+    }
+    Url::parse(upload_url).map_err(error_to_string)?;
+
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
+    let items = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let payload = QaBatchUploadPayload {
+        batch,
+        items: items.clone(),
+    };
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(upload_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let body = body.trim();
+        let detail = if body.is_empty() {
+            format!("upload failed with status {}", status.as_u16())
+        } else {
+            format!("upload failed with status {}: {}", status.as_u16(), body)
+        };
+        return Err(detail);
+    }
+
+    Ok(QaBatchUploadResponse {
+        status: status.as_u16(),
+        uploaded_count: items.len(),
+        url: upload_url.to_string(),
+    })
+}
+
+#[tauri::command]
+fn list_batch_qa_records(
+    app: AppHandle,
+    batch_id: String,
+    page: Option<usize>,
+    page_size: Option<usize>,
+) -> Result<QaRecordPage, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
+    let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let page_size = page_size.unwrap_or(20).clamp(1, 200);
+    let requested_page = page.unwrap_or(1).max(1);
+    let total_items = records.len();
+    let total_pages = if total_items == 0 {
+        1
+    } else {
+        (total_items + page_size - 1) / page_size
+    };
+    let page = requested_page.min(total_pages);
+    let start = (page - 1) * page_size;
+    let end = (start + page_size).min(total_items);
+    let items = if start >= total_items {
+        Vec::new()
+    } else {
+        records[start..end]
+            .iter()
+            .map(|item| QaRecordSummary {
+                id: item.id.clone(),
+                question: item.question.clone(),
+                subtopic: item.subtopic.clone(),
+                axis: item.axis.clone(),
+                question_type: item.question_type.clone(),
+                difficulty: item.difficulty.clone(),
+                audience: item.audience.clone(),
+            })
+            .collect()
+    };
+
+    Ok(QaRecordPage {
+        batch,
+        items,
+        page,
+        page_size,
+        total_items,
+        total_pages,
+    })
+}
+
+#[tauri::command]
+fn get_batch_qa_record(
+    app: AppHandle,
+    batch_id: String,
+    qa_id: String,
+) -> Result<QaRecordDetail, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
+    let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let item = records
+        .into_iter()
+        .find(|record| record.id == qa_id)
+        .ok_or_else(|| format!("QA record not found: {qa_id}"))?;
+
+    Ok(QaRecordDetail { batch, item })
 }
 
 #[tauri::command]
@@ -429,7 +622,11 @@ async fn run_pipeline(
         },
     };
 
-    let output_dir = resolve_app_relative_path(&app, &request.output_dir).map_err(error_to_string)?;
+    let output_dir = if request.output_dir.trim() == "__managed__" || request.output_dir.trim().is_empty() {
+        next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?
+    } else {
+        resolve_app_relative_path(&app, &request.output_dir).map_err(error_to_string)?
+    };
     let generated_dir = output_dir.join("generated");
     let topic_path = output_dir.join("topic.json");
     let plans_path = output_dir.join("plans.json");
@@ -571,6 +768,202 @@ fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<Gener
     }
 
     Ok((topic_name, records))
+}
+
+fn load_batch_records(batch_dir: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
+    let dataset_path = batch_dir.join("dataset.jsonl");
+    if dataset_path.exists() {
+        return read_jsonl_records(&dataset_path);
+    }
+
+    let pack_summary_path = batch_dir.join("pack_summary.json");
+    if pack_summary_path.exists() {
+        let packed: PackedDataset = read_json(&pack_summary_path)?;
+        return Ok(packed.items);
+    }
+
+    anyhow::bail!("dataset.jsonl not found in {}", batch_dir.display());
+}
+
+fn read_jsonl_records(path: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
+    let content = fs::read_to_string(path)?;
+    let mut records = Vec::new();
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let record = serde_json::from_str(trimmed).with_context(|| {
+            format!(
+                "failed to parse dataset line {} in {}",
+                idx + 1,
+                path.display()
+            )
+        })?;
+        records.push(record);
+    }
+
+    Ok(records)
+}
+
+fn load_qa_batches(app: &AppHandle) -> anyhow::Result<Vec<QaBatchSummary>> {
+    let output_root = runtime_data_root(app)?.join("output");
+    if !output_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut batches = Vec::new();
+    for entry in fs::read_dir(&output_root)? {
+        let path = entry?.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if path.join("dataset.jsonl").exists() || path.join("pack_summary.json").exists() {
+            if let Ok(summary) = build_qa_batch_summary(app, &path) {
+                batches.push(summary);
+            }
+        }
+    }
+
+    Ok(batches)
+}
+
+fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<QaBatchSummary> {
+    let runtime_root = runtime_data_root(app)?;
+    let id = path_relative_id(&runtime_root, batch_dir)?;
+    let name = batch_dir
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let topic_path = batch_dir.join("topic.json");
+    let config_path = batch_dir.join("generate_config.json");
+    let pack_summary_path = batch_dir.join("pack_summary.json");
+    let dataset_path = batch_dir.join("dataset.jsonl");
+
+    let topic = if topic_path.exists() {
+        Some(read_json::<TopicSpec>(&topic_path)?)
+    } else {
+        None
+    };
+    let config = if config_path.exists() {
+        Some(read_json::<GenerateConfig>(&config_path)?)
+    } else {
+        None
+    };
+    let pack_summary = if pack_summary_path.exists() {
+        Some(read_json::<PackedDataset>(&pack_summary_path)?)
+    } else {
+        None
+    };
+
+    let total_count = if let Some(summary) = &pack_summary {
+        summary.total_input
+    } else if dataset_path.exists() {
+        read_jsonl_records(&dataset_path)?.len()
+    } else {
+        0
+    };
+    let kept_count = pack_summary
+        .as_ref()
+        .map(|summary| summary.kept)
+        .unwrap_or(total_count);
+
+    let updated_at_ms = latest_modified_ms(&[
+        dataset_path.as_path(),
+        pack_summary_path.as_path(),
+        topic_path.as_path(),
+        config_path.as_path(),
+    ]);
+
+    Ok(QaBatchSummary {
+        id,
+        name: name.clone(),
+        topic_name: topic
+            .as_ref()
+            .map(|value| value.topic_name.clone())
+            .or_else(|| pack_summary.as_ref().map(|value| value.topic_name.clone()))
+            .unwrap_or_else(|| name.clone()),
+        prompt: topic
+            .as_ref()
+            .map(|value| value.user_intent.clone())
+            .unwrap_or_default(),
+        kept_count,
+        total_count,
+        provider: config.as_ref().map(|value| value.provider.provider.clone()),
+        model: config.as_ref().map(|value| value.provider.model.clone()),
+        output_dir: batch_dir.display().to_string(),
+        updated_at_ms,
+    })
+}
+
+fn resolve_batch_dir(app: &AppHandle, batch_id: &str) -> anyhow::Result<PathBuf> {
+    let batch_dir = resolve_app_relative_path(app, batch_id)?;
+    if !batch_dir.exists() {
+        anyhow::bail!("batch directory does not exist: {}", batch_dir.display());
+    }
+    Ok(batch_dir)
+}
+
+fn path_relative_id(root: &Path, path: &Path) -> anyhow::Result<String> {
+    let relative = path
+        .strip_prefix(root)
+        .with_context(|| format!("{} is not inside {}", path.display(), root.display()))?;
+    let parts = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    Ok(parts.join("/"))
+}
+
+fn latest_modified_ms(paths: &[&Path]) -> Option<u64> {
+    paths.iter()
+        .filter_map(|path| fs::metadata(path).ok())
+        .filter_map(|metadata| metadata.modified().ok())
+        .filter_map(system_time_to_ms)
+        .max()
+}
+
+fn system_time_to_ms(time: SystemTime) -> Option<u64> {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn next_managed_output_dir(app: &AppHandle, topic_name: &str) -> anyhow::Result<PathBuf> {
+    let output_root = runtime_data_root(app)?.join("output");
+    fs::create_dir_all(&output_root)?;
+
+    let slug = slugify_for_path(topic_name);
+    let timestamp = system_time_to_ms(SystemTime::now()).unwrap_or(0);
+    Ok(output_root.join(format!("{slug}-{timestamp}")))
+}
+
+fn slugify_for_path(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_separator = false;
+
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+            continue;
+        }
+
+        if !last_was_separator {
+            slug.push('-');
+            last_was_separator = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "qa-batch".to_string()
+    } else {
+        slug.chars().take(48).collect()
+    }
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
@@ -808,6 +1201,11 @@ pub fn run() {
             save_local_pipeline_config,
             load_local_pipeline_config,
             list_local_pipeline_profiles,
+            list_qa_batches,
+            delete_qa_batch,
+            upload_qa_batch,
+            list_batch_qa_records,
+            get_batch_qa_record,
             open_path,
             run_pipeline,
             check_for_app_update,

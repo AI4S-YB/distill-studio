@@ -767,6 +767,7 @@ dependencies = [
  "anyhow",
  "distill-core",
  "distill-runtime",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
