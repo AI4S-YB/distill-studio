@@ -2,6 +2,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+pub fn default_qa_mode() -> String {
+    "normal".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicSpec {
     pub user_intent: String,
@@ -65,6 +69,10 @@ pub struct RuntimeConfig {
 pub struct GenerateConfig {
     pub provider: ProviderConfig,
     pub runtime: RuntimeConfig,
+    #[serde(default = "default_qa_mode")]
+    pub qa_mode: String,
+    #[serde(default)]
+    pub supporting_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +91,8 @@ pub struct GeneratedQa {
     pub grounding: String,
     pub provider: String,
     pub model: String,
+    #[serde(default = "default_qa_mode")]
+    pub qa_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +118,8 @@ pub struct GenerateSummary {
     pub request_count: usize,
     pub provider: String,
     pub model: String,
+    #[serde(default = "default_qa_mode")]
+    pub qa_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +221,8 @@ pub fn default_generate_config(target_count: usize) -> GenerateConfig {
             request_timeout_secs: 120,
             resume: true,
         },
+        qa_mode: default_qa_mode(),
+        supporting_context: None,
     }
 }
 

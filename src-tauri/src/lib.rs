@@ -1,8 +1,8 @@
 use anyhow::Context;
 use distill_core::{
-    bootstrap_topic, default_pack_config, draft_question_plans, pack_qa_records, GenerateConfig,
-    GenerateSummary, GeneratedQa, PackConfig, PackedDataset, ProviderConfig, QaShard,
-    RuntimeConfig, TopicSpec,
+    bootstrap_topic, default_pack_config, default_qa_mode, draft_question_plans, pack_qa_records,
+    GenerateConfig, GenerateSummary, GeneratedQa, PackConfig, PackedDataset, ProviderConfig,
+    QaShard, RuntimeConfig, TopicSpec,
 };
 use distill_runtime::generate_to_directory;
 use serde::{Deserialize, Serialize};
@@ -14,12 +14,18 @@ use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
 use url::Url;
 
+const COT_SAFE_BATCH_SIZE: usize = 1;
+const COT_SAFE_MAX_IN_FLIGHT: usize = 1;
+const COT_SAFE_SHARD_SIZE_CAP: usize = 10;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PipelineRequest {
     prompt: String,
     #[serde(default)]
     topic_tags: Vec<String>,
+    #[serde(default = "default_qa_mode")]
+    qa_mode: String,
     target_count: u32,
     plan_limit: usize,
     output_dir: String,
@@ -166,6 +172,44 @@ struct AppUpdateProgressEvent {
 #[tauri::command]
 fn health_check() -> &'static str {
     "ok"
+}
+
+fn normalize_runtime_for_qa_mode(
+    qa_mode: &str,
+    target_count: usize,
+    shard_size: usize,
+    batch_size: usize,
+    max_in_flight: usize,
+    max_retries: u32,
+    request_timeout_secs: u64,
+    resume: bool,
+) -> RuntimeConfig {
+    let safe_target = target_count.max(1);
+    let safe_shard_size = shard_size.max(1);
+    let safe_batch_size = batch_size.max(1);
+    let safe_max_in_flight = max_in_flight.max(1);
+
+    if qa_mode == "cot" {
+        return RuntimeConfig {
+            target_count: safe_target,
+            shard_size: safe_target.min(COT_SAFE_SHARD_SIZE_CAP).max(1),
+            batch_size: COT_SAFE_BATCH_SIZE,
+            max_in_flight: COT_SAFE_MAX_IN_FLIGHT,
+            max_retries,
+            request_timeout_secs,
+            resume,
+        };
+    }
+
+    RuntimeConfig {
+        target_count: safe_target,
+        shard_size: safe_shard_size,
+        batch_size: safe_batch_size,
+        max_in_flight: safe_max_in_flight,
+        max_retries,
+        request_timeout_secs,
+        resume,
+    }
 }
 
 #[tauri::command]
@@ -611,15 +655,18 @@ async fn run_pipeline(
             temperature: request.temperature,
             max_tokens: request.max_tokens,
         },
-        runtime: RuntimeConfig {
-            target_count: topic.target_count as usize,
-            shard_size: request.shard_size,
-            batch_size: request.batch_size,
-            max_in_flight: request.max_in_flight,
-            max_retries: request.max_retries,
-            request_timeout_secs: request.request_timeout_secs,
-            resume: request.resume,
-        },
+        runtime: normalize_runtime_for_qa_mode(
+            &request.qa_mode,
+            topic.target_count as usize,
+            request.shard_size,
+            request.batch_size,
+            request.max_in_flight,
+            request.max_retries,
+            request.request_timeout_secs,
+            request.resume,
+        ),
+        qa_mode: request.qa_mode.clone(),
+        supporting_context: None,
     };
 
     let output_dir = if request.output_dir.trim() == "__managed__" || request.output_dir.trim().is_empty() {
@@ -653,8 +700,8 @@ async fn run_pipeline(
         "generate",
         "running",
         &format!(
-            "Generating {} QA items with {} / {}.",
-            config.runtime.target_count, config.provider.provider, config.provider.model
+            "Generating {} {} items with {} / {}.",
+            config.runtime.target_count, config.qa_mode, config.provider.provider, config.provider.model
         ),
         3,
         total_steps,

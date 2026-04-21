@@ -108,6 +108,7 @@ type QaRecordDetail = {
     grounding: string;
     provider: string;
     model: string;
+    qa_mode: string;
   };
 };
 
@@ -159,6 +160,7 @@ type ValidationIssueKey =
 type PipelineFormRequest = {
   prompt: string;
   topicTags: string[];
+  qaMode: "normal" | "cot";
   targetCount: number;
   planLimit: number;
   outputDir: string;
@@ -200,6 +202,21 @@ const DEFAULT_PROFILE_NAME = "default";
 const AUTO_SAVE_DELAY_MS = 600;
 const MANAGED_OUTPUT_DIR = "__managed__";
 const CUSTOM_MODEL_VALUE = "__custom__";
+const DEFAULT_COT_TARGET_COUNT = 10;
+const DEFAULT_COT_SHARD_SIZE = 10;
+const DEFAULT_COT_BATCH_SIZE = 1;
+const DEFAULT_COT_MAX_IN_FLIGHT = 1;
+const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetId = "qwen_dashscope";
+const COT_SECTION_CONFIG = [
+  { heading: "Workflow Summary", translationKey: "cot_section_workflow_summary" },
+  { heading: "Reference Milestones", translationKey: "cot_section_reference_milestones" },
+  { heading: "Reference Steps", translationKey: "cot_section_reference_steps" },
+  { heading: "Step Rationale", translationKey: "cot_section_step_rationale" },
+  { heading: "Decision Points", translationKey: "cot_section_decision_points" },
+  { heading: "Quality Checks", translationKey: "cot_section_quality_checks" },
+  { heading: "Failure Modes", translationKey: "cot_section_failure_modes" },
+  { heading: "Final Interpretation", translationKey: "cot_section_final_interpretation" }
+] as const;
 const RESEARCH_FIELD_TAXONOMY: readonly ResearchFieldNode[] = [
   {
     id: "agri",
@@ -640,7 +657,7 @@ const translations: Record<Lang, Record<string, string>> = {
   zh: {
     eyebrow: "DISTILL STUDIO",
     hero_title: "QA小灶",
-    hero_lede: "把研究主题转成 QA 数据的一站式工作台。",
+    hero_lede: "你生成QA，我们帮你建模型、服务社区。",
     lang_label: "语言",
     panel_title: "流水线输入",
     panel_copy: "左侧切换工作区，中间编辑当前设置，右侧查看结果和运行状态。",
@@ -713,6 +730,7 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_failed: "上传失败",
     browse_question: "问题",
     browse_answer: "答案",
+    browse_qa_mode: "QA类型",
     browse_source_type: "来源类型",
     browse_grounding: "依据",
     provider_preset: "模型厂商",
@@ -721,6 +739,10 @@ const translations: Record<Lang, Record<string, string>> = {
     config_profile_hint: "保存和加载都会作用到这个本地档案名。适合保留多套运行参数。",
     topic_tags: "领域与方向",
     topic_tags_hint: "可以选农业生物育种快速标签，也可以通过弹窗选择二级或三级研究方向；选中的标签会拼接到实际发送给模型的主题描述里。",
+    qa_mode: "QA类型",
+    qa_mode_hint: "普通 QA 产出标准问答；CoT QA 产出更偏科研思路与分析决策的结构化回答。",
+    qa_mode_normal: "普通QA",
+    qa_mode_cot: "CoT QA",
     selected_tags: "已选标签",
     quick_tags: "农业生物育种快速标签",
     topic_field_selector: "选择研究领域",
@@ -800,6 +822,8 @@ const translations: Record<Lang, Record<string, string>> = {
     log_saved_config: "已保存本地配置到",
     log_saved_profile: "已保存配置档案",
     log_save_failed: "保存本地配置失败",
+    log_stub_migrated: "检测到旧版 Stub 配置，已自动切换到 Qwen / DashScope，请填写真实 API 密钥后测试。",
+    log_cot_runtime_normalized: "检测到旧版 CoT 运行参数，已自动调整为单条安全模式。",
     log_pipeline_completed: "流水线完成，数据集输出到",
     log_opened_path: "已打开路径",
     log_open_failed: "打开路径失败",
@@ -847,12 +871,21 @@ const translations: Record<Lang, Record<string, string>> = {
     validation_issue_api_key_required: "使用 openai-compatible 时必须填写 API 密钥。",
     stage_bootstrap: "初始化",
     stage_plan: "规划",
+    stage_literature: "文献增强",
     stage_write_config: "写配置",
     stage_generate: "生成",
     stage_pack: "打包",
     stage_complete: "完成",
     event_running: "进行中",
     event_completed: "已完成",
+    cot_section_workflow_summary: "研究流程概述",
+    cot_section_reference_milestones: "参考里程碑",
+    cot_section_reference_steps: "参考步骤",
+    cot_section_step_rationale: "步骤依据",
+    cot_section_decision_points: "关键决策点",
+    cot_section_quality_checks: "质量检查",
+    cot_section_failure_modes: "失败模式",
+    cot_section_final_interpretation: "最终解释",
     tag_plant_breeding: "植物育种",
     tag_crop_genomics: "作物基因组学",
     tag_transcriptomics: "转录组学",
@@ -866,7 +899,7 @@ const translations: Record<Lang, Record<string, string>> = {
   en: {
     eyebrow: "Distill Studio",
     hero_title: "High-throughput QA Distillation",
-    hero_lede: "A desktop workspace for topic setup, model config, and runtime control.",
+    hero_lede: "You create QA. We help turn it into models and community-facing services.",
     lang_label: "Language",
     panel_title: "Pipeline Input",
     panel_copy: "Switch workspaces on the left, edit the current page in the center, inspect results on the right.",
@@ -939,6 +972,7 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_failed: "Upload failed",
     browse_question: "Question",
     browse_answer: "Answer",
+    browse_qa_mode: "QA Mode",
     browse_source_type: "Source Type",
     browse_grounding: "Grounding",
     provider_preset: "Model Provider",
@@ -947,6 +981,10 @@ const translations: Record<Lang, Record<string, string>> = {
     config_profile_hint: "Load and save both target this local profile name. Use it to keep multiple run setups.",
     topic_tags: "Domains and Directions",
     topic_tags_hint: "Use the agriculture and breeding quick tags, or open the selector to add level-2 or level-3 research fields. Selected tags are appended to the effective prompt.",
+    qa_mode: "QA Mode",
+    qa_mode_hint: "Normal QA generates standard question-answer pairs. CoT QA generates compact research-planning and decision-oriented answers.",
+    qa_mode_normal: "Normal QA",
+    qa_mode_cot: "CoT QA",
     selected_tags: "Selected Tags",
     quick_tags: "Agriculture and Breeding Quick Tags",
     topic_field_selector: "Choose Research Field",
@@ -1027,6 +1065,8 @@ const translations: Record<Lang, Record<string, string>> = {
     log_saved_config: "Saved local config to",
     log_saved_profile: "Saved config profile",
     log_save_failed: "Failed to save local config",
+    log_stub_migrated: "Legacy Stub config detected. Switched to Qwen / DashScope. Add a real API key before testing.",
+    log_cot_runtime_normalized: "Legacy CoT runtime settings detected. Switched to safe single-item mode.",
     log_pipeline_completed: "Pipeline completed. Dataset at",
     log_opened_path: "Opened path",
     log_open_failed: "Failed to open path",
@@ -1074,12 +1114,21 @@ const translations: Record<Lang, Record<string, string>> = {
     validation_issue_api_key_required: "API key is required for openai-compatible provider.",
     stage_bootstrap: "Bootstrap",
     stage_plan: "Plan",
+    stage_literature: "Literature",
     stage_write_config: "Write Config",
     stage_generate: "Generate",
     stage_pack: "Pack",
     stage_complete: "Complete",
     event_running: "running",
     event_completed: "completed",
+    cot_section_workflow_summary: "Workflow Summary",
+    cot_section_reference_milestones: "Reference Milestones",
+    cot_section_reference_steps: "Reference Steps",
+    cot_section_step_rationale: "Step Rationale",
+    cot_section_decision_points: "Decision Points",
+    cot_section_quality_checks: "Quality Checks",
+    cot_section_failure_modes: "Failure Modes",
+    cot_section_final_interpretation: "Final Interpretation",
     tag_plant_breeding: "Plant Breeding",
     tag_crop_genomics: "Crop Genomics",
     tag_transcriptomics: "Transcriptomics",
@@ -1170,6 +1219,24 @@ app.innerHTML = `
         </div>
         <label for="prompt" id="topic-prompt-label">Topic prompt</label>
         <textarea id="prompt" rows="7">Soybean seed oil and protein improvement under planting density and breeding strategy.</textarea>
+        <div class="mode-panel">
+          <div>
+            <p class="tag-title" id="qa-mode-label">QA Mode</p>
+            <p class="panel-copy" id="qa-mode-hint">
+              Normal QA generates standard question-answer pairs. CoT QA generates compact research-planning and decision-oriented answers.
+            </p>
+          </div>
+          <div class="radio-group" id="qa-mode-group">
+            <label class="radio-card">
+              <input id="qa-mode-normal" type="radio" name="qa-mode" value="normal" checked />
+              <span id="qa-mode-normal-label">Normal QA</span>
+            </label>
+            <label class="radio-card">
+              <input id="qa-mode-cot" type="radio" name="qa-mode" value="cot" />
+              <span id="qa-mode-cot-label">CoT QA</span>
+            </label>
+          </div>
+        </div>
         <div class="tag-panel">
           <div class="tag-panel-header">
             <div>
@@ -1268,7 +1335,7 @@ app.innerHTML = `
               <option id="provider-preset-option-minimax" value="minimax">MiniMax</option>
               <option id="provider-preset-option-hunyuan" value="tencent_hunyuan">Tencent Hunyuan</option>
               <option id="provider-preset-option-qianfan" value="baidu_qianfan">Baidu Qianfan</option>
-              <option id="provider-preset-option-stub" value="stub_local">Stub Local Test</option>
+              <option id="provider-preset-option-stub" value="stub_local" hidden>Stub Local Test</option>
             </select>
             <small class="field-hint" id="provider-preset-hint">
               Selecting a provider fills the adapter type, model list, and base URL. Switch to Custom if you need a private gateway or manual values.
@@ -1277,8 +1344,8 @@ app.innerHTML = `
           <label id="provider-field" hidden>
             <span id="provider-label">Adapter Type</span>
             <select id="provider">
-              <option value="stub" selected>stub</option>
-              <option value="openai-compatible">openai-compatible</option>
+              <option value="openai-compatible" selected>openai-compatible</option>
+              <option value="stub" hidden>stub</option>
             </select>
           </label>
           <label>
@@ -1419,6 +1486,8 @@ const resultActions = document.querySelector<HTMLElement>("#result-actions");
 const outputDetails = document.querySelector<HTMLDetailsElement>("#output-details");
 const status = document.querySelector<HTMLElement>("#status");
 const selectedTopicTags = document.querySelector<HTMLElement>("#selected-topic-tags");
+const qaModeNormalInput = document.querySelector<HTMLInputElement>("#qa-mode-normal");
+const qaModeCotInput = document.querySelector<HTMLInputElement>("#qa-mode-cot");
 const topicTagSuggestions = document.querySelector<HTMLElement>("#topic-tag-suggestions");
 const topicTagInput = document.querySelector<HTMLInputElement>("#topic-tag-input");
 const addTopicTagButton = document.querySelector<HTMLButtonElement>("#add-topic-tag");
@@ -1471,6 +1540,8 @@ if (
   !outputDetails ||
   !status ||
   !selectedTopicTags ||
+  !qaModeNormalInput ||
+  !qaModeCotInput ||
   !topicTagSuggestions ||
   !topicTagInput ||
   !addTopicTagButton ||
@@ -1602,6 +1673,22 @@ function currentTopicFieldNode(): ResearchFieldNode | null {
 
 function formatCountTemplate(key: string, count: number): string {
   return t(key).replace("{count}", String(count));
+}
+
+function currentQaMode(): "normal" | "cot" {
+  return qaModeCotInput.checked ? "cot" : "normal";
+}
+
+function applyQaModeDefaults(qaMode: "normal" | "cot") {
+  if (qaMode !== "cot") {
+    return;
+  }
+
+  targetCountInput.value = String(DEFAULT_COT_TARGET_COUNT);
+  shardSizeInput.value = String(DEFAULT_COT_SHARD_SIZE);
+  batchSizeInput.value = String(DEFAULT_COT_BATCH_SIZE);
+  maxInFlightInput.value = String(DEFAULT_COT_MAX_IN_FLIGHT);
+  renderSetupSummary();
 }
 
 function updateApiKeyVisibilityUi() {
@@ -1771,8 +1858,16 @@ function currentPresetLabel(presetId: ProviderPresetId): string {
   return t(`preset_${presetId}`);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function currentModelValue(): string {
   return modelInput.value === CUSTOM_MODEL_VALUE ? customModelInput.value.trim() : modelInput.value.trim();
+}
+
+function qaModeLabel(qaMode: string | null | undefined): string {
+  return qaMode === "cot" ? t("qa_mode_cot") : t("qa_mode_normal");
 }
 
 function syncProviderFieldVisibility(presetId: ProviderPresetId) {
@@ -1829,6 +1924,59 @@ function detectProviderPreset(fields: {
   }
 
   return "custom";
+}
+
+function migrateLegacyStubRequest(request: PipelineFormRequest): PipelineFormRequest {
+  const presetId = detectProviderPreset({
+    provider: request.provider,
+    baseUrl: request.baseUrl
+  });
+  if (request.provider !== "stub" && presetId !== "stub_local") {
+    return request;
+  }
+
+  const preset = PROVIDER_PRESETS[FALLBACK_REAL_PROVIDER_PRESET];
+  return {
+    ...request,
+    provider: preset.provider,
+    model: preset.defaultModel,
+    baseUrl: preset.baseUrl,
+    apiKey: null,
+    batchSize: preset.batchSize,
+    maxInFlight: preset.maxInFlight,
+    requestTimeoutSecs: preset.requestTimeoutSecs
+  };
+}
+
+function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRequest {
+  if (request.qaMode !== "cot") {
+    return request;
+  }
+
+  const nextTargetCount = Math.min(request.targetCount || DEFAULT_COT_TARGET_COUNT, DEFAULT_COT_TARGET_COUNT);
+  const nextShardSize = Math.min(
+    Math.max(request.shardSize || DEFAULT_COT_SHARD_SIZE, 1),
+    DEFAULT_COT_SHARD_SIZE
+  );
+  const nextBatchSize = DEFAULT_COT_BATCH_SIZE;
+  const nextMaxInFlight = DEFAULT_COT_MAX_IN_FLIGHT;
+
+  if (
+    nextTargetCount === request.targetCount &&
+    nextShardSize === request.shardSize &&
+    nextBatchSize === request.batchSize &&
+    nextMaxInFlight === request.maxInFlight
+  ) {
+    return request;
+  }
+
+  return {
+    ...request,
+    targetCount: nextTargetCount,
+    shardSize: nextShardSize,
+    batchSize: nextBatchSize,
+    maxInFlight: nextMaxInFlight
+  };
 }
 
 function syncProviderPresetInput() {
@@ -1971,6 +2119,31 @@ function truncateText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
+function parseCotAnswerSections(answer: string): Array<{ label: string; value: string }> {
+  const headingPattern = COT_SECTION_CONFIG.map(({ heading }) => escapeRegExp(heading)).join("|");
+  const matcher = new RegExp(`^(${headingPattern})\\s*:\\s*`, "gm");
+  const matches = Array.from(answer.matchAll(matcher));
+  if (!matches.length) {
+    return [];
+  }
+
+  return matches
+    .map((match, index) => {
+      const heading = match[1];
+      const start = (match.index ?? 0) + match[0].length;
+      const end = index + 1 < matches.length ? (matches[index + 1].index ?? answer.length) : answer.length;
+      const value = answer.slice(start, end).trim();
+      const section = COT_SECTION_CONFIG.find((item) => item.heading === heading);
+      return section && value
+        ? {
+            label: t(section.translationKey),
+            value
+          }
+        : null;
+    })
+    .filter((section): section is { label: string; value: string } => Boolean(section));
+}
+
 function renderBrowseView() {
   if (browseView === "batches") {
     browseBackButton.hidden = true;
@@ -2098,8 +2271,10 @@ function renderBrowseDetail(): string {
   }
 
   const { batch, item } = browseDetailData;
+  const cotSections = item.qa_mode === "cot" ? parseCotAnswerSections(item.answer) : [];
   const cards = [
     { label: t("browse_batch_name"), value: batch.topicName || batch.name },
+    { label: t("browse_qa_mode"), value: qaModeLabel(item.qa_mode) },
     { label: t("browse_subtopic"), value: item.subtopic },
     { label: t("browse_axis"), value: item.axis },
     { label: t("browse_question_type"), value: item.question_type },
@@ -2110,17 +2285,21 @@ function renderBrowseDetail(): string {
     { label: t("browse_output_dir"), value: batch.outputDir, wide: true },
     { label: t("browse_prompt"), value: batch.prompt || t("empty_value"), wide: true },
     { label: t("browse_question"), value: item.question, wide: true },
-    { label: t("browse_answer"), value: item.answer, wide: true },
     { label: t("browse_source_type"), value: item.source_type },
     { label: t("browse_grounding"), value: item.grounding }
   ];
 
-  return `<div class="browse-detail">${cards
+  const answerCards =
+    cotSections.length > 0
+      ? cotSections.map(({ label, value }) => ({ label, value, wide: true, multiline: true }))
+      : [{ label: t("browse_answer"), value: item.answer, wide: true, multiline: true }];
+
+  return `<div class="browse-detail">${[...cards, ...answerCards]
     .map(
-      ({ label, value, wide }) => `
+      ({ label, value, wide, multiline }) => `
         <article class="result-card${wide ? " wide" : ""}">
           <p class="result-card-label">${escapeHtml(label)}</p>
-          <p class="result-card-value">${escapeHtml(displayValue(value))}</p>
+          <p class="result-card-value${multiline ? " multiline" : ""}">${escapeHtml(displayValue(value))}</p>
         </article>
       `
     )
@@ -2387,6 +2566,10 @@ function applyTranslations() {
   setText("topic-prompt-label", t("topic_prompt"));
   setText("topic-tags-label", t("topic_tags"));
   setText("topic-tags-hint", t("topic_tags_hint"));
+  setText("qa-mode-label", t("qa_mode"));
+  setText("qa-mode-hint", t("qa_mode_hint"));
+  setText("qa-mode-normal-label", t("qa_mode_normal"));
+  setText("qa-mode-cot-label", t("qa_mode_cot"));
   setText("selected-tags-label", t("selected_tags"));
   setText("quick-tags-label", t("quick_tags"));
   setText("open-topic-field-selector", t("topic_field_selector"));
@@ -2513,6 +2696,7 @@ function collectRequest() {
   const request: PipelineFormRequest = {
     prompt: promptInput.value.trim(),
     topicTags: [...topicTags],
+    qaMode: currentQaMode(),
     targetCount: readNumber(targetCountInput),
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
@@ -2559,6 +2743,8 @@ function validateRequest(request: PipelineFormRequest): ValidationIssueKey[] {
 function applyRequest(request: PipelineFormRequest) {
   promptInput.value = request.prompt;
   topicTags = [...request.topicTags];
+  qaModeNormalInput.checked = (request.qaMode ?? "normal") !== "cot";
+  qaModeCotInput.checked = (request.qaMode ?? "normal") === "cot";
   targetCountInput.value = String(request.targetCount);
   planLimitInput.value = String(request.planLimit);
   providerInput.value = request.provider;
@@ -2633,7 +2819,21 @@ async function loadConfig(auto = false) {
     if (!request) {
       return;
     }
-    applyRequest(request);
+    const stubMigratedRequest = migrateLegacyStubRequest(request);
+    const normalizedRequest = normalizeLoadedCotRequest(stubMigratedRequest);
+    applyRequest(normalizedRequest);
+    if (normalizedRequest !== request) {
+      if (stubMigratedRequest !== request) {
+        appendLog(t("log_stub_migrated"));
+      }
+      if (normalizedRequest !== stubMigratedRequest) {
+        appendLog(t("log_cot_runtime_normalized"));
+      }
+      await invoke("save_local_pipeline_config", {
+        profileName: DEFAULT_PROFILE_NAME,
+        request: normalizedRequest
+      });
+    }
     appendLog(
       formatMessage(
         auto ? "log_loaded_startup_profile" : "log_loaded_manual_profile",
@@ -2758,6 +2958,16 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !topicFieldModal.hidden) {
     closeTopicFieldModal();
   }
+});
+
+qaModeNormalInput.addEventListener("change", () => {
+  scheduleAutoSave();
+});
+qaModeCotInput.addEventListener("change", () => {
+  if (qaModeCotInput.checked) {
+    applyQaModeDefaults("cot");
+  }
+  scheduleAutoSave();
 });
 
 providerPresetInput.addEventListener("change", () => {

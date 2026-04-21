@@ -114,6 +114,7 @@ pub async fn generate_to_directory(
         request_count,
         provider: config.provider.provider.clone(),
         model: config.provider.model.clone(),
+        qa_mode: config.qa_mode.clone(),
     };
 
     let summary_path = output_dir.join("summary.json");
@@ -228,6 +229,7 @@ async fn run_batch_request(
             grounding: draft.grounding.unwrap_or_else(|| "derived".to_string()),
             provider: config.provider.provider.clone(),
             model: config.provider.model.clone(),
+            qa_mode: config.qa_mode.clone(),
         })
         .collect();
 
@@ -283,8 +285,8 @@ async fn generate_batch_openai_compatible(
         .ok_or_else(|| anyhow!("base_url is required for openai-compatible provider"))?;
 
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let system_prompt = "You generate training QA data. Return valid JSON only.";
-    let user_prompt = build_user_prompt(topic, plan, count);
+    let system_prompt = "You generate training QA data. Reply with exactly one valid JSON object and no other text. Do not use markdown fences.";
+    let user_prompt = build_user_prompt(topic, plan, config, count);
 
     let response = client
         .post(url)
@@ -334,11 +336,13 @@ fn parse_model_json(content: &str, expected_count: usize) -> Result<Vec<DraftQa>
 }
 
 fn extract_json_object(content: &str) -> Result<serde_json::Value> {
-    if let Ok(value) = serde_json::from_str(content) {
+    let trimmed = content.trim();
+
+    if let Ok(value) = serde_json::from_str(trimmed) {
         return Ok(value);
     }
 
-    let fenced = content
+    let fenced = trimmed
         .split("```")
         .find_map(|segment| {
             let trimmed = segment.trim();
@@ -355,15 +359,116 @@ fn extract_json_object(content: &str) -> Result<serde_json::Value> {
                 None
             }
         })
-        .ok_or_else(|| anyhow!("failed to locate JSON object in model response"))?;
+        .ok_or_else(|| anyhow!("failed to locate fenced JSON object in model response"));
 
-    Ok(serde_json::from_str(fenced)?)
+    if let Ok(fenced_json) = fenced.and_then(|json| serde_json::from_str(json).map_err(anyhow::Error::from)) {
+        return Ok(fenced_json);
+    }
+
+    extract_balanced_json_object(trimmed)
 }
 
-fn build_user_prompt(topic: &TopicSpec, plan: &QuestionPlan, count: usize) -> String {
+fn extract_balanced_json_object(content: &str) -> Result<serde_json::Value> {
+    let bytes = content.as_bytes();
+    let mut start = None;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (idx, byte) in bytes.iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+
+            match byte {
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match byte {
+            b'"' => in_string = true,
+            b'{' => {
+                if depth == 0 {
+                    start = Some(idx);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                if depth == 0 {
+                    continue;
+                }
+
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(begin) = start {
+                        let candidate = &content[begin..=idx];
+                        if let Ok(value) = serde_json::from_str(candidate) {
+                            return Ok(value);
+                        }
+                        start = None;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err(anyhow!("failed to locate JSON object in model response"))
+}
+
+fn build_user_prompt(
+    topic: &TopicSpec,
+    plan: &QuestionPlan,
+    config: &GenerateConfig,
+    count: usize,
+) -> String {
+    if config.qa_mode == "cot" {
+        return build_cot_user_prompt(topic, plan, count);
+    }
+
+    build_normal_user_prompt(topic, plan, config, count)
+}
+
+fn build_normal_user_prompt(
+    topic: &TopicSpec,
+    plan: &QuestionPlan,
+    config: &GenerateConfig,
+    count: usize,
+) -> String {
+    let topic_keywords = topic.keywords.join(", ");
+    let evidence_context = config
+        .supporting_context
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("\nLiterature evidence context:\n{value}\n"))
+        .unwrap_or_default();
+    format!(
+        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}{evidence_context}\nGenerate {count} diverse QA pairs as JSON with this schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nRules:\n- Every question must stay tightly within the exact research topic and the selected subtopic.\n- Each QA pair must mention or strongly imply at least two topic-specific concepts from this set: {topic_keywords}.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Keep questions meaningfully distinct from each other.\n- Answers should be concise, informative, and directly answer the question without tutorial padding.\n- If literature evidence context is provided, prefer claims that are aligned with that evidence; do not fabricate citations.\n- Emphasize the most central concepts explicitly present in the topic instead of drifting into generic background facts.\n- Do not include markdown fences or commentary.\n- Return JSON only.",
+        topic = topic.topic_name,
+        goal = topic.goal,
+        intent = topic.user_intent,
+        topic_keywords = topic_keywords,
+        subtopic = plan.subtopic,
+        subtopic_intent = infer_subtopic_intent(topic, plan),
+        axis = plan.axis,
+        question_type = plan.question_type,
+        difficulty = plan.difficulty,
+        audience = plan.audience,
+        evidence_context = evidence_context,
+        count = count
+    )
+}
+
+fn build_cot_user_prompt(topic: &TopicSpec, plan: &QuestionPlan, count: usize) -> String {
     let topic_keywords = topic.keywords.join(", ");
     format!(
-        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}\n\nGenerate {count} diverse QA pairs as JSON with this schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nRules:\n- Every question must explicitly stay within the exact topic, not generic crop breeding trivia.\n- Each QA pair must mention or strongly imply at least two topic-specific concepts from this set: {topic_keywords}.\n- At least half of the questions should directly mention either planting density, seed oil, seed protein, or breeding strategy when those concepts are present in the topic.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Keep questions meaningfully distinct from each other.\n- Answers should be concise, informative, and tied to the same topic scope as the question.\n- Avoid broad soybean facts unless they are clearly connected to the topic above.\n- Do not include markdown fences or commentary.\n- Return JSON only.",
+        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}\n\nGenerate {count} research-oriented QA pairs as JSON with this exact top-level schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nHard output requirements:\n- Return exactly one JSON object.\n- The first character of your response must be `{{` and the last character must be `}}`.\n- Do not include markdown fences, explanations, comments, or any text before or after the JSON object.\n- Every `answer` value must be a JSON string. If you need line breaks, encode them inside the string as `\\n`.\n- Do not add any extra top-level keys besides `items`.\n\nTask intent:\n- The question should read like a real agricultural life science or breeding research problem.\n- The answer must be a compact CoT-style research planning response for scientists, not a casual explanation.\n\nAnswer format rules:\n- The answer must be plain text with these section headers in order:\n  1. Workflow Summary:\n  2. Reference Milestones:\n  3. Reference Steps:\n  4. Step Rationale:\n  5. Decision Points:\n  6. Quality Checks:\n  7. Failure Modes:\n  8. Final Interpretation:\n- Keep the response compact, analyst-facing, and free of code or software installation notes.\n- `Reference Milestones`, `Reference Steps`, and `Step Rationale` should each contain 3 to 5 short numbered items.\n- `Decision Points` and `Quality Checks` should each contain 2 to 4 short bullet items.\n- `Failure Modes` should contain 3 to 5 short bullet items.\n- The workflow should reflect agricultural life science, crop improvement, plant biology, breeding, omics, field trials, phenotyping, or related research logic whenever appropriate.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Make the answer decision-aware: explain what must be judged, what quality signals matter, and what common failures would invalidate interpretation.\n- Avoid generic textbook prose; write like a senior research workflow planner.\n- Return valid JSON only.",
         topic = topic.topic_name,
         goal = topic.goal,
         intent = topic.user_intent,
