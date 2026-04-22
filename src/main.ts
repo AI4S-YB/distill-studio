@@ -1051,6 +1051,10 @@ const translations: Record<Lang, Record<string, string>> = {
     managed_run_mode_hint: "新建任务会创建新的输出目录；继续当前任务会复用最近一次同主题、同 QA 模式、同模型配置的任务目录，并接着已有 shard 继续跑。",
     managed_run_mode_exact_hint: "当前将继续指定历史任务：{value}",
     managed_run_mode_clear: "取消继续，改为新任务",
+    managed_run_mode_pick_label: "选择历史任务",
+    managed_run_mode_pick_placeholder: "选择一个历史任务继续",
+    managed_run_mode_pick_empty: "暂无可继续的历史任务",
+    managed_run_mode_pick_hint: "如果要精确接着某个旧任务继续生成，可以直接在这里选择。",
     log_resuming_latest_task: "已切换为继续当前任务模式，将优先复用最近一次匹配任务。",
     log_loaded_batch_task: "已载入历史任务，运行时将继续这个指定批次。",
     log_cleared_batch_task: "已取消指定历史任务续跑，后续运行将新建任务。",
@@ -1408,6 +1412,10 @@ const translations: Record<Lang, Record<string, string>> = {
     managed_run_mode_hint: "New Run creates a fresh output directory. Continue Current Run reuses the most recent matching task directory with the same topic, QA mode, and model configuration, then resumes from existing shards.",
     managed_run_mode_exact_hint: "Currently continuing this saved task: {value}",
     managed_run_mode_clear: "Cancel and Start New Run",
+    managed_run_mode_pick_label: "Pick History Run",
+    managed_run_mode_pick_placeholder: "Choose a historical run to continue",
+    managed_run_mode_pick_empty: "No resumable historical runs yet",
+    managed_run_mode_pick_hint: "Use this when you want to continue one exact historical run instead of only the latest match.",
     log_resuming_latest_task: "Switched to continue-current-run mode. The app will try to reuse the latest matching task.",
     log_loaded_batch_task: "Loaded a historical task. Running will continue this exact batch.",
     log_cleared_batch_task: "Cleared the specific historical resume target. Future runs will create a new task.",
@@ -1742,6 +1750,11 @@ app.innerHTML = `
               </label>
             </div>
             <p class="field-hint" id="managed-run-mode-hint"></p>
+            <label class="managed-run-picker">
+              <span id="managed-run-pick-label">Pick History Run</span>
+              <select id="managed-run-pick"></select>
+              <small class="field-hint" id="managed-run-pick-hint"></small>
+            </label>
             <div class="managed-run-banner" id="managed-run-banner" hidden>
               <p class="field-hint managed-run-banner-copy" id="managed-run-mode-current"></p>
               <button id="clear-managed-resume-batch" type="button">Start as New Run</button>
@@ -2023,6 +2036,7 @@ const managedRunModeCurrent = document.querySelector<HTMLElement>("#managed-run-
 const clearManagedResumeBatchButton = document.querySelector<HTMLButtonElement>(
   "#clear-managed-resume-batch"
 );
+const managedRunPickInput = document.querySelector<HTMLSelectElement>("#managed-run-pick");
 const output = document.querySelector<HTMLElement>("#output");
 const resultMode = document.querySelector<HTMLElement>("#result-mode");
 const resultCards = document.querySelector<HTMLElement>("#result-cards");
@@ -2098,6 +2112,7 @@ if (
   !managedRunBanner ||
   !managedRunModeCurrent ||
   !clearManagedResumeBatchButton ||
+  !managedRunPickInput ||
   !output ||
   !resultMode ||
   !resultCards ||
@@ -3387,6 +3402,7 @@ async function loadBrowseBatches() {
     appendLog(`Browse QA failed: ${String(error)}`);
   } finally {
     browseLoading = false;
+    renderManagedRunPicker();
     renderBrowseView();
   }
 }
@@ -3594,6 +3610,8 @@ function applyTranslations() {
   setText("managed-run-mode-new-label", t("managed_run_mode_new"));
   setText("managed-run-mode-resume-latest-label", t("managed_run_mode_resume_latest"));
   setText("managed-run-mode-hint", t("managed_run_mode_hint"));
+  setText("managed-run-pick-label", t("managed_run_mode_pick_label"));
+  setText("managed-run-pick-hint", t("managed_run_mode_pick_hint"));
   syncManagedRunModeUi();
   setText("topic-prompt-label", t("topic_prompt"));
   setText("topic-tags-label", t("topic_tags"));
@@ -3762,6 +3780,29 @@ function syncManagedRunModeUi() {
     ? formatMessage("managed_run_mode_exact_hint", managedResumeBatchLabel ?? managedResumeBatchId)
     : "";
   clearManagedResumeBatchButton.textContent = t("managed_run_mode_clear");
+  renderManagedRunPicker();
+}
+
+function renderManagedRunPicker() {
+  const options = [
+    {
+      value: "",
+      label: browseBatches.length ? t("managed_run_mode_pick_placeholder") : t("managed_run_mode_pick_empty")
+    },
+    ...browseBatches.map((batch) => ({
+      value: batch.id,
+      label: `${batch.topicName || batch.name} · ${formatUpdatedAt(batch.updatedAtMs)}`
+    }))
+  ];
+
+  managedRunPickInput.innerHTML = options
+    .map(
+      ({ value, label }) =>
+        `<option value="${escapeHtml(value)}"${value === "" ? "" : ""}>${escapeHtml(label)}</option>`
+    )
+    .join("");
+  managedRunPickInput.value = managedResumeBatchId ?? "";
+  managedRunPickInput.disabled = currentStatus === "running" || currentStatus === "stopping" || browseBatches.length === 0;
 }
 
 function clearManagedResumeBatch(logChange = false) {
@@ -4573,6 +4614,15 @@ managedRunModeResumeLatestInput.addEventListener("change", () => {
   syncManagedRunModeUi();
   syncRuntimeParameterControlStates();
   scheduleAutoSave();
+});
+
+managedRunPickInput.addEventListener("change", () => {
+  const batchId = managedRunPickInput.value;
+  if (!batchId) {
+    return;
+  }
+
+  void resumeBrowseBatch(batchId);
 });
 
 clearManagedResumeBatchButton.addEventListener("click", () => {

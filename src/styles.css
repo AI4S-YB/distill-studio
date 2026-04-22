@@ -762,6 +762,12 @@ pre {
   gap: 10px;
 }
 
+.managed-run-picker {
+  gap: 8px;
+  padding: 12px 14px;
+  background: #ffffff;
+}
+
 .managed-run-banner {
   display: flex;
   align-items: center;
