@@ -2,13 +2,19 @@ use anyhow::Context;
 use distill_core::{
     bootstrap_topic, default_pack_config, default_qa_mode, draft_question_plans, pack_qa_records,
     GenerateConfig, GenerateSummary, GeneratedQa, PackConfig, PackedDataset, ProviderConfig,
-    QaShard, RuntimeConfig, TopicSpec,
+    QaShard, QuestionPlan, RuntimeConfig, TopicSpec,
 };
-use distill_runtime::generate_to_directory;
+use distill_runtime::{
+    generate_to_directory_with_progress, RuntimeProgress, RuntimeProgressKind,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
@@ -43,6 +49,10 @@ struct PipelineRequest {
     max_retries: u32,
     request_timeout_secs: u64,
     resume: bool,
+    #[serde(default = "default_managed_run_mode")]
+    managed_run_mode: String,
+    #[serde(default)]
+    managed_run_batch_id: Option<String>,
     #[serde(default)]
     qa_upload_url: Option<String>,
     #[serde(default)]
@@ -66,6 +76,10 @@ struct PipelineResponse {
     pack_summary_path: String,
 }
 
+fn default_managed_run_mode() -> String {
+    "new".to_string()
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PipelineProgressEvent {
@@ -74,6 +88,26 @@ struct PipelineProgressEvent {
     message: String,
     current_step: usize,
     total_steps: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runtime_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_attempt: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shard_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shard_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shard_item_completed: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shard_item_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_generated: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,8 +124,16 @@ struct QaBatchSummary {
     name: String,
     topic_name: String,
     prompt: String,
+    qa_mode: Option<String>,
+    target_count: Option<usize>,
+    generated_count: usize,
     kept_count: usize,
     total_count: usize,
+    shard_count: Option<usize>,
+    completed_shards: usize,
+    skipped_shards: usize,
+    request_count: Option<usize>,
+    status: String,
     provider: Option<String>,
     model: Option<String>,
     output_dir: String,
@@ -169,9 +211,30 @@ struct AppUpdateProgressEvent {
     message: String,
 }
 
+#[derive(Default)]
+struct ActivePipelineState {
+    cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
+}
+
 #[tauri::command]
 fn health_check() -> &'static str {
     "ok"
+}
+
+#[tauri::command]
+fn stop_pipeline(state: tauri::State<'_, ActivePipelineState>) -> Result<bool, String> {
+    let active_flag = state
+        .cancel_flag
+        .lock()
+        .map_err(|_| "failed to lock active pipeline state".to_string())?
+        .clone();
+
+    let Some(cancel_flag) = active_flag else {
+        return Ok(false);
+    };
+
+    cancel_flag.store(true, Ordering::Relaxed);
+    Ok(true)
 }
 
 fn normalize_runtime_for_qa_mode(
@@ -306,6 +369,103 @@ fn list_qa_batches(app: AppHandle) -> Result<Vec<QaBatchSummary>, String> {
     let mut batches = load_qa_batches(&app).map_err(error_to_string)?;
     batches.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
     Ok(batches)
+}
+
+#[tauri::command]
+fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<PipelineRequest, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let topic_path = batch_dir.join("topic.json");
+    let config_path = batch_dir.join("generate_config.json");
+    let plans_path = batch_dir.join("plans.json");
+
+    let topic = if topic_path.exists() {
+        Some(read_json::<TopicSpec>(&topic_path).map_err(error_to_string)?)
+    } else {
+        None
+    };
+    let config = if config_path.exists() {
+        Some(read_json::<GenerateConfig>(&config_path).map_err(error_to_string)?)
+    } else {
+        None
+    };
+    let plan_limit = if plans_path.exists() {
+        read_json::<Vec<QuestionPlan>>(&plans_path)
+            .map(|plans| plans.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    let topic_name = topic
+        .as_ref()
+        .map(|value| value.topic_name.clone())
+        .unwrap_or_else(|| {
+            batch_dir
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("qa-batch")
+                .to_string()
+        });
+    let prompt = topic
+        .as_ref()
+        .map(|value| value.user_intent.clone())
+        .unwrap_or_else(|| topic_name.clone());
+
+    let target_count = topic
+        .as_ref()
+        .map(|value| value.target_count)
+        .or_else(|| config.as_ref().map(|value| value.runtime.target_count as u32))
+        .unwrap_or(10);
+
+    let config = config.unwrap_or_else(|| GenerateConfig {
+        provider: ProviderConfig {
+            provider: "openai-compatible".to_string(),
+            model: "".to_string(),
+            base_url: None,
+            api_key: None,
+            api_key_env: None,
+            temperature: 0.8,
+            max_tokens: 800,
+        },
+        runtime: RuntimeConfig {
+            target_count: target_count as usize,
+            shard_size: 10,
+            batch_size: 1,
+            max_in_flight: 1,
+            max_retries: 3,
+            request_timeout_secs: 180,
+            resume: true,
+        },
+        qa_mode: default_qa_mode(),
+        supporting_context: None,
+    });
+
+    Ok(PipelineRequest {
+        prompt,
+        topic_tags: Vec::new(),
+        qa_mode: config.qa_mode,
+        target_count,
+        plan_limit: plan_limit.max(1),
+        output_dir: "__managed__".to_string(),
+        provider: config.provider.provider,
+        model: config.provider.model,
+        base_url: config.provider.base_url,
+        api_key: None,
+        api_key_env: None,
+        temperature: config.provider.temperature,
+        max_tokens: config.provider.max_tokens,
+        shard_size: config.runtime.shard_size,
+        batch_size: config.runtime.batch_size,
+        max_in_flight: config.runtime.max_in_flight,
+        max_retries: config.runtime.max_retries,
+        request_timeout_secs: config.runtime.request_timeout_secs,
+        resume: true,
+        managed_run_mode: "resume-batch".to_string(),
+        managed_run_batch_id: Some(batch_id),
+        qa_upload_url: None,
+        literature_api_url: None,
+        literature_api_auth_token: None,
+    })
 }
 
 #[tauri::command]
@@ -613,7 +773,37 @@ async fn install_app_update(app: AppHandle, window: Window) -> Result<(), String
 async fn run_pipeline(
     app: AppHandle,
     window: Window,
+    state: tauri::State<'_, ActivePipelineState>,
     request: PipelineRequest,
+) -> Result<PipelineResponse, String> {
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut active_flag = state
+            .cancel_flag
+            .lock()
+            .map_err(|_| "failed to lock active pipeline state".to_string())?;
+        if active_flag.is_some() {
+            return Err("pipeline is already running".to_string());
+        }
+        *active_flag = Some(cancel_flag.clone());
+    }
+
+    let result = run_pipeline_inner(app, window, request, cancel_flag).await;
+
+    let mut active_flag = state
+        .cancel_flag
+        .lock()
+        .map_err(|_| "failed to lock active pipeline state".to_string())?;
+    *active_flag = None;
+
+    result
+}
+
+async fn run_pipeline_inner(
+    app: AppHandle,
+    window: Window,
+    request: PipelineRequest,
+    cancel_flag: Arc<AtomicBool>,
 ) -> Result<PipelineResponse, String> {
     let total_steps = 5usize;
     emit_pipeline_event(
@@ -645,6 +835,38 @@ async fn run_pipeline(
         total_steps,
     );
 
+    let (output_dir, reused_existing_output) =
+        if request.output_dir.trim() == "__managed__" || request.output_dir.trim().is_empty() {
+            if request.managed_run_mode == "resume-batch" {
+                let batch_id = request
+                    .managed_run_batch_id
+                    .as_deref()
+                    .ok_or_else(|| "managed_run_batch_id is required for resume-batch".to_string())?;
+                (resolve_batch_dir(&app, batch_id).map_err(error_to_string)?, true)
+            } else if request.managed_run_mode == "resume-latest" {
+                if let Some(existing_dir) =
+                    find_latest_matching_batch_dir(&app, &request).map_err(error_to_string)?
+                {
+                    (existing_dir, true)
+                } else {
+                    (
+                        next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?,
+                        false,
+                    )
+                }
+            } else {
+                (
+                    next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?,
+                    false,
+                )
+            }
+    } else {
+            (
+                resolve_app_relative_path(&app, &request.output_dir).map_err(error_to_string)?,
+                false,
+            )
+        };
+
     let config = GenerateConfig {
         provider: ProviderConfig {
             provider: request.provider,
@@ -668,12 +890,6 @@ async fn run_pipeline(
         qa_mode: request.qa_mode.clone(),
         supporting_context: None,
     };
-
-    let output_dir = if request.output_dir.trim() == "__managed__" || request.output_dir.trim().is_empty() {
-        next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?
-    } else {
-        resolve_app_relative_path(&app, &request.output_dir).map_err(error_to_string)?
-    };
     let generated_dir = output_dir.join("generated");
     let topic_path = output_dir.join("topic.json");
     let plans_path = output_dir.join("plans.json");
@@ -690,7 +906,14 @@ async fn run_pipeline(
         &window,
         "write-config",
         "completed",
-        &format!("Wrote topic, plans, and config into {}.", output_dir.display()),
+        &if reused_existing_output {
+            format!(
+                "Continuing existing task. Wrote topic, plans, and config into {}.",
+                output_dir.display()
+            )
+        } else {
+            format!("Wrote topic, plans, and config into {}.", output_dir.display())
+        },
         3,
         total_steps,
     );
@@ -706,9 +929,32 @@ async fn run_pipeline(
         3,
         total_steps,
     );
-    let generated_summary = generate_to_directory(&topic, &plans, &config, &generated_dir)
-        .await
-        .map_err(error_to_string)?;
+    let progress_window = window.clone();
+    let progress_callback = move |event: RuntimeProgress| {
+        emit_runtime_progress_event(&progress_window, &event, total_steps);
+    };
+    let generated_summary = generate_to_directory_with_progress(
+        &topic,
+        &plans,
+        &config,
+        &generated_dir,
+        Some(&progress_callback),
+        Some(cancel_flag.as_ref()),
+    )
+    .await
+    .map_err(|error| {
+        if is_pipeline_cancelled_error(&error) {
+            emit_pipeline_event(
+                &window,
+                "generate",
+                "cancelled",
+                "Pipeline stop requested. Generation was cancelled before packing.",
+                3,
+                total_steps,
+            );
+        }
+        error_to_string(error)
+    })?;
     emit_pipeline_event(
         &window,
         "generate",
@@ -829,7 +1075,13 @@ fn load_batch_records(batch_dir: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
         return Ok(packed.items);
     }
 
-    anyhow::bail!("dataset.jsonl not found in {}", batch_dir.display());
+    let generated_dir = batch_dir.join("generated");
+    if generated_dir.exists() {
+        let (_, records) = load_generated_records(&generated_dir)?;
+        return Ok(records);
+    }
+
+    anyhow::bail!("no QA records found in {}", batch_dir.display());
 }
 
 fn read_jsonl_records(path: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
@@ -866,7 +1118,10 @@ fn load_qa_batches(app: &AppHandle) -> anyhow::Result<Vec<QaBatchSummary>> {
         if !path.is_dir() {
             continue;
         }
-        if path.join("dataset.jsonl").exists() || path.join("pack_summary.json").exists() {
+        if path.join("dataset.jsonl").exists()
+            || path.join("pack_summary.json").exists()
+            || has_generated_shards(&path)
+        {
             if let Ok(summary) = build_qa_batch_summary(app, &path) {
                 batches.push(summary);
             }
@@ -874,6 +1129,31 @@ fn load_qa_batches(app: &AppHandle) -> anyhow::Result<Vec<QaBatchSummary>> {
     }
 
     Ok(batches)
+}
+
+fn normalize_prompt_for_match(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn find_latest_matching_batch_dir(
+    app: &AppHandle,
+    request: &PipelineRequest,
+) -> anyhow::Result<Option<PathBuf>> {
+    let normalized_prompt = normalize_prompt_for_match(&request.prompt);
+    let mut matches = load_qa_batches(app)?
+        .into_iter()
+        .filter(|batch| normalize_prompt_for_match(&batch.prompt) == normalized_prompt)
+        .filter(|batch| batch.qa_mode.as_deref().unwrap_or("normal") == request.qa_mode)
+        .filter(|batch| batch.provider.as_deref().unwrap_or_default() == request.provider)
+        .filter(|batch| batch.model.as_deref().unwrap_or_default() == request.model)
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|left, right| right.updated_at_ms.cmp(&left.updated_at_ms));
+
+    Ok(matches
+        .into_iter()
+        .next()
+        .map(|batch| PathBuf::from(batch.output_dir)))
 }
 
 fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<QaBatchSummary> {
@@ -889,6 +1169,8 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
     let config_path = batch_dir.join("generate_config.json");
     let pack_summary_path = batch_dir.join("pack_summary.json");
     let dataset_path = batch_dir.join("dataset.jsonl");
+    let generated_dir = batch_dir.join("generated");
+    let generated_summary_path = generated_dir.join("summary.json");
 
     let topic = if topic_path.exists() {
         Some(read_json::<TopicSpec>(&topic_path)?)
@@ -905,25 +1187,61 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
     } else {
         None
     };
+    let generated_summary = if generated_summary_path.exists() {
+        Some(read_json::<GenerateSummary>(&generated_summary_path)?)
+    } else {
+        None
+    };
+    let generated_records = if generated_dir.exists() {
+        Some(load_generated_records(&generated_dir)?.1)
+    } else {
+        None
+    };
+
+    let generated_count = if let Some(summary) = &generated_summary {
+        summary.generated_count
+    } else if let Some(records) = &generated_records {
+        records.len()
+    } else {
+        0
+    };
 
     let total_count = if let Some(summary) = &pack_summary {
         summary.total_input
     } else if dataset_path.exists() {
         read_jsonl_records(&dataset_path)?.len()
     } else {
-        0
+        generated_count
     };
     let kept_count = pack_summary
         .as_ref()
         .map(|summary| summary.kept)
         .unwrap_or(total_count);
+    let status = if pack_summary_path.exists() || dataset_path.exists() {
+        "completed".to_string()
+    } else if generated_count > 0 {
+        if generated_summary
+            .as_ref()
+            .is_some_and(|summary| summary.completed_shards >= summary.shard_count)
+        {
+            "generated".to_string()
+        } else {
+            "running".to_string()
+        }
+    } else {
+        "prepared".to_string()
+    };
 
     let updated_at_ms = latest_modified_ms(&[
         dataset_path.as_path(),
         pack_summary_path.as_path(),
         topic_path.as_path(),
         config_path.as_path(),
-    ]);
+        generated_summary_path.as_path(),
+    ])
+    .into_iter()
+    .chain(latest_modified_ms_in_dir(&generated_dir))
+    .max();
 
     Ok(QaBatchSummary {
         id,
@@ -937,8 +1255,22 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
             .as_ref()
             .map(|value| value.user_intent.clone())
             .unwrap_or_default(),
+        qa_mode: config.as_ref().map(|value| value.qa_mode.clone()),
+        target_count: config.as_ref().map(|value| value.runtime.target_count),
+        generated_count,
         kept_count,
         total_count,
+        shard_count: generated_summary.as_ref().map(|value| value.shard_count),
+        completed_shards: generated_summary
+            .as_ref()
+            .map(|value| value.completed_shards)
+            .unwrap_or(0),
+        skipped_shards: generated_summary
+            .as_ref()
+            .map(|value| value.skipped_shards)
+            .unwrap_or(0),
+        request_count: generated_summary.as_ref().map(|value| value.request_count),
+        status,
         provider: config.as_ref().map(|value| value.provider.provider.clone()),
         model: config.as_ref().map(|value| value.provider.model.clone()),
         output_dir: batch_dir.display().to_string(),
@@ -971,6 +1303,39 @@ fn latest_modified_ms(paths: &[&Path]) -> Option<u64> {
         .filter_map(|metadata| metadata.modified().ok())
         .filter_map(system_time_to_ms)
         .max()
+}
+
+fn latest_modified_ms_in_dir(path: &Path) -> Option<u64> {
+    if !path.exists() {
+        return None;
+    }
+
+    fs::read_dir(path)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|value| value.path()))
+        .filter_map(|entry_path| fs::metadata(entry_path).ok())
+        .filter_map(|metadata| metadata.modified().ok())
+        .filter_map(system_time_to_ms)
+        .max()
+}
+
+fn has_generated_shards(batch_dir: &Path) -> bool {
+    let generated_dir = batch_dir.join("generated");
+    if !generated_dir.exists() {
+        return false;
+    }
+
+    fs::read_dir(generated_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(|entry| entry.ok().map(|value| value.path())))
+        .any(|path| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| {
+                    name.starts_with("shard_") && path.extension().and_then(|ext| ext.to_str()) == Some("json")
+                })
+        })
 }
 
 fn system_time_to_ms(time: SystemTime) -> Option<u64> {
@@ -1219,8 +1584,122 @@ fn emit_pipeline_event(
             message: message.to_string(),
             current_step,
             total_steps,
+            runtime_kind: None,
+            retry_attempt: None,
+            retry_limit: None,
+            error_message: None,
+            shard_index: None,
+            shard_count: None,
+            shard_item_completed: None,
+            shard_item_total: None,
+            total_generated: None,
+            target_count: None,
         },
     );
+}
+
+fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_steps: usize) {
+    let (status, message) = match event.kind {
+        RuntimeProgressKind::ShardStarted => (
+            "running",
+            format!(
+                "Generating shard {}/{} (target {} items).",
+                event.shard_index,
+                event.shard_count,
+                event.shard_item_total.unwrap_or(0)
+            ),
+        ),
+        RuntimeProgressKind::ShardSkipped => (
+            "completed",
+            format!(
+                "Skipped existing shard {}/{} ({} items already available).",
+                event.shard_index,
+                event.shard_count,
+                event.shard_item_completed.unwrap_or(0)
+            ),
+        ),
+        RuntimeProgressKind::BatchCompleted => (
+            "running",
+            format!(
+                "Shard {}/{} progress: {}/{} · total {}/{}.",
+                event.shard_index,
+                event.shard_count,
+                event.shard_item_completed.unwrap_or(0),
+                event.shard_item_total.unwrap_or(0),
+                event.total_generated.unwrap_or(0),
+                event.target_count.unwrap_or(0)
+            ),
+        ),
+        RuntimeProgressKind::ShardCompleted => (
+            "completed",
+            format!(
+                "Shard {}/{} completed: {}/{} · total {}/{}.",
+                event.shard_index,
+                event.shard_count,
+                event.shard_item_completed.unwrap_or(0),
+                event.shard_item_total.unwrap_or(0),
+                event.total_generated.unwrap_or(0),
+                event.target_count.unwrap_or(0)
+            ),
+        ),
+        RuntimeProgressKind::BatchRetry => (
+            "running",
+            format!(
+                "Shard {}/{} request retry {}/{} scheduled: {}",
+                event.shard_index,
+                event.shard_count,
+                event.retry_attempt.unwrap_or(0),
+                event.retry_limit.unwrap_or(0),
+                event.error_message.as_deref().unwrap_or("unknown error")
+            ),
+        ),
+        RuntimeProgressKind::BatchFailed => (
+            "failed",
+            format!(
+                "Shard {}/{} request failed after {}/{} retries: {}",
+                event.shard_index,
+                event.shard_count,
+                event.retry_attempt.unwrap_or(0),
+                event.retry_limit.unwrap_or(0),
+                event.error_message.as_deref().unwrap_or("unknown error")
+            ),
+        ),
+    };
+
+    let _ = window.emit(
+        "pipeline-progress",
+        PipelineProgressEvent {
+            stage: "generate".to_string(),
+            status: status.to_string(),
+            message,
+            current_step: 3,
+            total_steps,
+            runtime_kind: Some(
+                match event.kind {
+                    RuntimeProgressKind::ShardStarted => "shard_started",
+                    RuntimeProgressKind::ShardSkipped => "shard_skipped",
+                    RuntimeProgressKind::BatchCompleted => "batch_completed",
+                    RuntimeProgressKind::ShardCompleted => "shard_completed",
+                    RuntimeProgressKind::BatchRetry => "batch_retry",
+                    RuntimeProgressKind::BatchFailed => "batch_failed",
+                }
+                .to_string(),
+            ),
+            retry_attempt: event.retry_attempt,
+            retry_limit: event.retry_limit,
+            error_message: event.error_message.clone(),
+            shard_index: Some(event.shard_index),
+            shard_count: Some(event.shard_count),
+            shard_item_completed: event.shard_item_completed,
+            shard_item_total: event.shard_item_total,
+            total_generated: event.total_generated,
+            target_count: event.target_count,
+        },
+    );
+}
+
+fn is_pipeline_cancelled_error(error: &anyhow::Error) -> bool {
+    error.to_string().contains("pipeline canceled by user")
 }
 
 fn emit_app_update_event(window: &Window, stage: &str, status: &str, message: &str) {
@@ -1241,14 +1720,17 @@ pub fn run() {
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
             Ok(())
         })
+        .manage(ActivePipelineState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             health_check,
+            stop_pipeline,
             preview_topic_spec,
             save_local_pipeline_config,
             load_local_pipeline_config,
             list_local_pipeline_profiles,
             list_qa_batches,
+            load_batch_pipeline_request,
             delete_qa_batch,
             upload_qa_batch,
             list_batch_qa_records,

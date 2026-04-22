@@ -7,7 +7,10 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 
@@ -49,11 +52,48 @@ struct ChatMessage {
     content: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RuntimeProgressKind {
+    ShardStarted,
+    ShardSkipped,
+    BatchCompleted,
+    ShardCompleted,
+    BatchRetry,
+    BatchFailed,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeProgress {
+    pub kind: RuntimeProgressKind,
+    pub shard_index: usize,
+    pub shard_count: usize,
+    pub shard_item_completed: Option<usize>,
+    pub shard_item_total: Option<usize>,
+    pub total_generated: Option<usize>,
+    pub target_count: Option<usize>,
+    pub retry_attempt: Option<u32>,
+    pub retry_limit: Option<u32>,
+    pub error_message: Option<String>,
+}
+
+pub type RuntimeProgressCallback = dyn Fn(RuntimeProgress) + Send + Sync;
+
 pub async fn generate_to_directory(
     topic: &TopicSpec,
     plans: &[QuestionPlan],
     config: &GenerateConfig,
     output_dir: &Path,
+) -> Result<GenerateSummary> {
+    generate_to_directory_with_progress(topic, plans, config, output_dir, None, None).await
+}
+
+pub async fn generate_to_directory_with_progress(
+    topic: &TopicSpec,
+    plans: &[QuestionPlan],
+    config: &GenerateConfig,
+    output_dir: &Path,
+    progress: Option<&RuntimeProgressCallback>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<GenerateSummary> {
     if plans.is_empty() {
         return Err(anyhow!("question plans are empty"));
@@ -80,26 +120,85 @@ pub async fn generate_to_directory(
     let client = build_client(config)?;
 
     for shard_id in 0..shard_count {
+        check_canceled(cancel_flag)?;
+
         let shard_path = output_dir.join(format!("shard_{:04}.json", shard_id));
         let shard_target = shard_target_count(config, shard_id);
+        let shard_index = shard_id + 1;
+        emit_runtime_progress(
+            progress,
+            RuntimeProgress {
+                kind: RuntimeProgressKind::ShardStarted,
+                shard_index,
+                shard_count,
+                shard_item_completed: Some(0),
+                shard_item_total: Some(shard_target),
+                total_generated: Some(generated_count),
+                target_count: Some(config.runtime.target_count),
+                retry_attempt: None,
+                retry_limit: None,
+                error_message: None,
+            },
+        );
 
         if config.runtime.resume && tokio::fs::try_exists(&shard_path).await? {
             let existing = tokio::fs::read_to_string(&shard_path).await?;
             let shard: QaShard = serde_json::from_str(&existing)?;
             skipped_shards += 1;
             generated_count += shard.item_count;
+            emit_runtime_progress(
+                progress,
+                RuntimeProgress {
+                    kind: RuntimeProgressKind::ShardSkipped,
+                    shard_index,
+                    shard_count,
+                    shard_item_completed: Some(shard.item_count),
+                    shard_item_total: Some(shard_target),
+                    total_generated: Some(generated_count),
+                    target_count: Some(config.runtime.target_count),
+                    retry_attempt: None,
+                    retry_limit: None,
+                    error_message: None,
+                },
+            );
             continue;
         }
 
-        let shard = generate_one_shard(topic, plans, config, &client, shard_id, shard_target)
-            .await
-            .with_context(|| format!("failed generating shard {shard_id}"))?;
+        let shard = generate_one_shard(
+            topic,
+            plans,
+            config,
+            &client,
+            shard_id,
+            shard_count,
+            shard_target,
+            generated_count,
+            progress,
+            cancel_flag,
+        )
+        .await
+        .with_context(|| format!("failed generating shard {shard_id}"))?;
 
         request_count += shard.item_count.div_ceil(config.runtime.batch_size);
         generated_count += shard.item_count;
         completed_shards += 1;
 
         tokio::fs::write(&shard_path, serde_json::to_string_pretty(&shard)?).await?;
+        emit_runtime_progress(
+            progress,
+            RuntimeProgress {
+                kind: RuntimeProgressKind::ShardCompleted,
+                shard_index,
+                shard_count,
+                shard_item_completed: Some(shard.item_count),
+                shard_item_total: Some(shard_target),
+                total_generated: Some(generated_count),
+                target_count: Some(config.runtime.target_count),
+                retry_attempt: None,
+                retry_limit: None,
+                error_message: None,
+            },
+        );
     }
 
     let summary = GenerateSummary {
@@ -129,7 +228,11 @@ async fn generate_one_shard(
     config: &GenerateConfig,
     client: &reqwest::Client,
     shard_id: usize,
+    shard_count: usize,
     shard_target: usize,
+    generated_before_shard: usize,
+    progress: Option<&RuntimeProgressCallback>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<QaShard> {
     let start_index = shard_id * config.runtime.shard_size;
     let requests = build_batch_requests(plans, config, shard_id, shard_target);
@@ -137,19 +240,42 @@ async fn generate_one_shard(
     let mut inflight = FuturesUnordered::new();
 
     for request in requests {
+        check_canceled(cancel_flag)?;
         let permit = semaphore.clone().acquire_owned().await?;
+        check_canceled(cancel_flag)?;
         let client = client.clone();
         let topic = topic.clone();
         let config = config.clone();
-        inflight.push(tokio::spawn(async move {
+        let request = request.clone();
+        let progress = progress;
+        inflight.push(async move {
             let _permit = permit;
-            run_batch_request(&client, &topic, &request.plan, &config, &request).await
-        }));
+            check_canceled(cancel_flag)?;
+            run_batch_request(&client, &topic, &request.plan, &config, &request, progress).await
+        });
     }
 
     let mut collected = Vec::new();
-    while let Some(joined) = inflight.next().await {
-        let result = joined??;
+    let mut completed_in_shard = 0usize;
+    while let Some(result) = inflight.next().await {
+        check_canceled(cancel_flag)?;
+        let result = result?;
+        completed_in_shard += result.items.len();
+        emit_runtime_progress(
+            progress,
+            RuntimeProgress {
+                kind: RuntimeProgressKind::BatchCompleted,
+                shard_index: shard_id + 1,
+                shard_count,
+                shard_item_completed: Some(completed_in_shard.min(shard_target)),
+                shard_item_total: Some(shard_target),
+                total_generated: Some(generated_before_shard + completed_in_shard.min(shard_target)),
+                target_count: Some(config.runtime.target_count),
+                retry_attempt: None,
+                retry_limit: None,
+                error_message: None,
+            },
+        );
         collected.push(result);
     }
 
@@ -169,6 +295,20 @@ async fn generate_one_shard(
         end_index: start_index + items.len().saturating_sub(1),
         items,
     })
+}
+
+fn emit_runtime_progress(progress: Option<&RuntimeProgressCallback>, event: RuntimeProgress) {
+    if let Some(callback) = progress {
+        callback(event);
+    }
+}
+
+fn check_canceled(cancel_flag: Option<&AtomicBool>) -> Result<()> {
+    if cancel_flag.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err(anyhow!("pipeline canceled by user"));
+    }
+
+    Ok(())
 }
 
 fn build_batch_requests(
@@ -207,8 +347,11 @@ async fn run_batch_request(
     plan: &QuestionPlan,
     config: &GenerateConfig,
     request: &BatchRequest,
+    progress: Option<&RuntimeProgressCallback>,
 ) -> Result<BatchResult> {
-    let drafts = generate_batch_with_retries(client, topic, plan, config, request.count).await?;
+    let shard_count = config.runtime.target_count.div_ceil(config.runtime.shard_size);
+    let drafts =
+        generate_batch_with_retries(client, topic, plan, config, request, shard_count, progress).await?;
     let items = drafts
         .into_iter()
         .enumerate()
@@ -244,15 +387,17 @@ async fn generate_batch_with_retries(
     topic: &TopicSpec,
     plan: &QuestionPlan,
     config: &GenerateConfig,
-    count: usize,
+    request: &BatchRequest,
+    shard_count: usize,
+    progress: Option<&RuntimeProgressCallback>,
 ) -> Result<Vec<DraftQa>> {
     let mut attempt = 0u32;
     loop {
         let result = match config.provider.provider.as_str() {
             "openai-compatible" => {
-                generate_batch_openai_compatible(client, topic, plan, config, count).await
+                generate_batch_openai_compatible(client, topic, plan, config, request.count).await
             }
-            "stub" => Ok(generate_stub_batch(topic, plan, config, count)),
+            "stub" => Ok(generate_stub_batch(topic, plan, config, request.count)),
             other => Err(anyhow!("unsupported provider `{other}`")),
         };
 
@@ -260,13 +405,42 @@ async fn generate_batch_with_retries(
             Ok(items) => return Ok(items),
             Err(err) if attempt < config.runtime.max_retries => {
                 attempt += 1;
+                emit_runtime_progress(
+                    progress,
+                    RuntimeProgress {
+                        kind: RuntimeProgressKind::BatchRetry,
+                        shard_index: request.shard_id + 1,
+                        shard_count,
+                        shard_item_completed: None,
+                        shard_item_total: None,
+                        total_generated: None,
+                        target_count: Some(config.runtime.target_count),
+                        retry_attempt: Some(attempt),
+                        retry_limit: Some(config.runtime.max_retries),
+                        error_message: Some(err.to_string()),
+                    },
+                );
                 let backoff = 2u64.pow(attempt).min(30);
                 sleep(Duration::from_secs(backoff)).await;
-                if attempt >= config.runtime.max_retries {
-                    return Err(err);
-                }
             }
-            Err(err) => return Err(err),
+            Err(err) => {
+                emit_runtime_progress(
+                    progress,
+                    RuntimeProgress {
+                        kind: RuntimeProgressKind::BatchFailed,
+                        shard_index: request.shard_id + 1,
+                        shard_count,
+                        shard_item_completed: None,
+                        shard_item_total: None,
+                        total_generated: None,
+                        target_count: Some(config.runtime.target_count),
+                        retry_attempt: Some(attempt),
+                        retry_limit: Some(config.runtime.max_retries),
+                        error_message: Some(err.to_string()),
+                    },
+                );
+                return Err(err);
+            }
         }
     }
 }

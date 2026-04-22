@@ -39,6 +39,11 @@ apps/distill-studio/
 
 ## 开发环境启动
 
+如果你主要在 Windows 上安装和启动，建议先看：
+
+- [安装包使用说明](./docs/安装包使用说明.md)
+- [Windows 安装与启动](./docs/Windows安装与启动.md)
+
 ### 1. 安装依赖
 
 ```bash
@@ -48,19 +53,51 @@ npm install
 
 如果本机还没有 Rust 工具链，需要先安装 Rust。
 
+Windows 额外前置要求：
+
+- Rust 目标建议使用 `stable-x86_64-pc-windows-msvc`
+- 需要安装 Visual Studio 2022 C++ Build Tools
+- 至少勾选：
+  - `MSVC v143 - VS 2022 C++ x64/x86 生成工具`
+  - `Windows 11 SDK`
+
+这些不是本项目自己的特殊要求，而是 `Tauri + Rust` 在 Windows 上的常规编译前提。如果缺这套 MSVC 工具链，桌面端编译基本起不来。
+
 ### 2. 启动 GUI 开发模式
 
 ```bash
 cd apps/distill-studio
-source ./.env.local
 npm run tauri:dev
 ```
 
 说明：
 
+- `npm run tauri:dev` 现在会自动读取项目根目录下的 `.env.local`
+- `.env.local` 建议从 `.env.local.example` 复制后修改
+- `.env.local` 兼容两种写法：
+  - `DASHSCOPE_API_KEY="..."`
+  - `export DASHSCOPE_API_KEY="..."`
 - 开发模式下，默认相对输出目录 `./output/...` 会写入当前项目根目录
 - 开发模式下，本地配置档案默认写入 `config/local/profiles/`
 - 这些目录都已经通过 `.gitignore` 排除，不会进入 GitHub
+
+Windows 说明：
+
+- 之前需要在 Git Bash / WSL 里先执行 `source ./.env.local`
+- 现在已经不再依赖 Bash 的 `source`；PowerShell、CMD、Git Bash 都可以直接运行 `npm run tauri:dev`
+- 但第一次在全新 Windows 环境启动时，Tauri 会拉取并编译大量 Rust crates，耗时很长是正常现象
+
+### 3. 首次冷启动说明
+
+如果是全新机器，第一次执行 `npm run tauri:dev` 很可能需要十几分钟到数十分钟，尤其在 Windows 上更明显。常见原因：
+
+- 首次下载 Cargo crates
+- 首次编译 Tauri / Wry / Tokio 等 Rust 依赖
+- 首次生成本地 `target/` 缓存
+
+这类耗时主要是冷启动成本，不是项目逻辑 bug。后续同机再次启动通常会明显变快。
+
+如果只是给最终用户使用，不建议让用户自己跑开发模式；应该直接分发构建好的安装包。
 
 ## CLI 示例
 
@@ -136,6 +173,9 @@ npm run tauri:build
 
 详细清单见：
 
+- [安装包使用说明](./docs/安装包使用说明.md)
+- [Windows 安装与启动](./docs/Windows安装与启动.md)
+- [Windows 安装包发布流程](./docs/Windows安装包发布流程.md)
 - [发布前准备](./docs/发布前准备.md)
 - [本地配置与密钥管理](./docs/本地配置与密钥管理.md)
 - [自动更新](./docs/自动更新.md)
@@ -162,10 +202,14 @@ npm run tauri:build
 
 ```bash
 cd /Users/kentnf/projects/ai4s/distill-studio
-export TAURI_UPDATER_PUBLIC_KEY='...'
-export TAURI_UPDATER_ENDPOINT='https://github.com/AI4S-YB/distill-studio/releases/latest/download/latest.json'
 npm run tauri:build:release
 ```
+
+说明：
+
+- 当前脚本会优先自动读取本地 `config/local/updater.json`
+- 也会尝试读取 `~/.tauri/distill-studio.key` 和 `~/.tauri/distill-studio.key.pub`
+- 如果私钥设置了密码，仍需要通过环境变量或 `.env.local` 提供 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 
 发布前还可以先跑一次本地预检查：
 
@@ -173,6 +217,24 @@ npm run tauri:build:release
 cd /Users/kentnf/projects/ai4s/distill-studio
 npm run release:preflight
 ```
+
+现在也可以直接跑一键发布前准备：
+
+```bash
+cd /Users/kentnf/projects/ai4s/distill-studio
+npm run release:prepare
+```
+
+它会依次执行构建、`cargo check`、发布预检查和发布摘要生成。
+
+真正打包完成后，还可以再跑：
+
+```bash
+cd /Users/kentnf/projects/ai4s/distill-studio
+npm run release:assets
+```
+
+它会自动扫描 `target/release/bundle/`，列出当前版本的安装包和 updater 相关产物。
 
 如果本机已经安装并登录 `gh`，还可以直接同步 GitHub secrets：
 

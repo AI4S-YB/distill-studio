@@ -1,18 +1,22 @@
 {
   "name": "distill-studio",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
+    "tauri:dev": "node scripts/run-tauri-with-env.mjs dev",
+    "tauri:build": "node scripts/run-tauri-with-env.mjs build",
     "github:sync-secrets": "node scripts/sync-github-secrets.mjs",
+    "release:prepare": "npm run build && cargo check --manifest-path src-tauri/Cargo.toml && npm run release:preflight && npm run release:summary",
     "release:preflight": "node scripts/release-preflight.mjs",
+    "release:summary": "node scripts/release-summary.mjs",
+    "release:assets": "node scripts/release-assets.mjs",
+    "release:bump": "node scripts/bump-version.mjs",
     "updater:prepare-config": "node scripts/write-tauri-release-config.mjs",
-    "tauri:build:release": "npm run updater:prepare-config && tauri build --config src-tauri/tauri.release.conf.json"
+    "tauri:build:release": "node scripts/run-tauri-release-build.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

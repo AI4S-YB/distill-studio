@@ -50,6 +50,14 @@ async function main() {
   const updaterConfigExists = await fileExists(updaterConfigPath);
   const privateKeyExists = await fileExists(privateKeyPath);
   const publicKeyExists = await fileExists(publicKeyPath);
+  const privateKeyText = privateKeyExists ? await readFile(privateKeyPath, "utf8") : "";
+  const decodedPrivateKey = privateKeyText
+    ? Buffer.from(privateKeyText.trim(), "base64").toString("utf8")
+    : "";
+  const privateKeyNeedsPassword = decodedPrivateKey.includes("encrypted secret key");
+  const hasPrivateKeyPassword =
+    typeof process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD === "string" &&
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD.trim().length > 0;
 
   let updaterConfig = null;
   if (updaterConfigExists) {
@@ -83,6 +91,15 @@ async function main() {
   printCheck(workflowExists, "GitHub release workflow exists", workflowPath);
   printCheck(privateKeyExists, "Updater private key exists", privateKeyPath);
   printCheck(publicKeyExists, "Updater public key exists", publicKeyPath);
+  printCheck(
+    !privateKeyNeedsPassword || hasPrivateKeyPassword,
+    "Updater private key password is available when required",
+    privateKeyNeedsPassword
+      ? hasPrivateKeyPassword
+        ? "provided via TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+        : "encrypted key detected but TAURI_SIGNING_PRIVATE_KEY_PASSWORD is missing"
+      : "key does not require a password"
+  );
   printCheck(updaterConfigExists, "Local updater override config exists", updaterConfigPath);
 
   if (updaterConfig) {
