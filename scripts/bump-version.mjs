@@ -8,7 +8,7 @@ const version = args.find((value) => value !== "--dry-run");
 
 if (!version) {
   console.error("Usage: npm run release:bump -- <version>");
-  console.error("Example: npm run release:bump -- 0.1.4");
+  console.error("Example: npm run release:bump -- 0.1.5");
   process.exit(1);
 }
 

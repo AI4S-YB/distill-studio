@@ -58,7 +58,7 @@
 
 ```bash
 cd apps/distill-studio
-npm run release:bump -- 0.1.4
+npm run release:bump -- 0.1.5
 ```
 
 然后建议直接执行一键发布前准备：
@@ -166,8 +166,8 @@ npm run release:assets
 3. 打 tag，例如：
 
 ```bash
-git tag app-v0.1.4
-git push origin app-v0.1.4
+git tag app-v0.1.5
+git push origin app-v0.1.5
 ```
 
 4. 通过 GitHub Actions 或本地手动发布 release 资产
@@ -212,7 +212,7 @@ git push origin app-v0.1.4
 如果只想看最短步骤，可以按这个执行：
 
 ```text
-1. npm run release:bump -- 0.1.4
+1. npm run release:bump -- 0.1.5
 2. npm run release:prepare
 3. npm run tauri:build:release
 4. 上传安装包和 latest.json 到 GitHub Releases
