@@ -6,13 +6,17 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::future::{pending, Future};
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::time::Instant;
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
+
+const CANCEL_POLL_INTERVAL_MS: u64 = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DraftQa {
@@ -28,6 +32,8 @@ struct BatchRequest {
     shard_offset: usize,
     global_offset: usize,
     count: usize,
+    batch_index: usize,
+    batch_count_in_shard: usize,
     plan: QuestionPlan,
 }
 
@@ -35,6 +41,11 @@ struct BatchRequest {
 struct BatchResult {
     shard_offset: usize,
     items: Vec<GeneratedQa>,
+    count: usize,
+    batch_index: usize,
+    batch_count_in_shard: usize,
+    duration_ms: u64,
+    plan: QuestionPlan,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +67,7 @@ struct ChatMessage {
 pub enum RuntimeProgressKind {
     ShardStarted,
     ShardSkipped,
+    BatchStarted,
     BatchCompleted,
     ShardCompleted,
     BatchRetry,
@@ -73,7 +85,19 @@ pub struct RuntimeProgress {
     pub target_count: Option<usize>,
     pub retry_attempt: Option<u32>,
     pub retry_limit: Option<u32>,
+    pub attempt_number: Option<u32>,
+    pub attempt_limit: Option<u32>,
     pub error_message: Option<String>,
+    pub batch_index: Option<usize>,
+    pub batch_count_in_shard: Option<usize>,
+    pub batch_size: Option<usize>,
+    pub duration_ms: Option<u64>,
+    pub backoff_secs: Option<u64>,
+    pub subtopic: Option<String>,
+    pub axis: Option<String>,
+    pub question_type: Option<String>,
+    pub difficulty: Option<String>,
+    pub audience: Option<String>,
 }
 
 pub type RuntimeProgressCallback = dyn Fn(RuntimeProgress) + Send + Sync;
@@ -137,7 +161,19 @@ pub async fn generate_to_directory_with_progress(
                 target_count: Some(config.runtime.target_count),
                 retry_attempt: None,
                 retry_limit: None,
+                attempt_number: None,
+                attempt_limit: None,
                 error_message: None,
+                batch_index: None,
+                batch_count_in_shard: None,
+                batch_size: None,
+                duration_ms: None,
+                backoff_secs: None,
+                subtopic: None,
+                axis: None,
+                question_type: None,
+                difficulty: None,
+                audience: None,
             },
         );
 
@@ -158,7 +194,19 @@ pub async fn generate_to_directory_with_progress(
                     target_count: Some(config.runtime.target_count),
                     retry_attempt: None,
                     retry_limit: None,
+                    attempt_number: None,
+                    attempt_limit: None,
                     error_message: None,
+                    batch_index: None,
+                    batch_count_in_shard: None,
+                    batch_size: None,
+                    duration_ms: None,
+                    backoff_secs: None,
+                    subtopic: None,
+                    axis: None,
+                    question_type: None,
+                    difficulty: None,
+                    audience: None,
                 },
             );
             continue;
@@ -196,7 +244,19 @@ pub async fn generate_to_directory_with_progress(
                 target_count: Some(config.runtime.target_count),
                 retry_attempt: None,
                 retry_limit: None,
+                attempt_number: None,
+                attempt_limit: None,
                 error_message: None,
+                batch_index: None,
+                batch_count_in_shard: None,
+                batch_size: None,
+                duration_ms: None,
+                backoff_secs: None,
+                subtopic: None,
+                axis: None,
+                question_type: None,
+                difficulty: None,
+                audience: None,
             },
         );
     }
@@ -241,17 +301,26 @@ async fn generate_one_shard(
 
     for request in requests {
         check_canceled(cancel_flag)?;
-        let permit = semaphore.clone().acquire_owned().await?;
-        check_canceled(cancel_flag)?;
         let client = client.clone();
         let topic = topic.clone();
         let config = config.clone();
         let request = request.clone();
         let progress = progress;
+        let semaphore = semaphore.clone();
         inflight.push(async move {
+            let permit = run_with_cancel(semaphore.acquire_owned(), cancel_flag).await?;
             let _permit = permit;
             check_canceled(cancel_flag)?;
-            run_batch_request(&client, &topic, &request.plan, &config, &request, progress).await
+            run_batch_request(
+                &client,
+                &topic,
+                &request.plan,
+                &config,
+                &request,
+                progress,
+                cancel_flag,
+            )
+            .await
         });
     }
 
@@ -273,7 +342,19 @@ async fn generate_one_shard(
                 target_count: Some(config.runtime.target_count),
                 retry_attempt: None,
                 retry_limit: None,
+                attempt_number: None,
+                attempt_limit: None,
                 error_message: None,
+                batch_index: Some(result.batch_index),
+                batch_count_in_shard: Some(result.batch_count_in_shard),
+                batch_size: Some(result.count),
+                duration_ms: Some(result.duration_ms),
+                backoff_secs: None,
+                subtopic: Some(result.plan.subtopic.clone()),
+                axis: Some(result.plan.axis.clone()),
+                question_type: Some(result.plan.question_type.clone()),
+                difficulty: Some(result.plan.difficulty.clone()),
+                audience: Some(result.plan.audience.clone()),
             },
         );
         collected.push(result);
@@ -303,6 +384,35 @@ fn emit_runtime_progress(progress: Option<&RuntimeProgressCallback>, event: Runt
     }
 }
 
+async fn wait_for_cancel(cancel_flag: Option<&AtomicBool>) {
+    let Some(flag) = cancel_flag else {
+        pending::<()>().await;
+        return;
+    };
+
+    while !flag.load(Ordering::Relaxed) {
+        sleep(Duration::from_millis(CANCEL_POLL_INTERVAL_MS)).await;
+    }
+}
+
+async fn run_with_cancel<F, T, E>(future: F, cancel_flag: Option<&AtomicBool>) -> Result<T>
+where
+    F: Future<Output = std::result::Result<T, E>>,
+    E: Into<anyhow::Error>,
+{
+    tokio::select! {
+        result = future => result.map_err(Into::into),
+        _ = wait_for_cancel(cancel_flag) => Err(anyhow!("pipeline canceled by user")),
+    }
+}
+
+async fn cancelable_sleep(duration: Duration, cancel_flag: Option<&AtomicBool>) -> Result<()> {
+    tokio::select! {
+        _ = sleep(duration) => Ok(()),
+        _ = wait_for_cancel(cancel_flag) => Err(anyhow!("pipeline canceled by user")),
+    }
+}
+
 fn check_canceled(cancel_flag: Option<&AtomicBool>) -> Result<()> {
     if cancel_flag.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return Err(anyhow!("pipeline canceled by user"));
@@ -318,8 +428,10 @@ fn build_batch_requests(
     shard_target: usize,
 ) -> Vec<BatchRequest> {
     let start_index = shard_id * config.runtime.shard_size;
+    let batch_count_in_shard = shard_target.div_ceil(config.runtime.batch_size);
     let mut requests = Vec::new();
     let mut shard_offset = 0usize;
+    let mut batch_index = 0usize;
 
     while shard_offset < shard_target {
         let count = config
@@ -333,9 +445,12 @@ fn build_batch_requests(
             shard_offset,
             global_offset,
             count,
+            batch_index: batch_index + 1,
+            batch_count_in_shard,
             plan,
         });
         shard_offset += count;
+        batch_index += 1;
     }
 
     requests
@@ -348,10 +463,21 @@ async fn run_batch_request(
     config: &GenerateConfig,
     request: &BatchRequest,
     progress: Option<&RuntimeProgressCallback>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<BatchResult> {
     let shard_count = config.runtime.target_count.div_ceil(config.runtime.shard_size);
-    let drafts =
-        generate_batch_with_retries(client, topic, plan, config, request, shard_count, progress).await?;
+    let request_started_at = Instant::now();
+    let drafts = generate_batch_with_retries(
+        client,
+        topic,
+        plan,
+        config,
+        request,
+        shard_count,
+        progress,
+        cancel_flag,
+    )
+    .await?;
     let items = drafts
         .into_iter()
         .enumerate()
@@ -379,6 +505,11 @@ async fn run_batch_request(
     Ok(BatchResult {
         shard_offset: request.shard_offset,
         items,
+        count: request.count,
+        batch_index: request.batch_index,
+        batch_count_in_shard: request.batch_count_in_shard,
+        duration_ms: duration_ms(request_started_at.elapsed()),
+        plan: plan.clone(),
     })
 }
 
@@ -390,14 +521,50 @@ async fn generate_batch_with_retries(
     request: &BatchRequest,
     shard_count: usize,
     progress: Option<&RuntimeProgressCallback>,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<Vec<DraftQa>> {
     let mut attempt = 0u32;
+    let attempt_limit = config.runtime.max_retries.saturating_add(1);
     loop {
+        check_canceled(cancel_flag)?;
+        emit_runtime_progress(
+            progress,
+            RuntimeProgress {
+                kind: RuntimeProgressKind::BatchStarted,
+                shard_index: request.shard_id + 1,
+                shard_count,
+                shard_item_completed: None,
+                shard_item_total: None,
+                total_generated: None,
+                target_count: Some(config.runtime.target_count),
+                retry_attempt: None,
+                retry_limit: None,
+                attempt_number: Some(attempt.saturating_add(1)),
+                attempt_limit: Some(attempt_limit),
+                error_message: None,
+                batch_index: Some(request.batch_index),
+                batch_count_in_shard: Some(request.batch_count_in_shard),
+                batch_size: Some(request.count),
+                duration_ms: None,
+                backoff_secs: None,
+                subtopic: Some(plan.subtopic.clone()),
+                axis: Some(plan.axis.clone()),
+                question_type: Some(plan.question_type.clone()),
+                difficulty: Some(plan.difficulty.clone()),
+                audience: Some(plan.audience.clone()),
+            },
+        );
+        let attempt_started_at = Instant::now();
         let result = match config.provider.provider.as_str() {
-            "openai-compatible" => {
-                generate_batch_openai_compatible(client, topic, plan, config, request.count).await
+            "openai-compatible" => run_with_cancel(
+                generate_batch_openai_compatible(client, topic, plan, config, request.count),
+                cancel_flag,
+            )
+            .await,
+            "stub" => {
+                check_canceled(cancel_flag)?;
+                Ok(generate_stub_batch(topic, plan, config, request.count))
             }
-            "stub" => Ok(generate_stub_batch(topic, plan, config, request.count)),
             other => Err(anyhow!("unsupported provider `{other}`")),
         };
 
@@ -408,20 +575,32 @@ async fn generate_batch_with_retries(
                 emit_runtime_progress(
                     progress,
                     RuntimeProgress {
-                        kind: RuntimeProgressKind::BatchRetry,
-                        shard_index: request.shard_id + 1,
-                        shard_count,
-                        shard_item_completed: None,
-                        shard_item_total: None,
-                        total_generated: None,
-                        target_count: Some(config.runtime.target_count),
-                        retry_attempt: Some(attempt),
-                        retry_limit: Some(config.runtime.max_retries),
-                        error_message: Some(err.to_string()),
-                    },
-                );
+                    kind: RuntimeProgressKind::BatchRetry,
+                    shard_index: request.shard_id + 1,
+                    shard_count,
+                    shard_item_completed: None,
+                    shard_item_total: None,
+                    total_generated: None,
+                    target_count: Some(config.runtime.target_count),
+                    retry_attempt: Some(attempt),
+                    retry_limit: Some(config.runtime.max_retries),
+                    attempt_number: Some(attempt),
+                    attempt_limit: Some(attempt_limit),
+                    error_message: Some(err.to_string()),
+                    batch_index: Some(request.batch_index),
+                    batch_count_in_shard: Some(request.batch_count_in_shard),
+                    batch_size: Some(request.count),
+                    duration_ms: Some(duration_ms(attempt_started_at.elapsed())),
+                    backoff_secs: Some(2u64.pow(attempt).min(30)),
+                    subtopic: Some(plan.subtopic.clone()),
+                    axis: Some(plan.axis.clone()),
+                    question_type: Some(plan.question_type.clone()),
+                    difficulty: Some(plan.difficulty.clone()),
+                    audience: Some(plan.audience.clone()),
+                },
+            );
                 let backoff = 2u64.pow(attempt).min(30);
-                sleep(Duration::from_secs(backoff)).await;
+                cancelable_sleep(Duration::from_secs(backoff), cancel_flag).await?;
             }
             Err(err) => {
                 emit_runtime_progress(
@@ -436,7 +615,19 @@ async fn generate_batch_with_retries(
                         target_count: Some(config.runtime.target_count),
                         retry_attempt: Some(attempt),
                         retry_limit: Some(config.runtime.max_retries),
+                        attempt_number: Some(attempt.saturating_add(1)),
+                        attempt_limit: Some(attempt_limit),
                         error_message: Some(err.to_string()),
+                        batch_index: Some(request.batch_index),
+                        batch_count_in_shard: Some(request.batch_count_in_shard),
+                        batch_size: Some(request.count),
+                        duration_ms: Some(duration_ms(attempt_started_at.elapsed())),
+                        backoff_secs: None,
+                        subtopic: Some(plan.subtopic.clone()),
+                        axis: Some(plan.axis.clone()),
+                        question_type: Some(plan.question_type.clone()),
+                        difficulty: Some(plan.difficulty.clone()),
+                        audience: Some(plan.audience.clone()),
                     },
                 );
                 return Err(err);
@@ -593,6 +784,10 @@ fn extract_balanced_json_object(content: &str) -> Result<serde_json::Value> {
     }
 
     Err(anyhow!("failed to locate JSON object in model response"))
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn build_user_prompt(
