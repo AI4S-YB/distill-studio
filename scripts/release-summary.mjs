@@ -50,7 +50,7 @@ async function main() {
   const tauriVersion = tauriConf.version ?? null;
   const version = packageVersion ?? tauriVersion ?? cargoVersion ?? "unknown";
   const tag = `app-v${version}`;
-  const productName = tauriConf.productName ?? "QA小灶";
+  const productName = tauriConf.productName ?? "DistillStudio";
   const appTitle = tauriConf.app?.windows?.[0]?.title ?? productName;
   const remoteUrl = await readGitOrigin();
   const githubRepo = parseGithubRepo(remoteUrl) ?? "AI4S-YB/distill-studio";

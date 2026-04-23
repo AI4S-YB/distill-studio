@@ -7,7 +7,7 @@ use distill_core::{
 use distill_runtime::{
     generate_to_directory_with_progress, RuntimeProgress, RuntimeProgressKind,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,11 +18,13 @@ use std::sync::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
+use tokio::time::{timeout, Duration};
 use url::Url;
 
 const COT_SAFE_BATCH_SIZE: usize = 1;
-const COT_SAFE_MAX_IN_FLIGHT: usize = 1;
+const COT_SAFE_MAX_IN_FLIGHT: usize = 2;
 const COT_SAFE_SHARD_SIZE_CAP: usize = 10;
+const QA_PLATFORM_BATCH_SOURCE: &str = "qa-xiaozhao";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,8 +55,12 @@ struct PipelineRequest {
     managed_run_mode: String,
     #[serde(default)]
     managed_run_batch_id: Option<String>,
+    #[serde(default, alias = "qaUploadUrl", alias = "qa_upload_url")]
+    qa_platform_url: Option<String>,
     #[serde(default)]
-    qa_upload_url: Option<String>,
+    qa_platform_username: Option<String>,
+    #[serde(default)]
+    qa_platform_password: Option<String>,
     #[serde(default)]
     literature_api_url: Option<String>,
     #[serde(default)]
@@ -95,6 +101,10 @@ struct PipelineProgressEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     retry_limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    attempt_number: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempt_limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shard_index: Option<usize>,
@@ -108,6 +118,26 @@ struct PipelineProgressEvent {
     total_generated: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_count_in_shard: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    backoff_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtopic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    axis: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    question_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difficulty: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audience: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,17 +202,386 @@ struct QaRecordDetail {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct QaBatchUploadPayload {
-    batch: QaBatchSummary,
-    items: Vec<GeneratedQa>,
+struct QaBatchUploadResponse {
+    uploaded_count: usize,
+    platform_web_base_url: String,
+    platform_api_base_url: String,
+    batch_id: Option<i64>,
+    existing_batch: Option<bool>,
+    self_review_status: Option<String>,
+    technical_type_code: String,
+    application_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct PlatformImportBatchStatusLookupItem {
+    source: String,
+    external_batch_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformImportBatchStatus {
+    source: String,
+    #[serde(alias = "external_batch_id")]
+    external_batch_id: String,
+    exists: bool,
+    #[serde(alias = "batch_id")]
+    batch_id: Option<i64>,
+    #[serde(alias = "import_status")]
+    import_status: Option<String>,
+    #[serde(alias = "is_processing")]
+    is_processing: bool,
+    #[serde(alias = "batch_status")]
+    batch_status: String,
+    #[serde(alias = "self_review_status")]
+    self_review_status: Option<String>,
+    #[serde(alias = "peer_review_status")]
+    peer_review_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct QaBatchUploadResponse {
-    status: u16,
-    uploaded_count: usize,
-    url: String,
+struct QaBatchPlatformStatusResponse {
+    endpoints: PlatformEndpoints,
+    items: Vec<PlatformImportBatchStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformImportBatchSummary {
+    id: i64,
+    name: String,
+    source: Option<String>,
+    #[serde(default, alias = "source_batch_name")]
+    source_batch_name: Option<String>,
+    #[serde(default, alias = "external_batch_id")]
+    external_batch_id: Option<String>,
+    #[serde(default, alias = "import_status")]
+    import_status: Option<String>,
+    total_count: usize,
+    success_count: usize,
+    fail_count: usize,
+    created_at: String,
+    #[serde(default, alias = "application_name")]
+    application_name: Option<String>,
+    #[serde(default, alias = "technical_type_code")]
+    technical_type_code: Option<String>,
+    #[serde(default, alias = "technical_type_name")]
+    technical_type_name: Option<String>,
+    #[serde(default, alias = "self_review_status")]
+    self_review_status: Option<String>,
+    #[serde(default, alias = "peer_review_status")]
+    peer_review_status: Option<String>,
+    #[serde(default, alias = "batch_status")]
+    batch_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformImportBatchItem {
+    id: i64,
+    #[serde(default, alias = "external_id")]
+    external_id: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(alias = "question_text")]
+    question_text: String,
+    #[serde(default, alias = "question_summary")]
+    question_summary: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default, alias = "source_model")]
+    source_model: Option<String>,
+    #[serde(default, alias = "metadata_json")]
+    metadata_json: Option<String>,
+    #[serde(default, alias = "current_answer_id")]
+    current_answer_id: Option<i64>,
+    #[serde(default, alias = "current_answer_text")]
+    current_answer_text: Option<String>,
+    #[serde(default, alias = "self_review_task_status")]
+    self_review_task_status: Option<String>,
+    #[serde(default, alias = "peer_review_total")]
+    peer_review_total: usize,
+    #[serde(default, alias = "peer_review_submitted")]
+    peer_review_submitted: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformImportBatchDetail {
+    batch: PlatformImportBatchSummary,
+    items: Vec<PlatformImportBatchItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlatformImportBatchStatusLookupPayload {
+    items: Vec<PlatformImportBatchStatusLookupItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppMetadataResponse {
+    product_name: String,
+    version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformEndpoints {
+    normalized_platform_url: String,
+    platform_web_base_url: String,
+    platform_api_base_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformHealthResponse {
+    reachable: bool,
+    endpoints: PlatformEndpoints,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformApplicationSummary {
+    id: i64,
+    name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformUserSummary {
+    id: i64,
+    username: String,
+    role: String,
+    status: String,
+    applications: Vec<PlatformApplicationSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformLoginResponse {
+    endpoints: PlatformEndpoints,
+    user: PlatformUserSummary,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ApiEnvelope<T> {
+    data: T,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlatformLoginEnvelopeData {
+    token: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlatformMeEnvelopeData {
+    id: i64,
+    username: String,
+    role: String,
+    status: String,
+    #[serde(default)]
+    applications: Vec<PlatformApplicationEnvelopeData>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlatformApplicationEnvelopeData {
+    id: i64,
+    name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlatformImportCandidateAnswerPayload {
+    answer: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlatformImportRowPayload {
+    id: String,
+    question: String,
+    answer: String,
+    context: String,
+    difficulty: String,
+    source: String,
+    model: String,
+    metadata: serde_json::Value,
+    candidate_answers: Vec<PlatformImportCandidateAnswerPayload>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlatformImportPushPayload {
+    name: String,
+    source: String,
+    external_batch_id: String,
+    application_id: i64,
+    technical_type_code: String,
+    business_tag_codes: Vec<String>,
+    rows: Vec<PlatformImportRowPayload>,
+    auto_parse: bool,
+    create_self_review: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlatformImportPushResponseData {
+    #[serde(default)]
+    batch_id: Option<i64>,
+    #[serde(default)]
+    existing_batch: Option<bool>,
+    #[serde(default)]
+    self_review_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialLlmConfigOption {
+    id: i64,
+    name: String,
+    #[serde(alias = "provider_code")]
+    provider_code: String,
+    #[serde(alias = "model_name")]
+    model_name: String,
+    #[serde(alias = "is_enabled")]
+    is_enabled: bool,
+    #[serde(alias = "is_trial_enabled")]
+    is_trial_enabled: bool,
+    #[serde(alias = "has_api_key")]
+    has_api_key: bool,
+    #[serde(default)]
+    #[serde(alias = "last_tested_at")]
+    last_tested_at: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "last_test_status")]
+    last_test_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialSourceItem {
+    #[serde(alias = "qa_item_id")]
+    qa_item_id: i64,
+    #[serde(default)]
+    #[serde(alias = "answer_id")]
+    answer_id: Option<i64>,
+    #[serde(alias = "question_text")]
+    question_text: String,
+    #[serde(default)]
+    #[serde(alias = "answer_text")]
+    answer_text: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "context_text")]
+    context_text: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "application_name")]
+    application_name: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "technical_type_code")]
+    technical_type_code: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "technical_type_name")]
+    technical_type_name: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "task_type")]
+    task_type: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "task_status")]
+    task_status: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "updated_at")]
+    updated_at: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "question_summary")]
+    question_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialSessionSummary {
+    id: i64,
+    #[serde(alias = "llm_config_id")]
+    llm_config_id: i64,
+    #[serde(default)]
+    #[serde(alias = "llm_config_name")]
+    llm_config_name: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "llm_model_name")]
+    llm_model_name: Option<String>,
+    title: String,
+    status: String,
+    #[serde(alias = "created_at")]
+    created_at: String,
+    #[serde(alias = "updated_at")]
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialMessage {
+    id: i64,
+    role: String,
+    content: String,
+    #[serde(alias = "created_at")]
+    created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialSessionDetail {
+    session: TrialSessionSummary,
+    #[serde(default)]
+    source: Option<TrialSourceItem>,
+    messages: Vec<TrialMessage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialWorkspaceResponse {
+    endpoints: PlatformEndpoints,
+    user: PlatformUserSummary,
+    configs: Vec<TrialLlmConfigOption>,
+    sources: Vec<TrialSourceItem>,
+    sessions: Vec<TrialSessionSummary>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TrialSessionCreateResponseData {
+    session_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialSessionCreateResponse {
+    session_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TrialSendMessageResponseData {
+    reply: String,
+    status: String,
+    session_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialSendMessageResponse {
+    reply: String,
+    status: String,
+    session_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TrialDeleteSessionResponseData {
+    session_id: i64,
+    status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrialDeleteSessionResponse {
+    session_id: i64,
+    status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -462,7 +861,9 @@ fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<Pipel
         resume: true,
         managed_run_mode: "resume-batch".to_string(),
         managed_run_batch_id: Some(batch_id),
-        qa_upload_url: None,
+        qa_platform_url: None,
+        qa_platform_username: None,
+        qa_platform_password: None,
         literature_api_url: None,
         literature_api_auth_token: None,
     })
@@ -476,28 +877,551 @@ fn delete_qa_batch(app: AppHandle, batch_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_app_metadata(app: AppHandle) -> AppMetadataResponse {
+    AppMetadataResponse {
+        product_name: app.package_info().name.to_string(),
+        version: app.package_info().version.to_string(),
+    }
+}
+
+fn normalize_platform_url(input: &str) -> anyhow::Result<Url> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("platform url is empty");
+    }
+
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+
+    let mut url = Url::parse(&candidate)?;
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+fn derive_platform_endpoints(platform_url: &str) -> anyhow::Result<PlatformEndpoints> {
+    let normalized = normalize_platform_url(platform_url)?;
+    let host = normalized
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("platform url is missing host"))?
+        .to_string();
+    let scheme = normalized.scheme().to_string();
+    let is_local = matches!(host.as_str(), "127.0.0.1" | "localhost");
+
+    let normalized_platform_url = if let Some(port) = normalized.port() {
+        format!("{scheme}://{host}:{port}")
+    } else {
+        format!("{scheme}://{host}")
+    };
+
+    if is_local {
+        return Ok(PlatformEndpoints {
+            normalized_platform_url,
+            platform_web_base_url: format!("{scheme}://{host}:3100"),
+            platform_api_base_url: format!("{scheme}://{host}:8100"),
+        });
+    }
+
+    Ok(PlatformEndpoints {
+        normalized_platform_url: normalized_platform_url.clone(),
+        platform_web_base_url: normalized_platform_url.clone(),
+        platform_api_base_url: normalized_platform_url,
+    })
+}
+
+async fn platform_login_with_token(
+    platform_url: &str,
+    username: &str,
+    password: &str,
+) -> Result<(PlatformEndpoints, String, PlatformUserSummary), String> {
+    let endpoints = derive_platform_endpoints(platform_url).map_err(error_to_string)?;
+    let username = username.trim();
+    let password = password.trim();
+    if username.is_empty() {
+        return Err("platform username is empty".to_string());
+    }
+    if password.is_empty() {
+        return Err("platform password is empty".to_string());
+    }
+
+    let client = reqwest::Client::new();
+    let login_response = client
+        .post(format!("{}/api/auth/login", endpoints.platform_api_base_url))
+        .json(&serde_json::json!({
+            "username": username,
+            "password": password,
+        }))
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    let login_status = login_response.status();
+    if !login_status.is_success() {
+        let body = login_response.text().await.unwrap_or_default();
+        let detail = body.trim();
+        return Err(if detail.is_empty() {
+            format!("platform login failed with status {}", login_status.as_u16())
+        } else {
+            format!(
+                "platform login failed with status {}: {}",
+                login_status.as_u16(),
+                detail
+            )
+        });
+    }
+    let login_payload = login_response
+        .json::<ApiEnvelope<PlatformLoginEnvelopeData>>()
+        .await
+        .map_err(error_to_string)?;
+    let token = login_payload.data.token;
+
+    let me_response = client
+        .get(format!("{}/api/me", endpoints.platform_api_base_url))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    let me_status = me_response.status();
+    if !me_status.is_success() {
+        let body = me_response.text().await.unwrap_or_default();
+        let detail = body.trim();
+        return Err(if detail.is_empty() {
+            format!("platform profile fetch failed with status {}", me_status.as_u16())
+        } else {
+            format!(
+                "platform profile fetch failed with status {}: {}",
+                me_status.as_u16(),
+                detail
+            )
+        });
+    }
+    let me_payload = me_response
+        .json::<ApiEnvelope<PlatformMeEnvelopeData>>()
+        .await
+        .map_err(error_to_string)?;
+
+    let user = PlatformUserSummary {
+        id: me_payload.data.id,
+        username: me_payload.data.username,
+        role: me_payload.data.role,
+        status: me_payload.data.status,
+        applications: me_payload
+            .data
+            .applications
+            .into_iter()
+            .map(|item| PlatformApplicationSummary {
+                id: item.id,
+                name: item.name,
+            })
+            .collect(),
+    };
+
+    Ok((endpoints, token, user))
+}
+
+async fn decode_platform_envelope<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let detail = body.trim();
+        return Err(if detail.is_empty() {
+            format!("platform request failed with status {}", status.as_u16())
+        } else {
+            format!(
+                "platform request failed with status {}: {}",
+                status.as_u16(),
+                detail
+            )
+        });
+    }
+
+    response
+        .json::<ApiEnvelope<T>>()
+        .await
+        .map(|payload| payload.data)
+        .map_err(error_to_string)
+}
+
+async fn platform_api_get<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    token: &str,
+    url: String,
+) -> Result<T, String> {
+    let response = client
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    decode_platform_envelope(response).await
+}
+
+async fn platform_api_post<B: Serialize, T: DeserializeOwned>(
+    client: &reqwest::Client,
+    token: &str,
+    url: String,
+    body: &B,
+) -> Result<T, String> {
+    let response = client
+        .post(url)
+        .bearer_auth(token)
+        .json(body)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    decode_platform_envelope(response).await
+}
+
+async fn platform_api_delete<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    token: &str,
+    url: String,
+) -> Result<T, String> {
+    let response = client
+        .delete(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    decode_platform_envelope(response).await
+}
+
+#[tauri::command]
+async fn check_platform_health(platform_url: String) -> Result<PlatformHealthResponse, String> {
+    let endpoints = derive_platform_endpoints(&platform_url).map_err(error_to_string)?;
+    let health_url = format!("{}/health", endpoints.platform_api_base_url);
+    let response = reqwest::Client::new()
+        .get(&health_url)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!(
+            "platform health check failed with status {}",
+            status.as_u16()
+        ));
+    }
+
+    Ok(PlatformHealthResponse {
+        reachable: true,
+        endpoints,
+        message: "ok".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn login_platform(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<PlatformLoginResponse, String> {
+    let (endpoints, _token, user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    Ok(PlatformLoginResponse { endpoints, user })
+}
+
+#[tauri::command]
+async fn load_model_trial_workspace(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<TrialWorkspaceResponse, String> {
+    let (endpoints, token, user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+
+    let configs = platform_api_get::<Vec<TrialLlmConfigOption>>(
+        &client,
+        &token,
+        format!("{}/api/expert/model-trial/configs", endpoints.platform_api_base_url),
+    )
+    .await?;
+    let sources = platform_api_get::<Vec<TrialSourceItem>>(
+        &client,
+        &token,
+        format!("{}/api/expert/model-trial/sources", endpoints.platform_api_base_url),
+    )
+    .await?;
+    let sessions = platform_api_get::<Vec<TrialSessionSummary>>(
+        &client,
+        &token,
+        format!("{}/api/expert/model-trial/sessions", endpoints.platform_api_base_url),
+    )
+    .await?;
+
+    Ok(TrialWorkspaceResponse {
+        endpoints,
+        user,
+        configs,
+        sources,
+        sessions,
+    })
+}
+
+#[tauri::command]
+async fn get_model_trial_session_detail(
+    platform_url: String,
+    username: String,
+    password: String,
+    session_id: i64,
+) -> Result<TrialSessionDetail, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    platform_api_get::<TrialSessionDetail>(
+        &client,
+        &token,
+        format!(
+            "{}/api/expert/model-trial/sessions/{}",
+            endpoints.platform_api_base_url, session_id
+        ),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn create_model_trial_session(
+    platform_url: String,
+    username: String,
+    password: String,
+    llm_config_id: i64,
+    source_qa_item_id: Option<i64>,
+    source_answer_id: Option<i64>,
+    title: Option<String>,
+) -> Result<TrialSessionCreateResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let data = platform_api_post::<_, TrialSessionCreateResponseData>(
+        &client,
+        &token,
+        format!("{}/api/expert/model-trial/sessions", endpoints.platform_api_base_url),
+        &serde_json::json!({
+            "llm_config_id": llm_config_id,
+            "source_qa_item_id": source_qa_item_id,
+            "source_answer_id": source_answer_id,
+            "title": title,
+        }),
+    )
+    .await?;
+    Ok(TrialSessionCreateResponse {
+        session_id: data.session_id,
+    })
+}
+
+#[tauri::command]
+async fn send_model_trial_message(
+    platform_url: String,
+    username: String,
+    password: String,
+    session_id: i64,
+    content: String,
+) -> Result<TrialSendMessageResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let data = platform_api_post::<_, TrialSendMessageResponseData>(
+        &client,
+        &token,
+        format!(
+            "{}/api/expert/model-trial/sessions/{}/messages",
+            endpoints.platform_api_base_url, session_id
+        ),
+        &serde_json::json!({ "content": content }),
+    )
+    .await?;
+    Ok(TrialSendMessageResponse {
+        reply: data.reply,
+        status: data.status,
+        session_id: data.session_id,
+    })
+}
+
+#[tauri::command]
+async fn delete_model_trial_session(
+    platform_url: String,
+    username: String,
+    password: String,
+    session_id: i64,
+) -> Result<TrialDeleteSessionResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let data = platform_api_delete::<TrialDeleteSessionResponseData>(
+        &client,
+        &token,
+        format!(
+            "{}/api/expert/model-trial/sessions/{}",
+            endpoints.platform_api_base_url, session_id
+        ),
+    )
+    .await?;
+    Ok(TrialDeleteSessionResponse {
+        session_id: data.session_id,
+        status: data.status,
+    })
+}
+
+#[tauri::command]
+async fn list_platform_import_batches(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<Vec<PlatformImportBatchSummary>, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    platform_api_get::<Vec<PlatformImportBatchSummary>>(
+        &client,
+        &token,
+        format!("{}/api/expert/imports", endpoints.platform_api_base_url),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn get_platform_import_batch_detail(
+    platform_url: String,
+    username: String,
+    password: String,
+    batch_id: i64,
+) -> Result<PlatformImportBatchDetail, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    platform_api_get::<PlatformImportBatchDetail>(
+        &client,
+        &token,
+        format!(
+            "{}/api/expert/imports/{}",
+            endpoints.platform_api_base_url, batch_id
+        ),
+    )
+    .await
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("url is empty".to_string());
+    }
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    let parsed = Url::parse(&candidate).map_err(error_to_string)?;
+    let target = parsed.as_str().to_string();
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(&target);
+        command
+    };
+
+    #[cfg(target_os = "linux")]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(&target);
+        command
+    };
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer");
+        command.arg(&target);
+        command
+    };
+
+    command.spawn().map_err(error_to_string)?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn upload_qa_batch(
     app: AppHandle,
     batch_id: String,
-    upload_url: String,
+    platform_url: String,
+    username: String,
+    password: String,
 ) -> Result<QaBatchUploadResponse, String> {
-    let upload_url = upload_url.trim();
-    if upload_url.is_empty() {
-        return Err("upload url is empty".to_string());
-    }
-    Url::parse(upload_url).map_err(error_to_string)?;
-
+    let (endpoints, token, user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let application = user
+        .applications
+        .first()
+        .ok_or_else(|| "current platform account has no assigned application".to_string())?;
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
     let items = load_batch_records(&batch_dir).map_err(error_to_string)?;
-    let payload = QaBatchUploadPayload {
-        batch,
-        items: items.clone(),
+    if items.is_empty() {
+        return Err("batch has no QA items to upload".to_string());
+    }
+
+    let technical_type_code = if matches!(batch.qa_mode.as_deref(), Some("cot")) {
+        "cot_qa".to_string()
+    } else {
+        "direct_qa".to_string()
+    };
+    let rows = items
+        .iter()
+        .map(|item| PlatformImportRowPayload {
+            id: item.id.clone(),
+            question: item.question.clone(),
+            answer: item.answer.clone(),
+            context: format!(
+                "Topic: {}\nSubtopic: {}\nAxis: {}\nQuestion Type: {}\nAudience: {}\nQA Mode: {}",
+                item.topic_name, item.subtopic, item.axis, item.question_type, item.audience, item.qa_mode
+            ),
+            difficulty: item.difficulty.clone(),
+            source: QA_PLATFORM_BATCH_SOURCE.to_string(),
+            model: item.model.clone(),
+            metadata: serde_json::json!({
+                "topic_name": item.topic_name,
+                "subtopic": item.subtopic,
+                "axis": item.axis,
+                "question_type": item.question_type,
+                "audience": item.audience,
+                "qa_mode": item.qa_mode,
+                "provider": item.provider,
+                "provider_model": item.model,
+                "source_type": item.source_type,
+                "grounding": item.grounding,
+                "source_batch_name": batch.name,
+                "source_batch_id": batch.id,
+            }),
+            candidate_answers: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let payload = PlatformImportPushPayload {
+        name: if batch.topic_name.trim().is_empty() {
+            batch.name.clone()
+        } else {
+            batch.topic_name.clone()
+        },
+        source: QA_PLATFORM_BATCH_SOURCE.to_string(),
+        external_batch_id: batch.id.clone(),
+        application_id: application.id,
+        technical_type_code: technical_type_code.clone(),
+        business_tag_codes: Vec::new(),
+        rows,
+        auto_parse: true,
+        create_self_review: true,
     };
 
     let client = reqwest::Client::new();
     let response = client
-        .post(upload_url)
+        .post(format!(
+            "{}/api/expert/imports/push",
+            endpoints.platform_api_base_url
+        ))
+        .bearer_auth(token)
         .json(&payload)
         .send()
         .await
@@ -513,12 +1437,133 @@ async fn upload_qa_batch(
         };
         return Err(detail);
     }
+    let response_payload = response
+        .json::<ApiEnvelope<PlatformImportPushResponseData>>()
+        .await
+        .map_err(error_to_string)?;
 
     Ok(QaBatchUploadResponse {
-        status: status.as_u16(),
         uploaded_count: items.len(),
-        url: upload_url.to_string(),
+        platform_web_base_url: endpoints.platform_web_base_url,
+        platform_api_base_url: endpoints.platform_api_base_url,
+        batch_id: response_payload.data.batch_id,
+        existing_batch: response_payload.data.existing_batch,
+        self_review_status: response_payload.data.self_review_status,
+        technical_type_code,
+        application_id: application.id,
     })
+}
+
+#[tauri::command]
+async fn get_qa_batch_platform_statuses(
+    platform_url: String,
+    username: String,
+    password: String,
+    batch_ids: Vec<String>,
+) -> Result<QaBatchPlatformStatusResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let normalized_batch_ids = batch_ids
+        .into_iter()
+        .map(|batch_id| batch_id.trim().to_string())
+        .filter(|batch_id| !batch_id.is_empty())
+        .collect::<Vec<_>>();
+
+    if normalized_batch_ids.is_empty() {
+        return Ok(QaBatchPlatformStatusResponse {
+            endpoints,
+            items: Vec::new(),
+        });
+    }
+
+    let mut lookup_items = Vec::new();
+    for batch_id in &normalized_batch_ids {
+        for external_batch_id in platform_status_lookup_candidates(batch_id) {
+            lookup_items.push(PlatformImportBatchStatusLookupItem {
+                source: QA_PLATFORM_BATCH_SOURCE.to_string(),
+                external_batch_id,
+            });
+        }
+    }
+
+    let client = reqwest::Client::new();
+    let response = platform_api_post::<PlatformImportBatchStatusLookupPayload, Vec<PlatformImportBatchStatus>>(
+        &client,
+        &token,
+        format!("{}/api/expert/imports/status", endpoints.platform_api_base_url),
+        &PlatformImportBatchStatusLookupPayload { items: lookup_items },
+    )
+    .await?;
+
+    let mut status_map = std::collections::HashMap::new();
+    for item in response {
+        status_map.insert(item.external_batch_id.clone(), item);
+    }
+
+    let items = normalized_batch_ids
+        .into_iter()
+        .map(|batch_id| {
+            let exact = status_map.get(&batch_id);
+            let legacy = legacy_platform_external_batch_id(&batch_id)
+                .and_then(|external_batch_id| status_map.get(&external_batch_id));
+            match (exact, legacy) {
+                (Some(status), _) if status.exists => normalize_platform_batch_status_for_batch_id(status, &batch_id),
+                (_, Some(status)) if status.exists => normalize_platform_batch_status_for_batch_id(status, &batch_id),
+                (Some(status), _) => normalize_platform_batch_status_for_batch_id(status, &batch_id),
+                (_, Some(status)) => normalize_platform_batch_status_for_batch_id(status, &batch_id),
+                _ => missing_platform_batch_status(&batch_id),
+            }
+        })
+        .collect();
+
+    Ok(QaBatchPlatformStatusResponse {
+        endpoints,
+        items,
+    })
+}
+
+fn platform_status_lookup_candidates(batch_id: &str) -> Vec<String> {
+    let batch_id = batch_id.trim();
+    if batch_id.is_empty() {
+        return Vec::new();
+    }
+
+    let mut candidates = vec![batch_id.to_string()];
+    if let Some(legacy) = legacy_platform_external_batch_id(batch_id) {
+        candidates.push(legacy);
+    }
+    candidates
+}
+
+fn legacy_platform_external_batch_id(batch_id: &str) -> Option<String> {
+    let batch_id = batch_id.trim();
+    if batch_id.is_empty() || batch_id.starts_with("output/") {
+        return None;
+    }
+    Some(format!("output/{batch_id}"))
+}
+
+fn normalize_platform_batch_status_for_batch_id(
+    status: &PlatformImportBatchStatus,
+    batch_id: &str,
+) -> PlatformImportBatchStatus {
+    let mut normalized = status.clone();
+    normalized.external_batch_id = batch_id.to_string();
+    normalized
+}
+
+fn missing_platform_batch_status(batch_id: &str) -> PlatformImportBatchStatus {
+    PlatformImportBatchStatus {
+        source: QA_PLATFORM_BATCH_SOURCE.to_string(),
+        external_batch_id: batch_id.to_string(),
+        exists: false,
+        batch_id: None,
+        import_status: None,
+        is_processing: false,
+        batch_status: "missing".to_string(),
+        self_review_status: None,
+        peer_review_status: None,
+    }
 }
 
 #[tauri::command]
@@ -567,6 +1612,27 @@ fn list_batch_qa_records(
         total_items,
         total_pages,
     })
+}
+
+#[tauri::command]
+fn list_batch_qa_question_options(
+    app: AppHandle,
+    batch_id: String,
+) -> Result<Vec<QaRecordSummary>, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    Ok(records
+        .into_iter()
+        .map(|item| QaRecordSummary {
+            id: item.id,
+            question: item.question,
+            subtopic: item.subtopic,
+            axis: item.axis,
+            question_type: item.question_type,
+            difficulty: item.difficulty,
+            audience: item.audience,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -649,7 +1715,15 @@ async fn check_for_app_update(
     };
 
     emit_app_update_event(&window, "check", "running", "Checking for app updates.");
-    let update = updater.check().await.map_err(error_to_string)?;
+    let update = match timeout(Duration::from_secs(5), updater.check()).await {
+        Ok(result) => result.map_err(error_to_string)?,
+        Err(_) => {
+            let message =
+                "Update check timed out after 5 seconds while connecting to the update service.";
+            emit_app_update_event(&window, "check", "failed", message);
+            return Err(message.to_string());
+        }
+    };
 
     if let Some(update) = update {
         emit_app_update_event(
@@ -1587,6 +2661,8 @@ fn emit_pipeline_event(
             runtime_kind: None,
             retry_attempt: None,
             retry_limit: None,
+            attempt_number: None,
+            attempt_limit: None,
             error_message: None,
             shard_index: None,
             shard_count: None,
@@ -1594,11 +2670,24 @@ fn emit_pipeline_event(
             shard_item_total: None,
             total_generated: None,
             target_count: None,
+            batch_index: None,
+            batch_count_in_shard: None,
+            batch_size: None,
+            duration_ms: None,
+            backoff_secs: None,
+            subtopic: None,
+            axis: None,
+            question_type: None,
+            difficulty: None,
+            audience: None,
         },
     );
 }
 
 fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_steps: usize) {
+    let plan_suffix = format_runtime_plan_suffix(event);
+    let batch_suffix = format_runtime_batch_suffix(event);
+    let duration_suffix = format_runtime_duration_suffix(event.duration_ms);
     let (status, message) = match event.kind {
         RuntimeProgressKind::ShardStarted => (
             "running",
@@ -1618,16 +2707,34 @@ fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_s
                 event.shard_item_completed.unwrap_or(0)
             ),
         ),
+        RuntimeProgressKind::BatchStarted => (
+            "running",
+            format!(
+                "Shard {}/{}{} started attempt {}/{} for {} item(s){}{}.",
+                event.shard_index,
+                event.shard_count,
+                batch_suffix,
+                event.attempt_number.unwrap_or(1),
+                event.attempt_limit.unwrap_or(1),
+                event.batch_size.unwrap_or(0),
+                plan_suffix,
+                duration_suffix
+            ),
+        ),
         RuntimeProgressKind::BatchCompleted => (
             "running",
             format!(
-                "Shard {}/{} progress: {}/{} · total {}/{}.",
+                "Shard {}/{}{} completed {} item(s){} · shard {}/{} · total {}/{}{}.",
                 event.shard_index,
                 event.shard_count,
+                batch_suffix,
+                event.batch_size.unwrap_or(0),
+                plan_suffix,
                 event.shard_item_completed.unwrap_or(0),
                 event.shard_item_total.unwrap_or(0),
                 event.total_generated.unwrap_or(0),
-                event.target_count.unwrap_or(0)
+                event.target_count.unwrap_or(0),
+                duration_suffix
             ),
         ),
         RuntimeProgressKind::ShardCompleted => (
@@ -1645,23 +2752,34 @@ fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_s
         RuntimeProgressKind::BatchRetry => (
             "running",
             format!(
-                "Shard {}/{} request retry {}/{} scheduled: {}",
+                "Shard {}/{}{} attempt {}/{} failed{}; retry {}/{} in {}s: {}{}",
                 event.shard_index,
                 event.shard_count,
+                batch_suffix,
+                event.attempt_number.unwrap_or(0),
+                event.attempt_limit.unwrap_or(0),
+                duration_suffix,
                 event.retry_attempt.unwrap_or(0),
                 event.retry_limit.unwrap_or(0),
-                event.error_message.as_deref().unwrap_or("unknown error")
+                event.backoff_secs.unwrap_or(0),
+                event.error_message.as_deref().unwrap_or("unknown error"),
+                plan_suffix
             ),
         ),
         RuntimeProgressKind::BatchFailed => (
             "failed",
             format!(
-                "Shard {}/{} request failed after {}/{} retries: {}",
+                "Shard {}/{}{} failed on attempt {}/{} after {}/{} retries{}: {}{}",
                 event.shard_index,
                 event.shard_count,
+                batch_suffix,
+                event.attempt_number.unwrap_or(0),
+                event.attempt_limit.unwrap_or(0),
                 event.retry_attempt.unwrap_or(0),
                 event.retry_limit.unwrap_or(0),
-                event.error_message.as_deref().unwrap_or("unknown error")
+                duration_suffix,
+                event.error_message.as_deref().unwrap_or("unknown error"),
+                plan_suffix
             ),
         ),
     };
@@ -1678,6 +2796,7 @@ fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_s
                 match event.kind {
                     RuntimeProgressKind::ShardStarted => "shard_started",
                     RuntimeProgressKind::ShardSkipped => "shard_skipped",
+                    RuntimeProgressKind::BatchStarted => "batch_started",
                     RuntimeProgressKind::BatchCompleted => "batch_completed",
                     RuntimeProgressKind::ShardCompleted => "shard_completed",
                     RuntimeProgressKind::BatchRetry => "batch_retry",
@@ -1687,6 +2806,8 @@ fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_s
             ),
             retry_attempt: event.retry_attempt,
             retry_limit: event.retry_limit,
+            attempt_number: event.attempt_number,
+            attempt_limit: event.attempt_limit,
             error_message: event.error_message.clone(),
             shard_index: Some(event.shard_index),
             shard_count: Some(event.shard_count),
@@ -1694,8 +2815,64 @@ fn emit_runtime_progress_event(window: &Window, event: &RuntimeProgress, total_s
             shard_item_total: event.shard_item_total,
             total_generated: event.total_generated,
             target_count: event.target_count,
+            batch_index: event.batch_index,
+            batch_count_in_shard: event.batch_count_in_shard,
+            batch_size: event.batch_size,
+            duration_ms: event.duration_ms,
+            backoff_secs: event.backoff_secs,
+            subtopic: event.subtopic.clone(),
+            axis: event.axis.clone(),
+            question_type: event.question_type.clone(),
+            difficulty: event.difficulty.clone(),
+            audience: event.audience.clone(),
         },
     );
+}
+
+fn format_runtime_batch_suffix(event: &RuntimeProgress) -> String {
+    match (event.batch_index, event.batch_count_in_shard) {
+        (Some(batch_index), Some(batch_count_in_shard)) => {
+            format!(" batch {batch_index}/{batch_count_in_shard}")
+        }
+        _ => String::new(),
+    }
+}
+
+fn format_runtime_duration_suffix(duration_ms: Option<u64>) -> String {
+    let Some(duration_ms) = duration_ms else {
+        return String::new();
+    };
+
+    if duration_ms >= 1_000 {
+        format!(" in {:.1}s", duration_ms as f64 / 1_000.0)
+    } else {
+        format!(" in {duration_ms}ms")
+    }
+}
+
+fn format_runtime_plan_suffix(event: &RuntimeProgress) -> String {
+    let mut parts = Vec::new();
+    if let Some(value) = event.subtopic.as_deref() {
+        parts.push(format!("subtopic={value}"));
+    }
+    if let Some(value) = event.axis.as_deref() {
+        parts.push(format!("axis={value}"));
+    }
+    if let Some(value) = event.question_type.as_deref() {
+        parts.push(format!("type={value}"));
+    }
+    if let Some(value) = event.difficulty.as_deref() {
+        parts.push(format!("difficulty={value}"));
+    }
+    if let Some(value) = event.audience.as_deref() {
+        parts.push(format!("audience={value}"));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", parts.join(" · "))
+    }
 }
 
 fn is_pipeline_cancelled_error(error: &anyhow::Error) -> bool {
@@ -1726,16 +2903,29 @@ pub fn run() {
             health_check,
             stop_pipeline,
             preview_topic_spec,
+            get_app_metadata,
             save_local_pipeline_config,
             load_local_pipeline_config,
             list_local_pipeline_profiles,
             list_qa_batches,
             load_batch_pipeline_request,
             delete_qa_batch,
+            check_platform_health,
+            login_platform,
+            load_model_trial_workspace,
+            get_model_trial_session_detail,
+            create_model_trial_session,
+            send_model_trial_message,
+            delete_model_trial_session,
+            list_platform_import_batches,
+            get_platform_import_batch_detail,
             upload_qa_batch,
+            get_qa_batch_platform_statuses,
             list_batch_qa_records,
+            list_batch_qa_question_options,
             get_batch_qa_record,
             open_path,
+            open_external_url,
             run_pipeline,
             check_for_app_update,
             install_app_update

@@ -44,6 +44,8 @@ type PipelineProgressEvent = {
   runtimeKind?: string | null;
   retryAttempt?: number | null;
   retryLimit?: number | null;
+  attemptNumber?: number | null;
+  attemptLimit?: number | null;
   errorMessage?: string | null;
   shardIndex?: number | null;
   shardCount?: number | null;
@@ -51,6 +53,16 @@ type PipelineProgressEvent = {
   shardItemTotal?: number | null;
   totalGenerated?: number | null;
   targetCount?: number | null;
+  batchIndex?: number | null;
+  batchCountInShard?: number | null;
+  batchSize?: number | null;
+  durationMs?: number | null;
+  backoffSecs?: number | null;
+  subtopic?: string | null;
+  axis?: string | null;
+  questionType?: string | null;
+  difficulty?: string | null;
+  audience?: string | null;
 };
 
 type AppUpdateCheckResponse = {
@@ -67,6 +79,11 @@ type AppUpdateProgressEvent = {
   stage: string;
   status: string;
   message: string;
+};
+
+type AppMetadataResponse = {
+  productName: string;
+  version: string;
 };
 
 type QaBatchSummary = {
@@ -130,7 +147,106 @@ type QaRecordDetail = {
   };
 };
 
-type UiTab = "topic" | "settings" | "browse";
+type PlatformEndpoints = {
+  normalizedPlatformUrl: string;
+  platformWebBaseUrl: string;
+  platformApiBaseUrl: string;
+};
+
+type PlatformHealthResponse = {
+  reachable: boolean;
+  endpoints: PlatformEndpoints;
+  message: string;
+};
+
+type PlatformApplicationSummary = {
+  id: number;
+  name: string;
+};
+
+type PlatformUserSummary = {
+  id: number;
+  username: string;
+  role: string;
+  status: string;
+  applications: PlatformApplicationSummary[];
+};
+
+type PlatformLoginResponse = {
+  endpoints: PlatformEndpoints;
+  user: PlatformUserSummary;
+};
+
+type TrialLlmConfigOption = {
+  id: number;
+  name: string;
+  providerCode: string;
+  modelName: string;
+  isEnabled: boolean;
+  isTrialEnabled: boolean;
+  hasApiKey: boolean;
+  lastTestedAt: string | null;
+  lastTestStatus: string | null;
+};
+
+type TrialSourceItem = {
+  qaItemId: number;
+  answerId: number | null;
+  questionText: string;
+  answerText: string | null;
+  contextText: string | null;
+  applicationName: string | null;
+  technicalTypeCode: string | null;
+  technicalTypeName: string | null;
+  taskType: string | null;
+  taskStatus: string | null;
+  updatedAt: string | null;
+  questionSummary: string | null;
+};
+
+type TrialSessionSummary = {
+  id: number;
+  llmConfigId: number;
+  llmConfigName: string | null;
+  llmModelName: string | null;
+  title: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TrialMessage = {
+  id: number;
+  role: string;
+  content: string;
+  createdAt: string;
+};
+
+type TrialSessionDetail = {
+  session: TrialSessionSummary;
+  source: TrialSourceItem | null;
+  messages: TrialMessage[];
+};
+
+type TrialWorkspaceResponse = {
+  endpoints: PlatformEndpoints;
+  user: PlatformUserSummary;
+  configs: TrialLlmConfigOption[];
+  sources: TrialSourceItem[];
+  sessions: TrialSessionSummary[];
+};
+
+type TrialSessionCreateResponse = {
+  sessionId: number;
+};
+
+type TrialSendMessageResponse = {
+  reply: string;
+  status: string;
+  sessionId: number;
+};
+
+type UiTab = "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial";
 type BrowseView = "batches" | "questions" | "detail";
 
 type ProviderPresetId =
@@ -204,15 +320,81 @@ type PipelineFormRequest = {
   resume: boolean;
   managedRunMode: "new" | "resume-latest" | "resume-batch";
   managedRunBatchId?: string | null;
-  qaUploadUrl: string | null;
+  qaPlatformUrl: string | null;
+  qaPlatformUsername: string | null;
+  qaPlatformPassword: string | null;
   literatureApiUrl: string | null;
   literatureApiAuthToken: string | null;
 };
 
 type QaBatchUploadResponse = {
-  status: number;
   uploadedCount: number;
-  url: string;
+  platformWebBaseUrl: string;
+  platformApiBaseUrl: string;
+  batchId: number | null;
+  existingBatch: boolean | null;
+  selfReviewStatus: string | null;
+  technicalTypeCode: string;
+  applicationId: number;
+};
+
+type PlatformBatchStatusKind = "missing" | "uploaded" | "processing" | "parsed" | "failed";
+
+type PlatformImportBatchStatus = {
+  source: string;
+  externalBatchId: string;
+  exists: boolean;
+  batchId: number | null;
+  importStatus: string | null;
+  isProcessing: boolean;
+  batchStatus: PlatformBatchStatusKind;
+  selfReviewStatus: string | null;
+  peerReviewStatus: string | null;
+};
+
+type QaBatchPlatformStatusResponse = {
+  endpoints: PlatformEndpoints;
+  items: PlatformImportBatchStatus[];
+};
+
+type PlatformImportBatchSummary = {
+  id: number;
+  name: string;
+  source: string | null;
+  sourceBatchName: string | null;
+  externalBatchId: string | null;
+  importStatus: string | null;
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  createdAt: string;
+  applicationName: string | null;
+  technicalTypeCode: string | null;
+  technicalTypeName: string | null;
+  selfReviewStatus: string | null;
+  peerReviewStatus: string | null;
+  batchStatus: PlatformBatchStatusKind | null;
+};
+
+type PlatformImportBatchItem = {
+  id: number;
+  externalId: string | null;
+  status: string | null;
+  questionText: string;
+  questionSummary: string | null;
+  source: string | null;
+  sourceModel: string | null;
+  metadataJson: string | null;
+  currentAnswerId: number | null;
+  currentAnswerText: string | null;
+  selfReviewTaskStatus: string | null;
+  peerReviewTotal: number;
+  peerReviewSubmitted: number;
+};
+
+type PlatformImportBatchDetail = {
+  batch: PlatformImportBatchSummary;
+  items: PlatformImportBatchItem[];
 };
 
 type OutputState =
@@ -252,8 +434,12 @@ const COT_TARGET_COUNT_CAP = 100;
 const DEFAULT_COT_SHARD_SIZE = 10;
 const COT_SAFE_SHARD_SIZE_CAP = 10;
 const DEFAULT_COT_BATCH_SIZE = 1;
-const DEFAULT_COT_MAX_IN_FLIGHT = 1;
+const DEFAULT_COT_MAX_IN_FLIGHT = 2;
 const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetId = "qwen_dashscope";
+const DEFAULT_QA_PLATFORM_URL = "http://10.33.105.218";
+const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;
+const PLATFORM_REMOTE_VIRTUAL_BATCH_SOURCE = "remote-server";
+const PLATFORM_REMOTE_VIRTUAL_BATCH_SYNTHETIC_ID = "platform:remote-server";
 const COT_SECTION_CONFIG = [
   { heading: "Workflow Summary", translationKey: "cot_section_workflow_summary" },
   { heading: "Reference Milestones", translationKey: "cot_section_reference_milestones" },
@@ -283,9 +469,17 @@ const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: s
       title: "API 密钥",
       body: "访问模型服务所需的鉴权密钥。\n\n当前桌面版会把密钥保存在本地配置中，界面默认隐藏显示，不会写入输出结果目录。"
     },
-    qa_upload_url: {
-      title: "QA 上传地址",
-      body: "用于把生成批次上传到 QA 评测平台的接口地址。\n\n如果这里为空，浏览 QA 页面里的“上传”按钮会保持不可用。"
+    qa_platform_url: {
+      title: "QA评测平台地址",
+      body: "QA 评测平台的统一访问地址。\n\n普通用户只需要填写这一个地址。程序会在内部自动派生页面地址和接口地址。开发联调时填写 `127.0.0.1` 或 `localhost` 也会自动拆到 3100 / 8100。"
+    },
+    qa_platform_username: {
+      title: "QA评测用户名",
+      body: "你在 QA 评测平台自己的账号。\n\n这里不是管理员账号。后续上传、自评和平台联通检查，都使用这个账号。"
+    },
+    qa_platform_password: {
+      title: "QA评测密码",
+      body: "你在 QA 评测平台自己的登录密码。\n\n密码会跟随本地设置保存，界面默认隐藏，不会写入 QA 结果批次目录。"
     },
     literature_api_url: {
       title: "文献 API 地址",
@@ -313,7 +507,7 @@ const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: s
     },
     max_in_flight: {
       title: "最大并发",
-      body: "同时允许多少个生成请求并行发送。\n\n并发越高，速度可能越快，但也更容易触发限流、超时和格式不稳定。CoT 模式固定为 1。"
+      body: "同时允许多少个生成请求并行发送。\n\n并发越高，速度可能越快，但也更容易触发限流、超时和格式不稳定。CoT 模式当前固定为 2，属于保守低并发。"
     },
     max_retries: {
       title: "最大重试",
@@ -345,9 +539,17 @@ const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: s
       title: "API Key",
       body: "Authentication key for the model service.\n\nThe desktop app stores it in the local config, hides it by default in the UI, and does not write it into output batch folders."
     },
-    qa_upload_url: {
-      title: "QA Upload URL",
-      body: "Endpoint used to upload generated batches to your QA evaluation platform.\n\nIf this is empty, the Upload action stays unavailable in Browse QA."
+    qa_platform_url: {
+      title: "QA Platform URL",
+      body: "Unified base address for the QA evaluation platform.\n\nOrdinary users only need this one field. The app derives the web base and API base internally."
+    },
+    qa_platform_username: {
+      title: "QA Platform Username",
+      body: "Your own account on the QA evaluation platform.\n\nThis is not an admin account. Upload, self-review, and platform checks use this account."
+    },
+    qa_platform_password: {
+      title: "QA Platform Password",
+      body: "Your own login password for the QA evaluation platform.\n\nIt is stored with local settings, hidden in the UI by default, and never written into generated batch folders."
     },
     literature_api_url: {
       title: "Literature API URL",
@@ -375,7 +577,7 @@ const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: s
     },
     max_in_flight: {
       title: "Max In Flight",
-      body: "How many generation requests can run at the same time.\n\nHigher concurrency may improve speed but also increases rate-limit, timeout, and formatting risks. CoT mode fixes it at 1."
+      body: "How many generation requests can run at the same time.\n\nHigher concurrency may improve speed but also increases rate-limit, timeout, and formatting risks. CoT mode currently fixes it at 2 as a conservative low-concurrency setting."
     },
     max_retries: {
       title: "Max Retries",
@@ -755,8 +957,16 @@ const RESEARCH_FIELD_LABELS = createResearchFieldLabels(RESEARCH_FIELD_TAXONOMY)
 const PROVIDER_PRESETS: Record<ProviderPresetConfigKey, ProviderPresetConfig> = {
   qwen_dashscope: {
     provider: "openai-compatible",
-    defaultModel: "qwen-plus",
-    models: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long", "qwen3-max"],
+    defaultModel: "qwen3.6-max-preview",
+    models: [
+      "qwen3.6-max-preview",
+      "qwen3.6-plus",
+      "qwen-plus",
+      "qwen-max",
+      "qwen-turbo",
+      "qwen-long",
+      "qwen3-max"
+    ],
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     batchSize: 8,
     maxInFlight: 4,
@@ -832,6 +1042,7 @@ const translations: Record<Lang, Record<string, string>> = {
     eyebrow: "DISTILL STUDIO",
     hero_title: "QA小灶",
     hero_lede: "你生成QA，我们帮你建模型、服务社区。",
+    app_author_badge: "开发 kentnf",
     lang_label: "语言",
     panel_title: "流水线输入",
     panel_copy: "左侧切换工作区，中间编辑当前设置，右侧查看结果和运行状态。",
@@ -855,6 +1066,9 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_topic: "QA生成",
     tab_settings: "设置",
     tab_browse: "浏览QA",
+    tab_qa_evaluate: "QA评测",
+    tab_model_trial: "模型试用",
+    tab_internal_badge: "内测",
     tab_topic_copy: "研究主题与领域标签",
     tab_settings_copy: "模型、输出与批处理参数",
     topic_tab_title: "QA生成",
@@ -915,6 +1129,10 @@ const translations: Record<Lang, Record<string, string>> = {
     topic_quickstart_step_run_pending: "补齐前两步后，这里会变成可直接运行。",
     topic_quickstart_open_settings: "打开设置",
     browse_tab_title: "浏览QA",
+    qa_evaluate_tab_title: "QA评测",
+    qa_evaluate_tab_copy: "检查平台连通性、确认登录状态，并打开平台评测工作区。",
+    model_trial_tab_title: "模型试用",
+    model_trial_tab_copy: "直接在桌面端内嵌试用对话，选择模型和参考 QA 后即可开始测试。",
     model_section_title: "模型配置",
     integration_section_title: "平台接口",
     runtime_section_title: "运行参数",
@@ -925,9 +1143,10 @@ const translations: Record<Lang, Record<string, string>> = {
     run_stats_title: "运行统计",
     action_export_logs: "导出日志",
     action_open_run_output_dir: "打开输出文件夹",
+    continue_run: "继续",
     field_help_button: "查看说明",
     runtime_constraint_hint_normal: "参数联动：Shard 大小不能超过目标数量，Batch 大小不能超过 Shard 大小。",
-    runtime_constraint_hint_cot: "CoT 安全约束：目标数量不超过 100，Batch 大小固定为 1，最大并发固定为 1，Shard 大小不超过 10 且不超过目标数量。",
+    runtime_constraint_hint_cot: "CoT 安全约束：目标数量不超过 100，Batch 大小固定为 1，最大并发固定为 2，Shard 大小不超过 10 且不超过目标数量。",
     run_locked_hint: "运行中参数已锁定；停止后才会接受新的修改。",
     browse_batches_title: "历史任务",
     browse_batches_empty: "还没有历史任务记录。",
@@ -966,15 +1185,94 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_prompt: "主题描述",
     browse_action_open: "浏览",
     browse_action_continue: "继续",
+    browse_action_continue_run: "继续生成",
+    browse_action_load_generate: "加载到生成页",
     browse_action_delete: "删除",
     browse_action_upload: "上传",
+    browse_action_uploading: "上传中...",
+    browse_uploaded_badge: "已上传",
+    browse_platform_status_uploaded: "已上传",
+    browse_platform_status_processing: "解析中",
+    browse_platform_status_parsed: "已入库",
+    browse_platform_status_failed: "解析失败",
+    browse_platform_status_sync_failed: "批次平台状态同步失败",
+    browse_platform_url_missing: "请先在设置里填写 QA评测平台地址。",
+    browse_platform_credentials_missing: "请先在设置里填写 QA评测用户名和密码。",
     browse_upload_url: "QA 上传地址",
     browse_upload_url_hint: "填写 QA 评测平台地址后，生成批次里的“上传”按钮会可用。",
     browse_upload_url_missing: "请先在设置里填写 QA 上传地址。",
     browse_delete_confirm: "确认删除这个生成批次及其全部 QA 吗？",
     browse_delete_success: "已删除生成批次。",
     browse_upload_success: "QA 批次上传成功。",
+    browse_upload_exists: "这个 QA 批次已经上传，不必重复上传。",
     browse_upload_failed: "上传失败",
+    qa_platform_url: "QA评测平台地址",
+    qa_platform_url_hint: "实验室内部使用。普通用户只需要填写这一个地址，程序会自动派生页面地址和接口地址。",
+    qa_platform_username: "QA评测用户名",
+    qa_platform_password: "QA评测密码",
+    platform_internal_hint: "实验室内部使用。生产环境通常直接填写 10.33.105.218；本机联调可填写 127.0.0.1。",
+    platform_trial_hint: "内嵌模型试用需要先确认平台地址、用户名和密码都已填写。",
+    platform_trial_entry: "试用方式",
+    platform_trial_entry_hint: "这里直接调用 qaevaluate 的独立 trial API，在桌面端内嵌会话列表和聊天框。",
+    platform_health_idle: "还没有检查平台连通性。",
+    platform_login_idle: "还没有检查平台登录状态。",
+    platform_health_checking: "正在检查平台连通性...",
+    platform_login_checking: "正在检查平台登录状态...",
+    platform_web_base: "平台页面地址",
+    platform_api_base: "平台接口地址",
+    platform_current_user: "当前平台用户",
+    platform_application: "所属应用",
+    platform_no_application: "当前账号还没有分配应用",
+    platform_action_check: "检查联通",
+    platform_action_login: "检查登录",
+    platform_action_open_qa: "打开平台评测页",
+    platform_action_open_trial: "打开平台模型试用页",
+    platform_action_refresh_trial: "刷新试用数据",
+    platform_action_create_trial: "新建会话",
+    platform_action_send_trial: "发送",
+    platform_health_ok: "QA评测平台连通正常：",
+    platform_health_failed: "QA评测平台连通失败",
+    platform_login_ok: "QA评测平台登录成功：",
+    platform_login_failed: "QA评测平台登录失败",
+    platform_opened_qa_page: "已在浏览器中打开 QA评测页面；如浏览器未登录平台，可能会先进入登录页。",
+    platform_opened_trial_page: "已在浏览器中打开模型试用页面；如浏览器未登录平台，可能会先进入登录页。",
+    platform_open_failed: "打开平台页面失败",
+    model_trial_settings_required: "请先在设置里填写 QA评测平台地址、用户名和密码。",
+    model_trial_loading: "正在加载模型试用数据...",
+    model_trial_empty_sessions: "还没有试用会话。先选择模型，再开始一轮对话。",
+    model_trial_empty_detail: "请选择一个会话，或直接新建一个试用会话。",
+    model_trial_select_model: "试用模型",
+    model_trial_select_batch: "参考批次",
+    model_trial_select_question: "参考问题",
+    model_trial_select_batch_empty: "先选择一个本地生成批次",
+    model_trial_select_question_empty: "先选择一个批次，再选择其中的问题",
+    model_trial_session_list: "会话列表",
+    model_trial_conversation: "对话测试",
+    model_trial_source_card: "参考 QA",
+    model_trial_user_badge: "当前用户",
+    model_trial_model_badge: "模型",
+    model_trial_input_placeholder: "输入你要测试的问题、指令，或围绕参考 QA 继续追问。",
+    model_trial_error_load: "加载模型试用数据失败",
+    model_trial_error_detail: "加载会话详情失败",
+    model_trial_error_send: "发送试用消息失败",
+    model_trial_error_create: "创建试用会话失败",
+    model_trial_error_delete: "删除试用会话失败",
+    model_trial_notice_created: "新试用会话已创建。",
+    model_trial_notice_deleted: "试用会话已删除。",
+    model_trial_notice_refreshed: "模型试用数据已刷新。",
+    model_trial_delete: "删除",
+    model_trial_delete_busy: "删除中...",
+    model_trial_source_application: "应用",
+    model_trial_source_type: "QA类型",
+    model_trial_source_status: "任务状态",
+    model_trial_source_none: "当前会话没有绑定参考 QA。",
+    model_trial_source_local: "本地批次问题",
+    model_trial_message_user: "你",
+    model_trial_message_assistant: "模型",
+    model_trial_message_empty: "当前还没有消息，先发一条开始测试。",
+    model_trial_need_message: "请输入要发送的内容。",
+    model_trial_need_model: "请先选择一个开放试用的模型。",
+    model_trial_retry_open: "也可以先在浏览器打开平台模型试用页继续排查。",
     browse_question: "问题",
     browse_answer: "答案",
     browse_qa_mode: "QA类型",
@@ -1104,7 +1402,7 @@ const translations: Record<Lang, Record<string, string>> = {
     log_saved_profile: "已保存配置档案",
     log_save_failed: "保存本地配置失败",
     log_stub_migrated: "检测到旧版 Stub 配置，已自动切换到 Qwen / DashScope，请填写真实 API 密钥后测试。",
-    log_cot_runtime_normalized: "检测到旧版 CoT 运行参数，已自动调整为单条安全模式。",
+    log_cot_runtime_normalized: "检测到旧版 CoT 运行参数，已自动调整为保守低并发安全模式。",
     log_pipeline_completed: "流水线完成，数据集输出到",
     log_exported_logs: "已导出运行日志到",
     log_export_failed: "导出运行日志失败",
@@ -1121,6 +1419,7 @@ const translations: Record<Lang, Record<string, string>> = {
     log_update_not_available: "当前已是最新版本",
     log_update_declined: "已取消安装更新。",
     log_update_installing: "正在安装更新",
+    log_update_timeout: "检查更新超时：5 秒内无法连接更新服务，请稍后重试。",
     log_update_failed: "自动更新失败",
     summary_topic_name: "Topic 名称",
     summary_goal: "目标",
@@ -1192,6 +1491,7 @@ const translations: Record<Lang, Record<string, string>> = {
     eyebrow: "Distill Studio",
     hero_title: "High-throughput QA Distillation",
     hero_lede: "You create QA. We help turn it into models and community-facing services.",
+    app_author_badge: "Built by kentnf",
     lang_label: "Language",
     panel_title: "Pipeline Input",
     panel_copy: "Switch workspaces on the left, edit the current page in the center, inspect results on the right.",
@@ -1215,6 +1515,9 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_topic: "QA Generation",
     tab_settings: "Settings",
     tab_browse: "Browse QA",
+    tab_qa_evaluate: "QA Evaluate",
+    tab_model_trial: "Model Trial",
+    tab_internal_badge: "Beta",
     tab_topic_copy: "Research topic and domain tags",
     tab_settings_copy: "Model, output, and batch parameters",
     topic_tab_title: "QA Generation",
@@ -1275,6 +1578,10 @@ const translations: Record<Lang, Record<string, string>> = {
     topic_quickstart_step_run_pending: "Once the first two steps are done, this will become ready to run.",
     topic_quickstart_open_settings: "Open Settings",
     browse_tab_title: "Browse QA",
+    qa_evaluate_tab_title: "QA Evaluate",
+    qa_evaluate_tab_copy: "Check platform reachability, verify sign-in, and open the QA evaluation workspace.",
+    model_trial_tab_title: "Model Trial",
+    model_trial_tab_copy: "Use the dedicated qaevaluate trial API directly inside the desktop app.",
     model_section_title: "Model Configuration",
     integration_section_title: "Platform Integrations",
     runtime_section_title: "Runtime Parameters",
@@ -1285,9 +1592,10 @@ const translations: Record<Lang, Record<string, string>> = {
     run_stats_title: "Run Stats",
     action_export_logs: "Export Logs",
     action_open_run_output_dir: "Open Output Folder",
+    continue_run: "Continue",
     field_help_button: "Show details",
     runtime_constraint_hint_normal: "Linked constraints: shard size cannot exceed target count, and batch size cannot exceed shard size.",
-    runtime_constraint_hint_cot: "CoT safety constraints: target count is capped at 100, batch size is fixed at 1, max in flight is fixed at 1, and shard size cannot exceed 10 or the target count.",
+    runtime_constraint_hint_cot: "CoT safety constraints: target count is capped at 100, batch size is fixed at 1, max in flight is fixed at 2, and shard size cannot exceed 10 or the target count.",
     run_locked_hint: "Run parameters are locked while the pipeline is active. Stop the run before changing them.",
     browse_batches_title: "Run History",
     browse_batches_empty: "No historical runs yet.",
@@ -1326,15 +1634,94 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_prompt: "Topic Prompt",
     browse_action_open: "Browse",
     browse_action_continue: "Continue",
+    browse_action_continue_run: "Resume Run",
+    browse_action_load_generate: "Load to Generate",
     browse_action_delete: "Delete",
     browse_action_upload: "Upload",
+    browse_action_uploading: "Uploading...",
+    browse_uploaded_badge: "Uploaded",
+    browse_platform_status_uploaded: "Uploaded",
+    browse_platform_status_processing: "Processing",
+    browse_platform_status_parsed: "Imported",
+    browse_platform_status_failed: "Failed",
+    browse_platform_status_sync_failed: "Failed to sync platform batch status",
+    browse_platform_url_missing: "Set the QA platform URL in Settings first.",
+    browse_platform_credentials_missing: "Set the QA platform username and password in Settings first.",
     browse_upload_url: "QA Upload URL",
     browse_upload_url_hint: "Set the QA evaluation platform URL to enable batch upload.",
     browse_upload_url_missing: "Set the QA upload URL in Settings first.",
     browse_delete_confirm: "Delete this batch and all of its QA items?",
     browse_delete_success: "Batch deleted.",
     browse_upload_success: "QA batch uploaded.",
+    browse_upload_exists: "This QA batch has already been uploaded. No need to upload it again.",
     browse_upload_failed: "Upload failed",
+    qa_platform_url: "QA Platform URL",
+    qa_platform_url_hint: "Internal laboratory use. Ordinary users only need this one address, and the app derives the web/API bases automatically.",
+    qa_platform_username: "QA Platform Username",
+    qa_platform_password: "QA Platform Password",
+    platform_internal_hint: "Internal laboratory use. Production usually points to 10.33.105.218, while local joint debugging can use 127.0.0.1.",
+    platform_trial_hint: "Embedded trial needs the platform URL, username, and password to be configured first.",
+    platform_trial_entry: "Trial Mode",
+    platform_trial_entry_hint: "This panel calls qaevaluate trial APIs directly and embeds the session list plus chat UI.",
+    platform_health_idle: "Platform reachability has not been checked yet.",
+    platform_login_idle: "Platform sign-in has not been checked yet.",
+    platform_health_checking: "Checking platform reachability...",
+    platform_login_checking: "Checking platform sign-in...",
+    platform_web_base: "Platform Web Base",
+    platform_api_base: "Platform API Base",
+    platform_current_user: "Current Platform User",
+    platform_application: "Assigned Application",
+    platform_no_application: "This account has no assigned application yet",
+    platform_action_check: "Check Reachability",
+    platform_action_login: "Check Sign-in",
+    platform_action_open_qa: "Open QA Workspace",
+    platform_action_open_trial: "Open Platform Trial",
+    platform_action_refresh_trial: "Refresh Trial Data",
+    platform_action_create_trial: "New Session",
+    platform_action_send_trial: "Send",
+    platform_health_ok: "QA platform reachable:",
+    platform_health_failed: "QA platform reachability failed",
+    platform_login_ok: "QA platform sign-in succeeded:",
+    platform_login_failed: "QA platform sign-in failed",
+    platform_opened_qa_page: "Opened the QA evaluation page in your browser. If the browser is not logged in, it may show the login page first.",
+    platform_opened_trial_page: "Opened the model trial page in your browser. If the browser is not logged in, it may show the login page first.",
+    platform_open_failed: "Failed to open platform page",
+    model_trial_settings_required: "Fill the QA platform URL, username, and password in Settings first.",
+    model_trial_loading: "Loading model-trial workspace...",
+    model_trial_empty_sessions: "No trial sessions yet. Select a model and start a conversation.",
+    model_trial_empty_detail: "Select a session or create a new one to begin.",
+    model_trial_select_model: "Trial Model",
+    model_trial_select_batch: "Reference Batch",
+    model_trial_select_question: "Reference Question",
+    model_trial_select_batch_empty: "Select a local generated batch first",
+    model_trial_select_question_empty: "Select a batch, then pick a question from it",
+    model_trial_session_list: "Sessions",
+    model_trial_conversation: "Conversation",
+    model_trial_source_card: "Reference QA",
+    model_trial_user_badge: "User",
+    model_trial_model_badge: "Model",
+    model_trial_input_placeholder: "Ask a question, send an instruction, or continue from the reference QA.",
+    model_trial_error_load: "Failed to load model-trial data",
+    model_trial_error_detail: "Failed to load session detail",
+    model_trial_error_send: "Failed to send trial message",
+    model_trial_error_create: "Failed to create trial session",
+    model_trial_error_delete: "Failed to delete trial session",
+    model_trial_notice_created: "Trial session created.",
+    model_trial_notice_deleted: "Trial session deleted.",
+    model_trial_notice_refreshed: "Model-trial workspace refreshed.",
+    model_trial_delete: "Delete",
+    model_trial_delete_busy: "Deleting...",
+    model_trial_source_application: "Application",
+    model_trial_source_type: "QA Type",
+    model_trial_source_status: "Task Status",
+    model_trial_source_none: "This session has no bound reference QA.",
+    model_trial_source_local: "Local Batch Question",
+    model_trial_message_user: "You",
+    model_trial_message_assistant: "Assistant",
+    model_trial_message_empty: "No messages yet. Send one to start testing.",
+    model_trial_need_message: "Enter a message first.",
+    model_trial_need_model: "Select an enabled trial model first.",
+    model_trial_retry_open: "You can also open the platform trial page in the browser for debugging.",
     browse_question: "Question",
     browse_answer: "Answer",
     browse_qa_mode: "QA Mode",
@@ -1465,7 +1852,7 @@ const translations: Record<Lang, Record<string, string>> = {
     log_saved_profile: "Saved config profile",
     log_save_failed: "Failed to save local config",
     log_stub_migrated: "Legacy Stub config detected. Switched to Qwen / DashScope. Add a real API key before testing.",
-    log_cot_runtime_normalized: "Legacy CoT runtime settings detected. Switched to safe single-item mode.",
+    log_cot_runtime_normalized: "Legacy CoT runtime settings detected. Switched to a conservative low-concurrency safe mode.",
     log_pipeline_completed: "Pipeline completed. Dataset at",
     log_exported_logs: "Exported run logs to",
     log_export_failed: "Failed to export run logs",
@@ -1482,6 +1869,7 @@ const translations: Record<Lang, Record<string, string>> = {
     log_update_not_available: "Already on the latest version",
     log_update_declined: "Update install was cancelled.",
     log_update_installing: "Installing update",
+    log_update_timeout: "Update check timed out: could not reach the update service within 5 seconds.",
     log_update_failed: "Auto update failed",
     summary_topic_name: "Topic Name",
     summary_goal: "Goal",
@@ -1577,8 +1965,44 @@ let browseView: BrowseView = "batches";
 let browseQuestionsLoading = false;
 let browseDetailLoading = false;
 let browseErrorMessage: string | null = null;
+let browseUploadingBatchId: string | null = null;
+let browsePlatformStatusLoading = false;
+let browsePlatformStatusRequestId = 0;
+let browsePlatformStatusMap = new Map<string, PlatformImportBatchStatus>();
+let browseRemoteVirtualBatch: QaBatchSummary | null = null;
+let browseRemoteVirtualBatchDetail: PlatformImportBatchDetail | null = null;
 let managedResumeBatchId: string | null = null;
 let managedResumeBatchLabel: string | null = null;
+let appVersion = "0.1.6";
+let platformHealthState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; response: PlatformHealthResponse }
+  | { kind: "error"; message: string } = { kind: "idle" };
+let platformLoginState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; response: PlatformLoginResponse }
+  | { kind: "error"; message: string } = { kind: "idle" };
+let modelTrialWorkspaceLoading = false;
+let modelTrialDetailLoading = false;
+let modelTrialCreating = false;
+let modelTrialSending = false;
+let modelTrialDeletingSessionId: number | null = null;
+let modelTrialConfigs: TrialLlmConfigOption[] = [];
+let modelTrialSessions: TrialSessionSummary[] = [];
+let modelTrialDetail: TrialSessionDetail | null = null;
+let modelTrialSelectedConfigId: number | null = null;
+let modelTrialSelectedSessionId: number | null = null;
+let modelTrialComposer = "";
+let modelTrialErrorMessage: string | null = null;
+let modelTrialNoticeMessage: string | null = null;
+let modelTrialLocalBatches: QaBatchSummary[] = [];
+let modelTrialSelectedBatchId: string | null = null;
+let modelTrialLocalQuestions: QaRecordSummary[] = [];
+let modelTrialSelectedQuestionId: string | null = null;
+let modelTrialLocalQuestionDetail: QaRecordDetail | null = null;
+let modelTrialLocalQuestionsLoading = false;
 let runStatsTimer: number | null = null;
 let runStats: RunStatsSnapshot = {
   startedAtMs: null,
@@ -1614,6 +2038,8 @@ app.innerHTML = `
         </p>
       </div>
       <div class="topbar-meta">
+        <div class="version-badge" id="app-version-badge">v0.1.6</div>
+        <div class="version-badge" id="app-author-badge">开发 kentnf</div>
         <div class="status-badge" id="status">Idle</div>
         <label class="lang-switch">
           <span id="lang-label">Language</span>
@@ -1635,6 +2061,14 @@ app.innerHTML = `
           </button>
           <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
             <span class="tab-button-title" id="tab-settings-label">Settings</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="qa-evaluate" id="tab-qa-evaluate">
+            <span class="tab-button-title" id="tab-qa-evaluate-label">QA Evaluate</span>
+            <span class="tab-button-badge" id="tab-qa-evaluate-badge">Internal</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="model-trial" id="tab-model-trial">
+            <span class="tab-button-title" id="tab-model-trial-label">Model Trial</span>
+            <span class="tab-button-badge" id="tab-model-trial-badge">Internal</span>
           </button>
           <button class="tab-button tab-button-plain" type="button" id="check-update">
             <span class="tab-button-title" id="check-update-label">Check Update</span>
@@ -1786,7 +2220,10 @@ app.innerHTML = `
       </section>
       <section class="tab-panel" data-tab-panel="settings" hidden>
         <div class="tab-copy-block">
-          <p class="panel-title" id="settings-tab-title">Settings</p>
+          <div class="title-with-meta">
+            <p class="panel-title" id="settings-tab-title">Settings</p>
+            <span class="panel-meta-badge" id="settings-version">Current version: v0.1.6</span>
+          </div>
           <p class="panel-copy" id="settings-basic-copy">Most users only need to choose a provider, model, and API key.</p>
         </div>
         <section class="setup-checklist" id="setup-checklist"></section>
@@ -1867,16 +2304,30 @@ app.innerHTML = `
           <div class="section-block">
             <p class="section-title" id="integration-section-title">Platform Integrations</p>
           </div>
-          <div class="grid two">
+          <div class="grid three">
             <label>
               <div class="field-label-row">
-                <span id="qa-upload-url-label">QA Upload URL</span>
-                <button class="field-help-button" data-help-key="qa_upload_url" type="button">?</button>
+                <span id="qa-platform-url-label">QA Platform URL</span>
+                <button class="field-help-button" data-help-key="qa_platform_url" type="button">?</button>
               </div>
-              <input id="qa-upload-url" placeholder="https://example.com/qa/import" />
-              <small class="field-hint" id="qa-upload-url-hint">
-                Set the QA evaluation platform URL to enable batch upload.
+              <input id="qa-platform-url" placeholder="http://10.33.105.218" />
+              <small class="field-hint" id="qa-platform-url-hint">
+                Internal laboratory use. The app derives web and API addresses from this one field.
               </small>
+            </label>
+            <label>
+              <div class="field-label-row">
+                <span id="qa-platform-username-label">QA Platform Username</span>
+                <button class="field-help-button" data-help-key="qa_platform_username" type="button">?</button>
+              </div>
+              <input id="qa-platform-username" placeholder="your-account" />
+            </label>
+            <label>
+              <div class="field-label-row">
+                <span id="qa-platform-password-label">QA Platform Password</span>
+                <button class="field-help-button" data-help-key="qa_platform_password" type="button">?</button>
+              </div>
+              <input id="qa-platform-password" type="password" />
             </label>
           </div>
           <div class="grid two">
@@ -1964,6 +2415,20 @@ app.innerHTML = `
           </div>
         </details>
       </section>
+      <section class="tab-panel" data-tab-panel="qa-evaluate" hidden>
+        <div class="tab-copy-block">
+          <p class="panel-title" id="qa-evaluate-tab-title">QA Evaluate</p>
+          <p class="panel-copy" id="qa-evaluate-tab-copy">Check platform reachability, verify sign-in, and open the QA evaluation workspace.</p>
+        </div>
+        <section class="platform-panel" id="qa-evaluate-panel"></section>
+      </section>
+      <section class="tab-panel" data-tab-panel="model-trial" hidden>
+        <div class="tab-copy-block">
+          <p class="panel-title" id="model-trial-tab-title">Model Trial</p>
+          <p class="panel-copy" id="model-trial-tab-copy">This version keeps model trial as a platform entry: check connectivity, confirm sign-in, then open the platform side.</p>
+        </div>
+        <section class="platform-panel" id="model-trial-panel"></section>
+      </section>
       <section class="tab-panel" data-tab-panel="browse" hidden>
         <div class="tab-copy-block">
           <p class="panel-title" id="browse-tab-title">Browse QA</p>
@@ -2027,6 +2492,7 @@ const runLockBanner = document.querySelector<HTMLElement>("#run-lock-banner");
 const checkUpdateButton = document.querySelector<HTMLButtonElement>("#check-update");
 const runButton = document.querySelector<HTMLButtonElement>("#run");
 const openRunOutputDirButton = document.querySelector<HTMLButtonElement>("#open-run-output-dir");
+const runModeBlock = document.querySelector<HTMLElement>(".run-mode-block");
 const managedRunModeNewInput = document.querySelector<HTMLInputElement>("#managed-run-mode-new");
 const managedRunModeResumeLatestInput = document.querySelector<HTMLInputElement>(
   "#managed-run-mode-resume-latest"
@@ -2042,6 +2508,9 @@ const resultMode = document.querySelector<HTMLElement>("#result-mode");
 const resultCards = document.querySelector<HTMLElement>("#result-cards");
 const resultActions = document.querySelector<HTMLElement>("#result-actions");
 const outputDetails = document.querySelector<HTMLDetailsElement>("#output-details");
+const appVersionBadge = document.querySelector<HTMLElement>("#app-version-badge");
+const appAuthorBadge = document.querySelector<HTMLElement>("#app-author-badge");
+const settingsVersion = document.querySelector<HTMLElement>("#settings-version");
 const status = document.querySelector<HTMLElement>("#status");
 const selectedTopicTags = document.querySelector<HTMLElement>("#selected-topic-tags");
 const qaModeNormalInput = document.querySelector<HTMLInputElement>("#qa-mode-normal");
@@ -2076,9 +2545,13 @@ const customModelInput = document.querySelector<HTMLInputElement>("#custom-model
 const setupChecklist = document.querySelector<HTMLElement>("#setup-checklist");
 const baseUrlInput = document.querySelector<HTMLInputElement>("#base-url");
 const apiKeyInput = document.querySelector<HTMLInputElement>("#api-key");
-const qaUploadUrlInput = document.querySelector<HTMLInputElement>("#qa-upload-url");
+const qaPlatformUrlInput = document.querySelector<HTMLInputElement>("#qa-platform-url");
+const qaPlatformUsernameInput = document.querySelector<HTMLInputElement>("#qa-platform-username");
+const qaPlatformPasswordInput = document.querySelector<HTMLInputElement>("#qa-platform-password");
 const literatureApiUrlInput = document.querySelector<HTMLInputElement>("#literature-api-url");
 const literatureApiAuthInput = document.querySelector<HTMLInputElement>("#literature-api-auth");
+const qaEvaluatePanel = document.querySelector<HTMLElement>("#qa-evaluate-panel");
+const modelTrialPanel = document.querySelector<HTMLElement>("#model-trial-panel");
 const toggleApiKeyVisibilityButton = document.querySelector<HTMLButtonElement>("#toggle-api-key-visibility");
 const runtimeConstraintHint = document.querySelector<HTMLElement>("#runtime-constraint-hint");
 const targetCountInput = document.querySelector<HTMLInputElement>("#target-count");
@@ -2118,6 +2591,9 @@ if (
   !resultCards ||
   !resultActions ||
   !outputDetails ||
+  !appVersionBadge ||
+  !appAuthorBadge ||
+  !settingsVersion ||
   !status ||
   !selectedTopicTags ||
   !qaModeNormalInput ||
@@ -2152,9 +2628,13 @@ if (
   !setupChecklist ||
   !baseUrlInput ||
   !apiKeyInput ||
-  !qaUploadUrlInput ||
+  !qaPlatformUrlInput ||
+  !qaPlatformUsernameInput ||
+  !qaPlatformPasswordInput ||
   !literatureApiUrlInput ||
   !literatureApiAuthInput ||
+  !qaEvaluatePanel ||
+  !modelTrialPanel ||
   !toggleApiKeyVisibilityButton ||
   !runtimeConstraintHint ||
   !targetCountInput ||
@@ -2197,7 +2677,9 @@ const lockableControls: Array<
   customModelInput,
   baseUrlInput,
   apiKeyInput,
-  qaUploadUrlInput,
+  qaPlatformUrlInput,
+  qaPlatformUsernameInput,
+  qaPlatformPasswordInput,
   literatureApiUrlInput,
   literatureApiAuthInput,
   toggleApiKeyVisibilityButton,
@@ -2315,7 +2797,45 @@ function currentManagedRunMode(): "new" | "resume-latest" {
     return "resume-batch";
   }
 
-  return managedRunModeResumeLatestInput.checked ? "resume-latest" : "new";
+  return "new";
+}
+
+function shouldShowContinueRunButton(): boolean {
+  return managedResumeBatchId !== null;
+}
+
+function batchMatchesRequest(batch: QaBatchSummary, request: PipelineFormRequest): boolean {
+  return (
+    batch.status !== "completed" &&
+    batch.prompt.trim() === composeEffectivePrompt(request.prompt, request.topicTags).trim() &&
+    (batch.qaMode ?? "normal") === request.qaMode &&
+    (batch.provider ?? "") === request.provider &&
+    (batch.model ?? "") === request.model
+  );
+}
+
+function findLatestResumableBatchForRequest(request: PipelineFormRequest): QaBatchSummary | null {
+  return (
+    browseBatches.find((batch) => batchMatchesRequest(batch, request)) ??
+    null
+  );
+}
+
+async function armResumeBatchForRequest(request: PipelineFormRequest) {
+  await loadBrowseBatches();
+  const batch = findLatestResumableBatchForRequest(request);
+  managedResumeBatchId = batch?.id ?? null;
+  managedResumeBatchLabel = batch ? batch.topicName || batch.name || batch.id : null;
+  syncManagedRunModeUi();
+  updateRunButtonUi();
+}
+
+function clearManagedResumeBatchOnUserEdit() {
+  if (!managedResumeBatchId || isPipelineBusyStatus(currentStatus)) {
+    return;
+  }
+  clearManagedResumeBatch(false);
+  updateRunButtonUi();
 }
 
 function applyQaModeDefaults(qaMode: "normal" | "cot") {
@@ -2349,8 +2869,24 @@ function setCurrentTab(tab: UiTab) {
     panel.hidden = panel.dataset.tabPanel !== tab;
   }
 
-  if (tab === "browse" && !browseLoading && !browseBatches.length) {
+  if (tab === "browse" && !browseLoading) {
     void loadBrowseBatches();
+  }
+  if (
+    tab === "model-trial" &&
+    !modelTrialLocalBatches.length
+  ) {
+    void loadModelTrialLocalBatches();
+  }
+  if (
+    tab === "model-trial" &&
+    !modelTrialWorkspaceLoading &&
+    hasQaPlatformCredentials() &&
+    currentQaPlatformUrl() &&
+    !modelTrialConfigs.length &&
+    !modelTrialSessions.length
+  ) {
+    void loadModelTrialWorkspace();
   }
 }
 
@@ -2467,6 +3003,7 @@ function addTopicTag(tag: string) {
     return;
   }
   if (!topicTags.includes(normalized)) {
+    clearManagedResumeBatchOnUserEdit();
     topicTags = [...topicTags, normalized];
     renderTopicTags();
     renderSetupSummary();
@@ -2475,6 +3012,7 @@ function addTopicTag(tag: string) {
 }
 
 function removeTopicTag(tag: string) {
+  clearManagedResumeBatchOnUserEdit();
   topicTags = topicTags.filter((item) => item !== tag);
   renderTopicTags();
   renderSetupSummary();
@@ -2521,6 +3059,217 @@ function batchStatusLabel(status: string | null | undefined): string {
     default:
       return t("browse_status_prepared");
   }
+}
+
+function isRemoteVirtualBrowseBatch(batchId: string | null | undefined): boolean {
+  return batchId === PLATFORM_REMOTE_VIRTUAL_BATCH_SYNTHETIC_ID;
+}
+
+function localBrowseBatches(): QaBatchSummary[] {
+  return browseBatches.filter((batch) => !isRemoteVirtualBrowseBatch(batch.id));
+}
+
+function platformBatchQaMode(
+  technicalTypeCode: string | null | undefined,
+  fallback: string | null = null
+): string | null {
+  if (technicalTypeCode === "cot_qa") {
+    return "cot";
+  }
+  if (technicalTypeCode === "direct_qa") {
+    return "normal";
+  }
+  return fallback;
+}
+
+function parseTimestampMs(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function parsePlatformMetadataJson(value: string | null | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function metadataString(metadata: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+  }
+  return "";
+}
+
+function remoteVirtualBatchPrompt(summary: PlatformImportBatchSummary): string {
+  const scope = [summary.applicationName, summary.technicalTypeName].filter(Boolean).join(" · ");
+  if (currentLang === "zh") {
+    return scope
+      ? `远程服务器中未归批次 QA 聚合 · ${scope}`
+      : "远程服务器中未归批次 QA 聚合";
+  }
+  return scope
+    ? `Remote server unbatched QA aggregation · ${scope}`
+    : "Remote server unbatched QA aggregation";
+}
+
+function remoteVirtualBatchToBrowseSummary(summary: PlatformImportBatchSummary): QaBatchSummary {
+  const qaMode = platformBatchQaMode(summary.technicalTypeCode);
+  return {
+    id: PLATFORM_REMOTE_VIRTUAL_BATCH_SYNTHETIC_ID,
+    name: summary.name,
+    topicName: summary.name,
+    prompt: remoteVirtualBatchPrompt(summary),
+    qaMode,
+    targetCount: summary.totalCount,
+    generatedCount: summary.successCount || summary.totalCount,
+    keptCount: summary.successCount || summary.totalCount,
+    totalCount: summary.totalCount,
+    shardCount: null,
+    completedShards: 0,
+    skippedShards: 0,
+    requestCount: null,
+    status: "completed",
+    provider: null,
+    model: null,
+    outputDir: "",
+    updatedAtMs: parseTimestampMs(summary.createdAt)
+  };
+}
+
+function mergeBrowseBatches(localBatches: QaBatchSummary[], remoteBatch: QaBatchSummary | null): QaBatchSummary[] {
+  const merged = remoteBatch ? [...localBatches, remoteBatch] : [...localBatches];
+  return merged.sort((left, right) => {
+    const leftTime = left.updatedAtMs ?? 0;
+    const rightTime = right.updatedAtMs ?? 0;
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function platformImportItemToQaRecordSummary(item: PlatformImportBatchItem): QaRecordSummary {
+  const metadata = parsePlatformMetadataJson(item.metadataJson);
+  return {
+    id: String(item.id),
+    question: item.questionText,
+    subtopic: metadataString(metadata, "subtopic", "group", "theme"),
+    axis: metadataString(metadata, "axis"),
+    questionType: metadataString(metadata, "question_type", "questionType"),
+    difficulty: metadataString(metadata, "difficulty"),
+    audience: metadataString(metadata, "audience")
+  };
+}
+
+function platformImportItemToQaRecordDetail(
+  item: PlatformImportBatchItem,
+  batch: QaBatchSummary
+): QaRecordDetail {
+  const metadata = parsePlatformMetadataJson(item.metadataJson);
+  const qaMode = platformBatchQaMode(
+    metadataString(metadata, "technical_type_code"),
+    metadataString(metadata, "qa_mode", "qaMode") || batch.qaMode || "normal"
+  );
+  return {
+    batch,
+    item: {
+      id: String(item.id),
+      shard_id: 0,
+      topic_name: metadataString(metadata, "topic_name", "topicName") || batch.topicName || batch.name,
+      subtopic: metadataString(metadata, "subtopic", "group", "theme"),
+      axis: metadataString(metadata, "axis"),
+      question_type: metadataString(metadata, "question_type", "questionType"),
+      difficulty: metadataString(metadata, "difficulty"),
+      audience: metadataString(metadata, "audience"),
+      question: item.questionText,
+      answer: item.currentAnswerText?.trim() || "",
+      source_type:
+        metadataString(metadata, "source_type", "sourceType") || item.source || "remote-server",
+      grounding: metadataString(metadata, "grounding", "context", "context_text"),
+      provider: metadataString(metadata, "provider") || item.source || "",
+      model: metadataString(metadata, "model", "model_name") || item.sourceModel || "",
+      qa_mode: qaMode === "cot" ? "cot" : "normal"
+    }
+  };
+}
+
+function remoteVirtualBrowsePageFromDetail(
+  detail: PlatformImportBatchDetail,
+  page: number,
+  pageSize = 10
+): QaRecordPage {
+  const batch = remoteVirtualBatchToBrowseSummary(detail.batch);
+  const items = detail.items.map((item) => platformImportItemToQaRecordSummary(item));
+  const totalItems = items.length;
+  const totalPages = totalItems === 0 ? 1 : Math.ceil(totalItems / pageSize);
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const end = Math.min(start + pageSize, totalItems);
+  return {
+    batch,
+    items: items.slice(start, end),
+    page: safePage,
+    pageSize,
+    totalItems,
+    totalPages
+  };
+}
+
+function canResumeBrowseBatch(batch: QaBatchSummary): boolean {
+  return !isRemoteVirtualBrowseBatch(batch.id) && batch.status !== "completed";
+}
+
+function browseResumeActionLabel(batch: QaBatchSummary): string {
+  return batch.status === "prepared"
+    ? t("browse_action_load_generate")
+    : t("browse_action_continue_run");
+}
+
+function batchPlatformStatusLabel(status: PlatformBatchStatusKind | null | undefined): string {
+  switch (status) {
+    case "uploaded":
+      return t("browse_platform_status_uploaded");
+    case "processing":
+      return t("browse_platform_status_processing");
+    case "parsed":
+      return t("browse_platform_status_parsed");
+    case "failed":
+      return t("browse_platform_status_failed");
+    default:
+      return "";
+  }
+}
+
+function currentBrowseBatchPlatformStatus(batchId: string): PlatformImportBatchStatus | null {
+  return browsePlatformStatusMap.get(batchId) ?? null;
+}
+
+function browseBatchPlatformBadgeHtml(batchId: string): string {
+  const status = currentBrowseBatchPlatformStatus(batchId);
+  if (!status || status.batchStatus === "missing") {
+    return "";
+  }
+  const label =
+    status.batchStatus === "uploaded" ? t("browse_uploaded_badge") : batchPlatformStatusLabel(status.batchStatus);
+  return ` <span class="browse-inline-badge">${escapeHtml(label)}</span>`;
 }
 
 function syncProviderFieldVisibility(presetId: ProviderPresetId) {
@@ -2973,10 +3722,6 @@ function renderRunStats() {
       : avgRatePerMinute;
   const remainingCount =
     totalTarget !== null && totalTarget >= totalGenerated ? totalTarget - totalGenerated : null;
-  const totalRequestAttempts =
-    runStats.completedBatchCount + runStats.retryCount + runStats.failedBatchCount;
-  const successRate =
-    totalRequestAttempts > 0 ? (runStats.completedBatchCount / totalRequestAttempts) * 100 : null;
   const etaMs =
     remainingCount !== null &&
     currentRatePerMinute !== null &&
@@ -2993,12 +3738,6 @@ function renderRunStats() {
       : totalGenerated > 0
         ? formatCount(totalGenerated)
         : t("stats_idle");
-  const requestProgress =
-    runStats.estimatedBatchCount !== null
-      ? `${formatCount(runStats.completedBatchCount)} / ${formatCount(runStats.estimatedBatchCount)}`
-      : runStats.completedBatchCount > 0
-        ? formatCount(runStats.completedBatchCount)
-        : t("stats_idle");
   const shardCompleted = runStats.completedShardCount + runStats.skippedShardCount;
   const shardProgress =
     runStats.shardCount !== null
@@ -3009,21 +3748,16 @@ function renderRunStats() {
 
   const cards = [
     { label: t("stats_elapsed"), value: startedAtMs === null ? t("stats_idle") : formatDuration(elapsedMs) },
-    { label: t("stats_avg_speed"), value: formatRate(avgRatePerMinute) },
     { label: t("stats_current_speed"), value: formatRate(currentRatePerMinute) },
     { label: t("stats_eta"), value: formatDuration(etaMs) },
     { label: t("stats_generated_progress"), value: generatedProgress },
-    { label: t("stats_request_progress"), value: requestProgress },
     { label: t("stats_shard_progress"), value: shardProgress },
-    { label: t("stats_retry_count"), value: formatCount(runStats.retryCount) },
-    { label: t("stats_failed_requests"), value: formatCount(runStats.failedBatchCount) },
-    {
-      label: t("stats_success_rate"),
-      value:
-        successRate === null || !Number.isFinite(successRate)
-          ? t("stats_not_available")
-          : `${successRate.toFixed(1)}%`
-    }
+    ...(runStats.retryCount > 0
+      ? [{ label: t("stats_retry_count"), value: formatCount(runStats.retryCount) }]
+      : []),
+    ...(runStats.failedBatchCount > 0
+      ? [{ label: t("stats_failed_requests"), value: formatCount(runStats.failedBatchCount) }]
+      : [])
   ];
 
   runStatsGrid.innerHTML = cards
@@ -3047,8 +3781,441 @@ function currentBrowseBatch(): QaBatchSummary | null {
   );
 }
 
-function currentQaUploadUrl(): string {
-  return qaUploadUrlInput.value.trim();
+function clearBrowseRemoteVirtualBatch() {
+  browseRemoteVirtualBatch = null;
+  browseRemoteVirtualBatchDetail = null;
+}
+
+function currentQaPlatformUrl(): string {
+  return qaPlatformUrlInput.value.trim();
+}
+
+function hasQaPlatformCredentials(): boolean {
+  return Boolean(qaPlatformUsernameInput.value.trim() && qaPlatformPasswordInput.value.trim());
+}
+
+function currentPlatformEndpoints(): PlatformEndpoints | null {
+  if (platformLoginState.kind === "success") {
+    return platformLoginState.response.endpoints;
+  }
+  if (platformHealthState.kind === "success") {
+    return platformHealthState.response.endpoints;
+  }
+  return null;
+}
+
+function currentPlatformOpenUrl(kind: "qa-evaluate" | "model-trial"): string | null {
+  const endpoints = currentPlatformEndpoints();
+  if (!endpoints) {
+    return null;
+  }
+  if (kind === "model-trial") {
+    return `${endpoints.platformWebBaseUrl}/expert/model-trial`;
+  }
+  return `${endpoints.platformWebBaseUrl}/expert`;
+}
+
+function resetModelTrialState() {
+  modelTrialWorkspaceLoading = false;
+  modelTrialDetailLoading = false;
+  modelTrialCreating = false;
+  modelTrialSending = false;
+  modelTrialDeletingSessionId = null;
+  modelTrialConfigs = [];
+  modelTrialSessions = [];
+  modelTrialDetail = null;
+  modelTrialSelectedConfigId = null;
+  modelTrialSelectedSessionId = null;
+  modelTrialComposer = "";
+  modelTrialErrorMessage = null;
+  modelTrialNoticeMessage = null;
+  modelTrialLocalBatches = [];
+  modelTrialSelectedBatchId = null;
+  modelTrialLocalQuestions = [];
+  modelTrialSelectedQuestionId = null;
+  modelTrialLocalQuestionDetail = null;
+  modelTrialLocalQuestionsLoading = false;
+}
+
+function resetPlatformIntegrationState() {
+  platformHealthState = { kind: "idle" };
+  platformLoginState = { kind: "idle" };
+  clearBrowsePlatformStatuses();
+  clearBrowseRemoteVirtualBatch();
+  resetModelTrialState();
+}
+
+function currentModelTrialSelectedQuestion(): QaRecordSummary | null {
+  if (!modelTrialSelectedQuestionId) {
+    return null;
+  }
+  return modelTrialLocalQuestions.find((item) => item.id === modelTrialSelectedQuestionId) ?? null;
+}
+
+function currentModelTrialSelectedConfig(): TrialLlmConfigOption | null {
+  return modelTrialConfigs.find((item) => item.id === modelTrialSelectedConfigId) ?? null;
+}
+
+function formatPlatformTime(value: string | null | undefined): string {
+  if (!value) {
+    return t("empty_value");
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function renderPlatformStateBlock(state: typeof platformHealthState | typeof platformLoginState, kind: "health" | "login"): string {
+  if (state.kind === "loading") {
+    return `<div class="platform-state-card"><p class="platform-state-value">${escapeHtml(
+      kind === "health" ? t("platform_health_checking") : t("platform_login_checking")
+    )}</p></div>`;
+  }
+  if (state.kind === "error") {
+    return `<div class="platform-state-card error"><p class="platform-state-value">${escapeHtml(state.message)}</p></div>`;
+  }
+  if (state.kind === "success") {
+    if (kind === "health") {
+      return `
+        <div class="platform-state-card success">
+          <p class="platform-state-label">${escapeHtml(t("platform_web_base"))}</p>
+          <p class="platform-state-value">${escapeHtml(state.response.endpoints.platformWebBaseUrl)}</p>
+          <p class="platform-state-label">${escapeHtml(t("platform_api_base"))}</p>
+          <p class="platform-state-value">${escapeHtml(state.response.endpoints.platformApiBaseUrl)}</p>
+        </div>
+      `;
+    }
+    const loginResponse = state.response as PlatformLoginResponse;
+    const apps = loginResponse.user.applications.length
+      ? loginResponse.user.applications.map((item) => item.name).join(" / ")
+      : t("platform_no_application");
+    return `
+      <div class="platform-state-card success">
+        <p class="platform-state-label">${escapeHtml(t("platform_current_user"))}</p>
+        <p class="platform-state-value">${escapeHtml(loginResponse.user.username)}</p>
+        <p class="platform-state-label">${escapeHtml(t("platform_application"))}</p>
+        <p class="platform-state-value">${escapeHtml(apps)}</p>
+      </div>
+    `;
+  }
+  return `<div class="platform-state-card"><p class="platform-state-value">${escapeHtml(
+    kind === "health" ? t("platform_health_idle") : t("platform_login_idle")
+  )}</p></div>`;
+}
+
+function renderQaEvaluatePanel() {
+  const platformUrl = currentQaPlatformUrl() || DEFAULT_QA_PLATFORM_URL;
+  const qaOpenUrl = currentPlatformOpenUrl("qa-evaluate");
+  const bannerHtml =
+    platformLoginState.kind === "error"
+      ? `<div class="platform-inline-banner error">${escapeHtml(platformLoginState.message)}</div>`
+      : platformLoginState.kind === "success"
+        ? `<div class="platform-inline-banner success">${escapeHtml(
+            `${t("platform_login_ok")} ${platformLoginState.response.user.username}`
+          )}</div>`
+        : "";
+
+  qaEvaluatePanel.innerHTML = `
+    <div class="model-trial-topbar">
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("qa_platform_url"))}</span>
+        <span class="platform-card-value">${escapeHtml(platformUrl)}</span>
+      </div>
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("platform_current_user"))}</span>
+        <span class="platform-card-value">${escapeHtml(
+          platformLoginState.kind === "success"
+            ? platformLoginState.response.user.username
+            : qaPlatformUsernameInput.value.trim() || t("empty_value")
+        )}</span>
+      </div>
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("platform_action_check"))}</span>
+        <div class="model-trial-topbar-check">
+          <span class="platform-card-value">${escapeHtml(
+            platformHealthState.kind === "success"
+              ? t("platform_health_ok")
+              : platformHealthState.kind === "error"
+                ? t("platform_health_failed")
+                : platformHealthState.kind === "loading"
+                  ? t("platform_health_checking")
+                  : t("platform_health_idle")
+          )}</span>
+          <button type="button" class="secondary" data-platform-action="health">${escapeHtml(t("platform_action_check"))}</button>
+        </div>
+      </div>
+    </div>
+    ${bannerHtml}
+    <section class="platform-workbench-panel">
+      <div class="title-with-meta">
+        <p class="section-title">${escapeHtml(t("tab_qa_evaluate"))}</p>
+        <p class="model-trial-source-meta">${escapeHtml(t("qa_evaluate_tab_copy"))}</p>
+      </div>
+      <div class="platform-actions">
+        <button type="button" class="secondary" data-platform-action="login">${escapeHtml(t("platform_action_login"))}</button>
+        <button type="button" data-platform-action="open-qa" ${qaOpenUrl ? "" : "disabled"}>${escapeHtml(t("platform_action_open_qa"))}</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderModelTrialPanel() {
+  const platformUrl = currentQaPlatformUrl() || DEFAULT_QA_PLATFORM_URL;
+  const hasSettings = Boolean(currentQaPlatformUrl() && hasQaPlatformCredentials());
+  const selectedConfig = currentModelTrialSelectedConfig();
+  const selectedQuestion = currentModelTrialSelectedQuestion();
+  const selectedBatch =
+    modelTrialLocalBatches.find((item) => item.id === modelTrialSelectedBatchId) ?? null;
+  const sourceMeta = selectedBatch
+    ? `${t("model_trial_source_local")}: ${selectedBatch.topicName || selectedBatch.name}`
+    : "";
+
+  const sessionListHtml = modelTrialSessions.length
+    ? modelTrialSessions
+        .map((session) => {
+          const selected = session.id === modelTrialSelectedSessionId;
+          const sessionMeta = [session.llmConfigName || session.llmModelName, formatPlatformTime(session.updatedAt)]
+            .filter(Boolean)
+            .join(" / ");
+          return `
+            <article class="model-trial-session${selected ? " active" : ""}">
+              <button
+                type="button"
+                class="model-trial-session-main"
+                data-model-trial-action="select-session"
+                data-session-id="${session.id}"
+              >
+                <span class="model-trial-session-title">${escapeHtml(session.title)}</span>
+                <span class="model-trial-session-meta">${escapeHtml(sessionMeta)}</span>
+              </button>
+              <div class="model-trial-session-actions">
+                <span class="model-trial-status-pill">${escapeHtml(session.status)}</span>
+                <button
+                  type="button"
+                  class="browse-mini-button browse-mini-button-danger"
+                  data-model-trial-action="delete-session"
+                  data-session-id="${session.id}"
+                  ${modelTrialDeletingSessionId === session.id ? "disabled" : ""}
+                >${escapeHtml(
+                  modelTrialDeletingSessionId === session.id
+                    ? t("model_trial_delete_busy")
+                    : t("model_trial_delete")
+                )}</button>
+              </div>
+            </article>
+          `;
+        })
+        .join("")
+    : `<div class="empty-state compact">${escapeHtml(
+        modelTrialWorkspaceLoading ? t("model_trial_loading") : t("model_trial_empty_sessions")
+      )}</div>`;
+
+  const messagesHtml = modelTrialDetail?.messages.length
+    ? modelTrialDetail.messages
+        .map(
+          (item) => `
+            <article class="model-trial-message ${item.role === "assistant" ? "assistant" : "user"}">
+              <div class="model-trial-message-meta">
+                <span>${escapeHtml(
+                  item.role === "assistant" ? t("model_trial_message_assistant") : t("model_trial_message_user")
+                )}</span>
+                <span>${escapeHtml(formatPlatformTime(item.createdAt))}</span>
+              </div>
+              <pre class="model-trial-message-body">${escapeHtml(item.content)}</pre>
+            </article>
+          `
+        )
+        .join("")
+    : `<div class="empty-state compact">${escapeHtml(
+        modelTrialDetailLoading ? t("model_trial_loading") : t("model_trial_message_empty")
+      )}</div>`;
+
+  const bannerHtml = modelTrialErrorMessage
+    ? `<div class="platform-inline-banner error">${escapeHtml(modelTrialErrorMessage)}</div>`
+    : modelTrialNoticeMessage
+      ? `<div class="platform-inline-banner success">${escapeHtml(modelTrialNoticeMessage)}</div>`
+      : "";
+
+  modelTrialPanel.innerHTML = `
+    <div class="model-trial-topbar">
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("qa_platform_url"))}</span>
+        <span class="platform-card-value">${escapeHtml(platformUrl)}</span>
+      </div>
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("platform_current_user"))}</span>
+        <span class="platform-card-value">${escapeHtml(
+          platformLoginState.kind === "success"
+            ? platformLoginState.response.user.username
+            : qaPlatformUsernameInput.value.trim() || t("empty_value")
+        )}</span>
+      </div>
+      <div class="model-trial-topbar-item">
+        <span class="platform-card-label">${escapeHtml(t("platform_action_check"))}</span>
+        <div class="model-trial-topbar-check">
+          <span class="platform-card-value">${escapeHtml(
+            platformHealthState.kind === "success"
+              ? t("platform_health_ok")
+              : platformHealthState.kind === "error"
+                ? t("platform_health_failed")
+                : platformHealthState.kind === "loading"
+                  ? t("platform_health_checking")
+                  : t("platform_health_idle")
+          )}</span>
+          <button type="button" class="secondary" data-platform-action="health">${escapeHtml(t("platform_action_check"))}</button>
+        </div>
+      </div>
+    </div>
+    ${bannerHtml}
+    ${
+      hasSettings
+        ? `
+          <div class="model-trial-layout">
+            <aside class="model-trial-sidebar">
+              <div class="model-trial-sidebar-header">
+                <p class="section-title">${escapeHtml(t("model_trial_session_list"))}</p>
+                <button
+                  type="button"
+                  class="secondary"
+                  data-model-trial-action="create-session"
+                  ${modelTrialCreating || !selectedConfig ? "disabled" : ""}
+                >${escapeHtml(t("platform_action_create_trial"))}</button>
+              </div>
+              <div class="model-trial-session-list">${sessionListHtml}</div>
+            </aside>
+            <section class="model-trial-main">
+              <div class="model-trial-controls">
+                <label class="model-trial-field">
+                  <span>${escapeHtml(t("model_trial_select_model"))}</span>
+                  <select id="model-trial-config-select">
+                    <option value="">${escapeHtml(t("model_trial_need_model"))}</option>
+                    ${modelTrialConfigs
+                      .map(
+                        (config) => `
+                          <option value="${config.id}" ${config.id === modelTrialSelectedConfigId ? "selected" : ""}>
+                            ${escapeHtml(`${config.name} / ${config.modelName}`)}
+                          </option>
+                        `
+                      )
+                      .join("")}
+                  </select>
+                </label>
+                <label class="model-trial-field">
+                  <span>${escapeHtml(t("model_trial_select_batch"))}</span>
+                  <select id="model-trial-batch-select">
+                    <option value="">${escapeHtml(t("model_trial_select_batch_empty"))}</option>
+                    ${modelTrialLocalBatches
+                      .map(
+                        (batch) => `
+                          <option value="${escapeHtml(batch.id)}" ${batch.id === modelTrialSelectedBatchId ? "selected" : ""}>
+                            ${escapeHtml(batch.topicName || batch.name)}
+                          </option>
+                        `
+                      )
+                      .join("")}
+                  </select>
+                </label>
+                <label class="model-trial-field">
+                  <span>${escapeHtml(t("model_trial_select_question"))}</span>
+                  <select id="model-trial-question-select" ${modelTrialSelectedBatchId ? "" : "disabled"}>
+                    <option value="">${escapeHtml(
+                      modelTrialSelectedBatchId
+                        ? modelTrialLocalQuestionsLoading
+                          ? t("model_trial_loading")
+                          : t("model_trial_select_question_empty")
+                        : t("model_trial_select_question_empty")
+                    )}</option>
+                    ${modelTrialLocalQuestions
+                      .map(
+                        (question) => `
+                          <option value="${escapeHtml(question.id)}" ${question.id === modelTrialSelectedQuestionId ? "selected" : ""}>
+                            ${escapeHtml(truncateText(question.question, 90))}
+                          </option>
+                        `
+                      )
+                      .join("")}
+                  </select>
+                </label>
+                <div class="model-trial-meta-cards">
+                  <div class="version-badge">${escapeHtml(
+                    `${t("model_trial_user_badge")} ${platformLoginState.kind === "success" ? platformLoginState.response.user.username : t("empty_value")}`
+                  )}</div>
+                  <div class="version-badge">${escapeHtml(
+                    `${t("model_trial_model_badge")} ${selectedConfig?.modelName || modelTrialDetail?.session.llmModelName || t("empty_value")}`
+                  )}</div>
+                </div>
+              </div>
+              <section class="model-trial-source-panel">
+                <div class="title-with-meta">
+                  <p class="section-title">${escapeHtml(t("model_trial_source_card"))}</p>
+                  ${sourceMeta ? `<p class="model-trial-source-meta">${escapeHtml(sourceMeta)}</p>` : ""}
+                </div>
+                ${
+                  modelTrialLocalQuestionDetail
+                    ? `
+                      <p class="model-trial-source-question">${escapeHtml(modelTrialLocalQuestionDetail.item.question)}</p>
+                      ${
+                        modelTrialLocalQuestionDetail.item.answer
+                          ? `<p class="model-trial-source-answer">${escapeHtml(modelTrialLocalQuestionDetail.item.answer)}</p>`
+                          : ""
+                      }
+                    `
+                    : modelTrialDetail?.source
+                      ? `
+                          <p class="model-trial-source-question">${escapeHtml(modelTrialDetail.source.questionText)}</p>
+                          ${
+                            modelTrialDetail.source.answerText
+                              ? `<p class="model-trial-source-answer">${escapeHtml(modelTrialDetail.source.answerText)}</p>`
+                              : ""
+                          }
+                        `
+                      : `<div class="empty-state compact">${escapeHtml(t("model_trial_source_none"))}</div>`
+                }
+              </section>
+              <section class="model-trial-chat-panel">
+                <div class="title-with-meta">
+                  <p class="section-title">${escapeHtml(t("model_trial_conversation"))}</p>
+                  ${
+                    modelTrialDetail?.session
+                      ? `<p class="model-trial-chat-meta">${escapeHtml(
+                          `${modelTrialDetail.session.title} · ${formatPlatformTime(modelTrialDetail.session.updatedAt)}`
+                        )}</p>`
+                      : ""
+                  }
+                </div>
+                <div class="model-trial-message-list">${messagesHtml}</div>
+                <div class="model-trial-composer">
+                  <textarea id="model-trial-composer" placeholder="${escapeHtml(
+                    t("model_trial_input_placeholder")
+                  )}">${escapeHtml(modelTrialComposer)}</textarea>
+                  <div class="model-trial-composer-actions">
+                    <button
+                      type="button"
+                      data-model-trial-action="send-message"
+                      ${modelTrialSending || modelTrialCreating || !selectedConfig ? "disabled" : ""}
+                    >${escapeHtml(t("platform_action_send_trial"))}</button>
+                  </div>
+                </div>
+              </section>
+            </section>
+          </div>
+        `
+        : `<div class="empty-state">${escapeHtml(t("model_trial_settings_required"))}</div>`
+    }
+  `;
+}
+
+function renderPlatformPanels() {
+  renderQaEvaluatePanel();
+  renderModelTrialPanel();
 }
 
 function formatBrowsePageLabel(page: number, totalPages: number): string {
@@ -3143,10 +4310,15 @@ function renderBrowseBatches(): string {
     return `<div class="empty-state">${escapeHtml(t("browse_batches_empty"))}</div>`;
   }
 
-  const hasUploadUrl = Boolean(currentQaUploadUrl());
+  const hasUploadUrl = Boolean(currentQaPlatformUrl());
   return `<div class="browse-list">${browseBatches
     .map((batch) => {
+      const remoteVirtual = isRemoteVirtualBrowseBatch(batch.id);
       const selected = batch.id === browseSelectedBatchId;
+      const platformStatus = currentBrowseBatchPlatformStatus(batch.id);
+      const resumable = canResumeBrowseBatch(batch);
+      const uploadDisabled = remoteVirtual || !hasUploadUrl || browseUploadingBatchId !== null;
+      const uploadBusy = browseUploadingBatchId === batch.id;
       const stats = [
         batch.targetCount !== null
           ? `${t("browse_target_items")} ${formatCount(batch.targetCount)}`
@@ -3174,17 +4346,36 @@ function renderBrowseBatches(): string {
       return `
         <article class="browse-row${selected ? " active" : ""}">
           <button class="browse-row-main" type="button" data-batch-id="${escapeHtml(batch.id)}">
-            <span class="browse-row-title">${escapeHtml(batch.topicName || batch.name)}</span>
+            <span class="browse-row-title">${escapeHtml(batch.topicName || batch.name)}${browseBatchPlatformBadgeHtml(batch.id)}</span>
             <span class="browse-row-meta">${escapeHtml(meta)}</span>
             <span class="browse-row-stats">${escapeHtml(stats)}</span>
             ${progress ? `<span class="browse-row-progress">${escapeHtml(progress)}</span>` : ""}
+            ${
+              platformStatus && platformStatus.batchStatus !== "missing"
+                ? `<span class="browse-row-copy">${escapeHtml(
+                    `${t("qa_evaluate_tab_title")} ${batchPlatformStatusLabel(platformStatus.batchStatus)}`
+                  )}</span>`
+                : ""
+            }
             <span class="browse-row-copy">${escapeHtml(truncateText(batch.prompt, 96) || batch.outputDir)}</span>
           </button>
           <div class="browse-row-actions">
-            <button type="button" class="browse-mini-button" data-batch-action="continue" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_continue"))}</button>
+            ${
+              resumable
+                ? `<button type="button" class="browse-mini-button" data-batch-action="continue" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(browseResumeActionLabel(batch))}</button>`
+                : ""
+            }
             <button type="button" class="browse-mini-button" data-batch-action="open" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_open"))}</button>
-            <button type="button" class="browse-mini-button browse-mini-button-danger" data-batch-action="delete" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_delete"))}</button>
-            <button type="button" class="browse-mini-button${hasUploadUrl ? "" : " browse-mini-button-muted"}" data-batch-action="upload" data-batch-id="${escapeHtml(batch.id)}" data-upload-ready="${hasUploadUrl ? "true" : "false"}">${escapeHtml(t("browse_action_upload"))}</button>
+            ${
+              remoteVirtual
+                ? ""
+                : `<button type="button" class="browse-mini-button browse-mini-button-danger" data-batch-action="delete" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_delete"))}</button>`
+            }
+            ${
+              remoteVirtual
+                ? ""
+                : `<button type="button" class="browse-mini-button${uploadDisabled ? " browse-mini-button-muted" : ""}" data-batch-action="upload" data-batch-id="${escapeHtml(batch.id)}" data-upload-ready="${hasUploadUrl ? "true" : "false"}" ${uploadDisabled ? "disabled" : ""}>${escapeHtml(t(uploadBusy ? "browse_action_uploading" : "browse_action_upload"))}</button>`
+            }
           </div>
         </article>
       `;
@@ -3299,6 +4490,9 @@ function renderBrowseDetail(): string {
 }
 
 async function deleteBrowseBatch(batchId: string) {
+  if (isRemoteVirtualBrowseBatch(batchId)) {
+    return;
+  }
   const confirmed = window.confirm(t("browse_delete_confirm"));
   if (!confirmed) {
     return;
@@ -3320,36 +4514,496 @@ async function deleteBrowseBatch(batchId: string) {
 }
 
 async function uploadBrowseBatch(batchId: string) {
-  const uploadUrl = currentQaUploadUrl();
-  if (!uploadUrl) {
-    window.alert(t("browse_upload_url_missing"));
+  if (isRemoteVirtualBrowseBatch(batchId)) {
+    return;
+  }
+  if (browseUploadingBatchId) {
+    return;
+  }
+  const platformUrl = currentQaPlatformUrl();
+  if (!platformUrl) {
+    window.alert(t("browse_platform_url_missing"));
     setCurrentTab("settings");
-    qaUploadUrlInput.focus();
+    qaPlatformUrlInput.focus();
+    return;
+  }
+  if (!hasQaPlatformCredentials()) {
+    window.alert(t("browse_platform_credentials_missing"));
+    setCurrentTab("settings");
+    qaPlatformUsernameInput.focus();
+    return;
+  }
+
+  browseUploadingBatchId = batchId;
+  renderBrowseView();
+  try {
+    const response = await invoke<QaBatchUploadResponse>("upload_qa_batch", {
+      batchId,
+      platformUrl,
+      username: qaPlatformUsernameInput.value.trim(),
+      password: qaPlatformPasswordInput.value.trim()
+    });
+    const message = response.existingBatch
+      ? t("browse_upload_exists")
+      : `${t("browse_upload_success")} (${formatCount(response.uploadedCount)})`;
+    appendLog(
+      `${message} · batch_id=${response.batchId ?? "n/a"} · app=${response.applicationId} · type=${response.technicalTypeCode}`
+    );
+    platformHealthState = {
+      kind: "success",
+      response: {
+        reachable: true,
+        message: "ok",
+        endpoints: {
+          normalizedPlatformUrl: platformUrl,
+          platformWebBaseUrl: response.platformWebBaseUrl,
+          platformApiBaseUrl: response.platformApiBaseUrl
+        }
+      }
+    };
+    await syncBrowseBatchPlatformStatuses([batchId], true);
+    renderPlatformPanels();
+    window.alert(message);
+  } catch (error) {
+    window.alert(`${t("browse_upload_failed")}: ${String(error)}`);
+  } finally {
+    browseUploadingBatchId = null;
+    renderBrowseView();
+  }
+}
+
+async function refreshPlatformHealth() {
+  const platformUrl = currentQaPlatformUrl();
+  if (!platformUrl) {
+    window.alert(t("browse_platform_url_missing"));
+    setCurrentTab("settings");
+    qaPlatformUrlInput.focus();
+    return;
+  }
+
+  platformHealthState = { kind: "loading" };
+  renderPlatformPanels();
+  try {
+    const response = await invoke<PlatformHealthResponse>("check_platform_health", {
+      platformUrl
+    });
+    platformHealthState = { kind: "success", response };
+    appendLog(`${t("platform_health_ok")} ${response.endpoints.platformApiBaseUrl}`);
+  } catch (error) {
+    platformHealthState = { kind: "error", message: String(error) };
+    appendLog(`${t("platform_health_failed")}: ${String(error)}`);
+  }
+  renderPlatformPanels();
+}
+
+async function refreshPlatformLogin() {
+  const platformUrl = currentQaPlatformUrl();
+  if (!platformUrl) {
+    window.alert(t("browse_platform_url_missing"));
+    setCurrentTab("settings");
+    qaPlatformUrlInput.focus();
+    return;
+  }
+  if (!hasQaPlatformCredentials()) {
+    window.alert(t("browse_platform_credentials_missing"));
+    setCurrentTab("settings");
+    qaPlatformUsernameInput.focus();
+    return;
+  }
+
+  platformLoginState = { kind: "loading" };
+  renderPlatformPanels();
+  try {
+    const response = await invoke<PlatformLoginResponse>("login_platform", {
+      platformUrl,
+      username: qaPlatformUsernameInput.value.trim(),
+      password: qaPlatformPasswordInput.value.trim()
+    });
+    platformLoginState = { kind: "success", response };
+    platformHealthState = {
+      kind: "success",
+      response: {
+        reachable: true,
+        message: "ok",
+        endpoints: response.endpoints
+      }
+    };
+    appendLog(`${t("platform_login_ok")} ${response.user.username}`);
+  } catch (error) {
+    platformLoginState = { kind: "error", message: String(error) };
+    appendLog(`${t("platform_login_failed")}: ${String(error)}`);
+  }
+  renderPlatformPanels();
+}
+
+function currentPlatformAuthPayload():
+  | { platformUrl: string; username: string; password: string }
+  | null {
+  const platformUrl = currentQaPlatformUrl();
+  const username = qaPlatformUsernameInput.value.trim();
+  const password = qaPlatformPasswordInput.value.trim();
+  if (!platformUrl || !username || !password) {
+    return null;
+  }
+  return { platformUrl, username, password };
+}
+
+async function loadRemoteVirtualBrowseBatchSummary(): Promise<QaBatchSummary | null> {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    clearBrowseRemoteVirtualBatch();
+    return null;
+  }
+
+  const summaries = await invoke<PlatformImportBatchSummary[]>("list_platform_import_batches", auth);
+  const remoteSummary =
+    summaries.find(
+      (item) =>
+        item.source === PLATFORM_REMOTE_VIRTUAL_BATCH_SOURCE &&
+        item.id === PLATFORM_REMOTE_VIRTUAL_BATCH_ID
+    ) ?? null;
+
+  if (!remoteSummary) {
+    clearBrowseRemoteVirtualBatch();
+    return null;
+  }
+
+  browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(remoteSummary);
+  browseRemoteVirtualBatchDetail = null;
+  return browseRemoteVirtualBatch;
+}
+
+async function ensureRemoteVirtualBrowseBatchDetail(): Promise<PlatformImportBatchDetail> {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    throw new Error(currentLang === "zh" ? "请先填写平台地址、用户名和密码" : "Platform credentials are required");
+  }
+
+  if (browseRemoteVirtualBatchDetail) {
+    return browseRemoteVirtualBatchDetail;
+  }
+
+  const detail = await invoke<PlatformImportBatchDetail>("get_platform_import_batch_detail", {
+    ...auth,
+    batchId: PLATFORM_REMOTE_VIRTUAL_BATCH_ID
+  });
+  browseRemoteVirtualBatchDetail = detail;
+  browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(detail.batch);
+  browseBatches = mergeBrowseBatches(localBrowseBatches(), browseRemoteVirtualBatch);
+  return detail;
+}
+
+async function loadModelTrialSessionDetail(sessionId: number, silent = false) {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    return;
+  }
+
+  modelTrialDetailLoading = true;
+  if (!silent) {
+    modelTrialErrorMessage = null;
+    modelTrialNoticeMessage = null;
+  }
+  renderPlatformPanels();
+  try {
+    const detail = await invoke<TrialSessionDetail>("get_model_trial_session_detail", {
+      ...auth,
+      sessionId
+    });
+    modelTrialDetail = detail;
+    modelTrialSelectedSessionId = detail.session.id;
+    modelTrialSelectedConfigId = detail.session.llmConfigId;
+  } catch (error) {
+    modelTrialErrorMessage = `${t("model_trial_error_detail")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    modelTrialDetailLoading = false;
+    renderPlatformPanels();
+  }
+}
+
+async function loadModelTrialLocalBatches() {
+  try {
+    modelTrialLocalBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
+    if (
+      modelTrialSelectedBatchId &&
+      !modelTrialLocalBatches.some((item) => item.id === modelTrialSelectedBatchId)
+    ) {
+      modelTrialSelectedBatchId = null;
+      modelTrialLocalQuestions = [];
+      modelTrialSelectedQuestionId = null;
+      modelTrialLocalQuestionDetail = null;
+    }
+  } catch (error) {
+    modelTrialErrorMessage = `${t("browse_tab_title")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  }
+}
+
+async function loadModelTrialLocalQuestions(batchId: string) {
+  modelTrialLocalQuestionsLoading = true;
+  modelTrialSelectedBatchId = batchId;
+  modelTrialSelectedQuestionId = null;
+  modelTrialLocalQuestionDetail = null;
+  renderPlatformPanels();
+  try {
+    modelTrialLocalQuestions = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
+      batchId
+    });
+  } catch (error) {
+    modelTrialLocalQuestions = [];
+    modelTrialErrorMessage = `${t("model_trial_select_question")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    modelTrialLocalQuestionsLoading = false;
+    renderPlatformPanels();
+  }
+}
+
+async function loadModelTrialLocalQuestionDetail(batchId: string, qaId: string) {
+  try {
+    const detail = await invoke<QaRecordDetail>("get_batch_qa_record", {
+      batchId,
+      qaId
+    });
+    modelTrialLocalQuestionDetail = detail;
+    modelTrialSelectedQuestionId = qaId;
+  } catch (error) {
+    modelTrialLocalQuestionDetail = null;
+    modelTrialErrorMessage = `${t("model_trial_source_card")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    renderPlatformPanels();
+  }
+}
+
+async function loadModelTrialWorkspace(showNotice = false) {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    resetModelTrialState();
+    renderPlatformPanels();
+    return;
+  }
+
+  modelTrialWorkspaceLoading = true;
+  platformLoginState = { kind: "loading" };
+  modelTrialErrorMessage = null;
+  if (!showNotice) {
+    modelTrialNoticeMessage = null;
+  }
+  renderPlatformPanels();
+  try {
+    const response = await invoke<TrialWorkspaceResponse>("load_model_trial_workspace", auth);
+    platformLoginState = {
+      kind: "success",
+      response: {
+        endpoints: response.endpoints,
+        user: response.user
+      }
+    };
+    platformHealthState = {
+      kind: "success",
+      response: {
+        reachable: true,
+        message: "ok",
+        endpoints: response.endpoints
+      }
+    };
+
+    const nextConfigs = response.configs.filter((item) => item.isTrialEnabled && item.hasApiKey);
+    const nextSessions = response.sessions;
+    modelTrialConfigs = nextConfigs;
+    modelTrialSessions = nextSessions;
+
+    const defaultConfig =
+      nextConfigs.find((item) => item.id === modelTrialSelectedConfigId) ??
+      nextConfigs.find((item) => item.hasApiKey && item.isTrialEnabled) ??
+      nextConfigs[0] ??
+      null;
+    modelTrialSelectedConfigId = defaultConfig?.id ?? null;
+
+    const selectedSessionStillExists = nextSessions.some((item) => item.id === modelTrialSelectedSessionId);
+    modelTrialSelectedSessionId = selectedSessionStillExists
+      ? modelTrialSelectedSessionId
+      : nextSessions[0]?.id ?? null;
+    if (!modelTrialSelectedSessionId) {
+      modelTrialDetail = null;
+    }
+
+    if (showNotice) {
+      modelTrialNoticeMessage = t("model_trial_notice_refreshed");
+    }
+  } catch (error) {
+    platformLoginState = { kind: "error", message: String(error) };
+    modelTrialErrorMessage = `${t("model_trial_error_load")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    modelTrialWorkspaceLoading = false;
+    renderPlatformPanels();
+  }
+
+  if (modelTrialSelectedSessionId !== null) {
+    await loadModelTrialSessionDetail(modelTrialSelectedSessionId, true);
+  }
+}
+
+async function createModelTrialSession() {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    modelTrialErrorMessage = t("model_trial_settings_required");
+    renderPlatformPanels();
+    return null;
+  }
+  if (!modelTrialSelectedConfigId) {
+    modelTrialErrorMessage = t("model_trial_need_model");
+    renderPlatformPanels();
+    return null;
+  }
+
+  modelTrialCreating = true;
+  modelTrialErrorMessage = null;
+  modelTrialNoticeMessage = null;
+  renderPlatformPanels();
+  try {
+    const response = await invoke<TrialSessionCreateResponse>("create_model_trial_session", {
+      ...auth,
+      llmConfigId: modelTrialSelectedConfigId,
+      sourceQaItemId: null,
+      sourceAnswerId: null,
+      title: modelTrialLocalQuestionDetail?.item.question ?? currentModelTrialSelectedQuestion()?.question ?? null
+    });
+    modelTrialSelectedSessionId = response.sessionId;
+    await loadModelTrialWorkspace(false);
+    await loadModelTrialSessionDetail(response.sessionId, true);
+    modelTrialNoticeMessage = t("model_trial_notice_created");
+    return response.sessionId;
+  } catch (error) {
+    modelTrialErrorMessage = `${t("model_trial_error_create")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+    renderPlatformPanels();
+    return null;
+  } finally {
+    modelTrialCreating = false;
+    renderPlatformPanels();
+  }
+}
+
+async function sendModelTrialMessage() {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    modelTrialErrorMessage = t("model_trial_settings_required");
+    renderPlatformPanels();
+    return;
+  }
+  const content = modelTrialComposer.trim();
+  if (!content) {
+    modelTrialErrorMessage = t("model_trial_need_message");
+    renderPlatformPanels();
+    return;
+  }
+  if (!modelTrialSelectedConfigId) {
+    modelTrialErrorMessage = t("model_trial_need_model");
+    renderPlatformPanels();
+    return;
+  }
+
+  modelTrialSending = true;
+  modelTrialErrorMessage = null;
+  modelTrialNoticeMessage = null;
+  renderPlatformPanels();
+  try {
+    const sessionId = modelTrialSelectedSessionId ?? (await createModelTrialSession());
+    if (!sessionId) {
+      return;
+    }
+    await invoke<TrialSendMessageResponse>("send_model_trial_message", {
+      ...auth,
+      sessionId,
+      content
+    });
+    modelTrialComposer = "";
+    await loadModelTrialWorkspace(false);
+    await loadModelTrialSessionDetail(sessionId, true);
+  } catch (error) {
+    modelTrialErrorMessage = `${t("model_trial_error_send")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    modelTrialSending = false;
+    renderPlatformPanels();
+  }
+}
+
+async function deleteModelTrialSession(sessionId: number) {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    modelTrialErrorMessage = t("model_trial_settings_required");
+    renderPlatformPanels();
+    return;
+  }
+  if (!window.confirm(`${t("model_trial_delete")} #${sessionId}?`)) {
+    return;
+  }
+
+  modelTrialDeletingSessionId = sessionId;
+  modelTrialErrorMessage = null;
+  modelTrialNoticeMessage = null;
+  renderPlatformPanels();
+  try {
+    await invoke("delete_model_trial_session", {
+      ...auth,
+      sessionId
+    });
+    if (modelTrialSelectedSessionId === sessionId) {
+      modelTrialSelectedSessionId = null;
+      modelTrialDetail = null;
+    }
+    await loadModelTrialWorkspace(false);
+    modelTrialNoticeMessage = t("model_trial_notice_deleted");
+  } catch (error) {
+    modelTrialErrorMessage = `${t("model_trial_error_delete")}: ${String(error)}`;
+    appendLog(modelTrialErrorMessage);
+  } finally {
+    modelTrialDeletingSessionId = null;
+    renderPlatformPanels();
+  }
+}
+
+async function openPlatformArea(kind: "qa-evaluate" | "model-trial") {
+  const targetUrl = currentPlatformOpenUrl(kind);
+  if (!targetUrl) {
+    await refreshPlatformLogin();
+  }
+  const nextTargetUrl = currentPlatformOpenUrl(kind);
+  if (!nextTargetUrl) {
     return;
   }
 
   try {
-    const response = await invoke<QaBatchUploadResponse>("upload_qa_batch", {
-      batchId,
-      uploadUrl
-    });
-    window.alert(`${t("browse_upload_success")} (${formatCount(response.uploadedCount)})`);
+    await invoke("open_external_url", { url: nextTargetUrl });
+    appendLog(
+      kind === "qa-evaluate" ? t("platform_opened_qa_page") : t("platform_opened_trial_page")
+    );
   } catch (error) {
-    window.alert(`${t("browse_upload_failed")}: ${String(error)}`);
+    appendLog(`${t("platform_open_failed")}: ${String(error)}`);
   }
 }
 
 async function resumeBrowseBatch(batchId: string) {
   try {
+    const batch = browseBatches.find((item) => item.id === batchId) ?? null;
+    if (!batch || !canResumeBrowseBatch(batch)) {
+      return;
+    }
     const currentRequest = collectRequest();
     const loadedRequest = await invoke<PipelineFormRequest>("load_batch_pipeline_request", {
       batchId
     });
-    const batch = browseBatches.find((item) => item.id === batchId) ?? null;
     const mergedRequest: PipelineFormRequest = {
       ...loadedRequest,
       apiKey: currentRequest.apiKey,
-      qaUploadUrl: currentRequest.qaUploadUrl,
+      qaPlatformUrl: currentRequest.qaPlatformUrl,
+      qaPlatformUsername: currentRequest.qaPlatformUsername,
+      qaPlatformPassword: currentRequest.qaPlatformPassword,
       literatureApiUrl: currentRequest.literatureApiUrl,
       literatureApiAuthToken: currentRequest.literatureApiAuthToken
     };
@@ -3362,7 +5016,8 @@ async function resumeBrowseBatch(batchId: string) {
     void persistCurrentConfig(true);
     appendLog(t("log_loaded_batch_task"));
   } catch (error) {
-    window.alert(`${t("browse_action_continue")}: ${String(error)}`);
+    const batch = browseBatches.find((item) => item.id === batchId) ?? null;
+    window.alert(`${batch ? browseResumeActionLabel(batch) : t("browse_action_continue")}: ${String(error)}`);
   }
 }
 
@@ -3374,7 +5029,25 @@ async function loadBrowseBatches() {
   browseLoading = true;
   try {
     browseErrorMessage = null;
-    browseBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
+    const localBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
+    const hasPlatformAuth = Boolean(currentPlatformAuthPayload());
+    let remoteBatch: QaBatchSummary | null = null;
+    if (hasPlatformAuth) {
+      try {
+        remoteBatch = await loadRemoteVirtualBrowseBatchSummary();
+      } catch (error) {
+        clearBrowseRemoteVirtualBatch();
+        appendLog(
+          `${
+            currentLang === "zh" ? "远程任务同步失败" : "Remote browse sync failed"
+          }: ${String(error)}`
+        );
+      }
+    } else {
+      clearBrowseRemoteVirtualBatch();
+    }
+    browseBatches = mergeBrowseBatches(localBatches, remoteBatch);
+    syncBrowsePlatformStatusCacheToCurrentBatches();
     if (!browseBatches.length) {
       browseView = "batches";
       browseSelectedBatchId = null;
@@ -3382,6 +5055,7 @@ async function loadBrowseBatches() {
       browseDetailData = null;
       browseQuestionsLoading = false;
       browseDetailLoading = false;
+      clearBrowsePlatformStatuses();
     } else if (!browseSelectedBatchId || !browseBatches.some((batch) => batch.id === browseSelectedBatchId)) {
       browseView = "batches";
       browseSelectedBatchId = null;
@@ -3390,9 +5064,20 @@ async function loadBrowseBatches() {
       browseQuestionsLoading = false;
       browseDetailLoading = false;
     }
+    const localBatchIds = localBrowseBatches().map((batch) => batch.id);
+    if (localBatchIds.length && hasPlatformAuth) {
+      void syncBrowseBatchPlatformStatuses(
+        localBatchIds,
+        true
+      );
+    } else {
+      clearBrowsePlatformStatuses();
+    }
   } catch (error) {
     browseView = "batches";
     browseBatches = [];
+    clearBrowseRemoteVirtualBatch();
+    clearBrowsePlatformStatuses();
     browseSelectedBatchId = null;
     browsePageData = null;
     browseDetailData = null;
@@ -3418,11 +5103,16 @@ async function loadBrowseQaPage(batchId: string, page: number) {
   renderBrowseView();
 
   try {
-    browsePageData = await invoke<QaRecordPage>("list_batch_qa_records", {
-      batchId,
-      page,
-      pageSize: 20
-    });
+    if (isRemoteVirtualBrowseBatch(batchId)) {
+      const detail = await ensureRemoteVirtualBrowseBatchDetail();
+      browsePageData = remoteVirtualBrowsePageFromDetail(detail, page, 10);
+    } else {
+      browsePageData = await invoke<QaRecordPage>("list_batch_qa_records", {
+        batchId,
+        page,
+        pageSize: 10
+      });
+    }
   } catch (error) {
     browsePageData = null;
     browseDetailData = null;
@@ -3441,10 +5131,21 @@ async function loadBrowseDetail(batchId: string, qaId: string) {
   renderBrowseView();
 
   try {
-    browseDetailData = await invoke<QaRecordDetail>("get_batch_qa_record", {
-      batchId,
-      qaId
-    });
+    if (isRemoteVirtualBrowseBatch(batchId)) {
+      const detail = await ensureRemoteVirtualBrowseBatchDetail();
+      const item = detail.items.find((entry) => String(entry.id) === qaId);
+      if (!item) {
+        throw new Error(`QA record not found: ${qaId}`);
+      }
+      const batch = remoteVirtualBatchToBrowseSummary(detail.batch);
+      browseDetailData = platformImportItemToQaRecordDetail(item, batch);
+      browsePageData = remoteVirtualBrowsePageFromDetail(detail, browsePageData?.page ?? 1, 10);
+    } else {
+      browseDetailData = await invoke<QaRecordDetail>("get_batch_qa_record", {
+        batchId,
+        qaId
+      });
+    }
   } catch (error) {
     browseDetailData = null;
     browseErrorMessage = `Load QA detail failed: ${String(error)}`;
@@ -3468,9 +5169,8 @@ function failureTitle(phase: "preview" | "run"): string {
 }
 
 function updateRunOutputDirButton() {
-  const response = currentRunResponse();
-  openRunOutputDirButton.textContent = t("action_open_run_output_dir");
-  openRunOutputDirButton.disabled = !response;
+  openRunOutputDirButton.hidden = true;
+  openRunOutputDirButton.disabled = true;
 }
 
 function renderOutput() {
@@ -3542,10 +5242,8 @@ function renderOutput() {
         { labelKey: "summary_output_dir", value: outputState.response.outputDir, wide: true }
       ]);
       renderActionButtons([
-        { key: "action_open_output_dir", action: "open-output-dir" },
         { key: "action_open_dataset", action: "open-dataset" },
         { key: "action_open_pack_summary", action: "open-pack-summary" },
-        { key: "action_copy_output_dir", action: "copy-output-dir" },
         { key: "action_copy_dataset_path", action: "copy-dataset-path" }
       ]);
       output.textContent = JSON.stringify(outputState.response, null, 2);
@@ -3592,14 +5290,27 @@ function applyTranslations() {
   setText("lang-label", t("lang_label"));
   setText("hero-title", t("hero_title"));
   setText("hero-lede", t("hero_lede"));
+  setText("app-author-badge", t("app_author_badge"));
   setText("tab-topic-label", t("tab_topic"));
   setText("tab-settings-label", t("tab_settings"));
   setText("tab-browse-label", t("tab_browse"));
+  setText("tab-qa-evaluate-label", t("tab_qa_evaluate"));
+  setText("tab-model-trial-label", t("tab_model_trial"));
+  setText("tab-qa-evaluate-badge", t("tab_internal_badge"));
+  setText("tab-model-trial-badge", t("tab_internal_badge"));
   setText("check-update-label", t("action_check_update"));
   setText("topic-tab-title", t("topic_tab_title"));
   setText("settings-tab-title", t("settings_tab_title"));
   setText("settings-basic-copy", t("settings_basic_copy"));
+  setText(
+    "settings-version",
+    currentLang === "zh" ? `当前版本：v${appVersion}` : `Current version: v${appVersion}`
+  );
   setText("browse-tab-title", t("browse_tab_title"));
+  setText("qa-evaluate-tab-title", t("qa_evaluate_tab_title"));
+  setText("qa-evaluate-tab-copy", t("qa_evaluate_tab_copy"));
+  setText("model-trial-tab-title", t("model_trial_tab_title"));
+  setText("model-trial-tab-copy", t("model_trial_tab_copy"));
   setText("model-section-title", t("model_section_title"));
   setText("integration-section-title", t("integration_section_title"));
   setText("runtime-section-title", t("runtime_section_title"));
@@ -3640,8 +5351,10 @@ function applyTranslations() {
   setText("base-url-label", t("base_url"));
   setText("api-key-label", t("api_key"));
   setText("api-key-hint", t("api_key_hint"));
-  setText("qa-upload-url-label", t("browse_upload_url"));
-  setText("qa-upload-url-hint", t("browse_upload_url_hint"));
+  setText("qa-platform-url-label", t("qa_platform_url"));
+  setText("qa-platform-url-hint", t("qa_platform_url_hint"));
+  setText("qa-platform-username-label", t("qa_platform_username"));
+  setText("qa-platform-password-label", t("qa_platform_password"));
   setText("literature-api-url-label", t("literature_api_url"));
   setText("literature-api-auth-label", t("literature_api_auth"));
   setText("literature-api-auth-hint", t("literature_api_auth_hint"));
@@ -3678,9 +5391,12 @@ function applyTranslations() {
   updateRunButtonUi();
   addTopicTagButton.textContent = t("add_tag");
   topicTagInput.placeholder = t("custom_tag_placeholder");
-  qaUploadUrlInput.placeholder = "https://example.com/qa/import";
+  qaPlatformUrlInput.placeholder = DEFAULT_QA_PLATFORM_URL;
+  qaPlatformUsernameInput.placeholder = currentLang === "zh" ? "你的平台账号" : "your account";
   literatureApiUrlInput.placeholder = "https://example.com/literature/api";
   updateApiKeyVisibilityUi();
+  appVersionBadge.textContent = `v${appVersion}`;
+  renderPlatformPanels();
   const logPlaceholderKey = findMatchingTranslationKey(logs.textContent, [
     "no_run",
     "waiting_events"
@@ -3784,12 +5500,13 @@ function syncManagedRunModeUi() {
 }
 
 function renderManagedRunPicker() {
+  const localBatches = localBrowseBatches();
   const options = [
     {
       value: "",
-      label: browseBatches.length ? t("managed_run_mode_pick_placeholder") : t("managed_run_mode_pick_empty")
+      label: localBatches.length ? t("managed_run_mode_pick_placeholder") : t("managed_run_mode_pick_empty")
     },
-    ...browseBatches.map((batch) => ({
+    ...localBatches.map((batch) => ({
       value: batch.id,
       label: `${batch.topicName || batch.name} · ${formatUpdatedAt(batch.updatedAtMs)}`
     }))
@@ -3802,7 +5519,8 @@ function renderManagedRunPicker() {
     )
     .join("");
   managedRunPickInput.value = managedResumeBatchId ?? "";
-  managedRunPickInput.disabled = currentStatus === "running" || currentStatus === "stopping" || browseBatches.length === 0;
+  managedRunPickInput.disabled =
+    currentStatus === "running" || currentStatus === "stopping" || localBatches.length === 0;
 }
 
 function clearManagedResumeBatch(logChange = false) {
@@ -3881,7 +5599,7 @@ function normalizeRuntimeParameterInputs(commit = false) {
   }
 
   if (maxInFlight !== null) {
-    maxInFlight = cotMode ? 1 : Math.max(1, maxInFlight);
+    maxInFlight = cotMode ? DEFAULT_COT_MAX_IN_FLIGHT : Math.max(1, maxInFlight);
     setNumberValueIfNeeded(maxInFlightInput, maxInFlight);
   }
 
@@ -4098,6 +5816,8 @@ function updateRunButtonUi() {
     runButton.textContent = t("stop_run");
   } else if (currentStatus === "stopping") {
     runButton.textContent = t("stop_requested");
+  } else if (shouldShowContinueRunButton()) {
+    runButton.textContent = t("continue_run");
   } else {
     runButton.textContent = t("run_pipeline");
   }
@@ -4121,6 +5841,82 @@ function buildLogExportFileName() {
   ];
 
   return `distill-studio-run-log-${parts.join("")}.txt`;
+}
+
+function clearBrowsePlatformStatuses() {
+  browsePlatformStatusRequestId += 1;
+  browsePlatformStatusLoading = false;
+  browsePlatformStatusMap = new Map();
+}
+
+function syncBrowsePlatformStatusCacheToCurrentBatches() {
+  const validIds = new Set(localBrowseBatches().map((batch) => batch.id));
+  browsePlatformStatusMap = new Map(
+    [...browsePlatformStatusMap.entries()].filter(([batchId]) => validIds.has(batchId))
+  );
+}
+
+async function syncBrowseBatchPlatformStatuses(
+  batchIds: string[] = browseBatches.map((batch) => batch.id),
+  silent = true
+) {
+  const auth = currentPlatformAuthPayload();
+  const normalizedBatchIds = [
+    ...new Set(
+      batchIds
+        .map((batchId) => batchId.trim())
+        .filter((batchId) => batchId && !isRemoteVirtualBrowseBatch(batchId))
+    )
+  ];
+
+  if (!auth || !normalizedBatchIds.length) {
+    clearBrowsePlatformStatuses();
+    renderBrowseView();
+    return;
+  }
+
+  const requestId = ++browsePlatformStatusRequestId;
+  browsePlatformStatusLoading = true;
+  if (!silent) {
+    renderBrowseView();
+  }
+
+  try {
+    const response = await invoke<QaBatchPlatformStatusResponse>("get_qa_batch_platform_statuses", {
+      ...auth,
+      batchIds: normalizedBatchIds
+    });
+    if (requestId !== browsePlatformStatusRequestId) {
+      return;
+    }
+
+    const nextMap = new Map(browsePlatformStatusMap);
+    for (const item of response.items) {
+      nextMap.set(item.externalBatchId, item);
+    }
+    browsePlatformStatusMap = nextMap;
+    syncBrowsePlatformStatusCacheToCurrentBatches();
+    platformHealthState = {
+      kind: "success",
+      response: {
+        reachable: true,
+        message: "ok",
+        endpoints: response.endpoints
+      }
+    };
+  } catch (error) {
+    if (requestId !== browsePlatformStatusRequestId) {
+      return;
+    }
+    if (!silent) {
+      appendLog(`${t("browse_platform_status_sync_failed")}: ${String(error)}`);
+    }
+  } finally {
+    if (requestId === browsePlatformStatusRequestId) {
+      browsePlatformStatusLoading = false;
+      renderBrowseView();
+    }
+  }
 }
 
 async function exportLogs() {
@@ -4203,6 +5999,8 @@ function updateProgressFromEvent(payload: PipelineProgressEvent) {
           runtimeKind: payload.runtimeKind ?? lastPipelineProgressEvent.runtimeKind ?? null,
           retryAttempt: payload.retryAttempt ?? lastPipelineProgressEvent.retryAttempt ?? null,
           retryLimit: payload.retryLimit ?? lastPipelineProgressEvent.retryLimit ?? null,
+          attemptNumber: payload.attemptNumber ?? lastPipelineProgressEvent.attemptNumber ?? null,
+          attemptLimit: payload.attemptLimit ?? lastPipelineProgressEvent.attemptLimit ?? null,
           errorMessage: payload.errorMessage ?? lastPipelineProgressEvent.errorMessage ?? null,
           shardIndex: payload.shardIndex ?? lastPipelineProgressEvent.shardIndex ?? null,
           shardCount: payload.shardCount ?? lastPipelineProgressEvent.shardCount ?? null,
@@ -4210,7 +6008,18 @@ function updateProgressFromEvent(payload: PipelineProgressEvent) {
             payload.shardItemCompleted ?? lastPipelineProgressEvent.shardItemCompleted ?? null,
           shardItemTotal: payload.shardItemTotal ?? lastPipelineProgressEvent.shardItemTotal ?? null,
           totalGenerated: payload.totalGenerated ?? lastPipelineProgressEvent.totalGenerated ?? null,
-          targetCount: payload.targetCount ?? lastPipelineProgressEvent.targetCount ?? null
+          targetCount: payload.targetCount ?? lastPipelineProgressEvent.targetCount ?? null,
+          batchIndex: payload.batchIndex ?? lastPipelineProgressEvent.batchIndex ?? null,
+          batchCountInShard:
+            payload.batchCountInShard ?? lastPipelineProgressEvent.batchCountInShard ?? null,
+          batchSize: payload.batchSize ?? lastPipelineProgressEvent.batchSize ?? null,
+          durationMs: payload.durationMs ?? lastPipelineProgressEvent.durationMs ?? null,
+          backoffSecs: payload.backoffSecs ?? lastPipelineProgressEvent.backoffSecs ?? null,
+          subtopic: payload.subtopic ?? lastPipelineProgressEvent.subtopic ?? null,
+          axis: payload.axis ?? lastPipelineProgressEvent.axis ?? null,
+          questionType: payload.questionType ?? lastPipelineProgressEvent.questionType ?? null,
+          difficulty: payload.difficulty ?? lastPipelineProgressEvent.difficulty ?? null,
+          audience: payload.audience ?? lastPipelineProgressEvent.audience ?? null
         };
   lastPipelineProgressEvent = mergedPayload;
   updateRunStatsFromEvent(payload);
@@ -4301,7 +6110,9 @@ function collectRequest() {
     resume: resumeInput.checked,
     managedRunMode: currentManagedRunMode(),
     managedRunBatchId: managedResumeBatchId,
-    qaUploadUrl: currentQaUploadUrl() || null,
+    qaPlatformUrl: currentQaPlatformUrl() || null,
+    qaPlatformUsername: qaPlatformUsernameInput.value.trim() || null,
+    qaPlatformPassword: qaPlatformPasswordInput.value.trim() || null,
     literatureApiUrl: literatureApiUrlInput.value.trim() || null,
     literatureApiAuthToken: literatureApiAuthInput.value.trim() || null
   };
@@ -4359,7 +6170,9 @@ function applyRequest(request: PipelineFormRequest) {
   providerInput.value = request.provider;
   baseUrlInput.value = request.baseUrl ?? "";
   apiKeyInput.value = request.apiKey ?? "";
-  qaUploadUrlInput.value = request.qaUploadUrl ?? "";
+  qaPlatformUrlInput.value = request.qaPlatformUrl ?? DEFAULT_QA_PLATFORM_URL;
+  qaPlatformUsernameInput.value = request.qaPlatformUsername ?? "";
+  qaPlatformPasswordInput.value = request.qaPlatformPassword ?? "";
   literatureApiUrlInput.value = request.literatureApiUrl ?? "";
   literatureApiAuthInput.value = request.literatureApiAuthToken ?? "";
   shardSizeInput.value = String(request.shardSize);
@@ -4376,6 +6189,7 @@ function applyRequest(request: PipelineFormRequest) {
     provider: request.provider,
     baseUrl: request.baseUrl
   });
+  resetPlatformIntegrationState();
   providerPresetInput.value = presetId;
   syncProviderFieldVisibility(presetId);
   syncModelOptions(presetId, request.model);
@@ -4383,6 +6197,7 @@ function applyRequest(request: PipelineFormRequest) {
   syncManagedRunModeUi();
   renderTopicTags();
   renderSetupSummary();
+  updateRunButtonUi();
 }
 
 void listen<PipelineProgressEvent>("pipeline-progress", (event) => {
@@ -4588,10 +6403,12 @@ document.addEventListener("keydown", (event) => {
 });
 
 qaModeNormalInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(true);
   scheduleAutoSave();
 });
 qaModeCotInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
   if (qaModeCotInput.checked) {
     applyQaModeDefaults("cot");
   } else {
@@ -4631,17 +6448,20 @@ clearManagedResumeBatchButton.addEventListener("click", () => {
 });
 
 providerPresetInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
   const presetId = providerPresetInput.value as ProviderPresetId;
   applyProviderPreset(presetId, presetId !== "custom");
   scheduleAutoSave();
 });
 
 providerInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
   syncProviderPresetInput();
   renderSetupSummary();
   scheduleAutoSave();
 });
 modelInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
   const usesCustomModel = modelInput.value === CUSTOM_MODEL_VALUE;
   customModelField.hidden = !usesCustomModel;
   if (usesCustomModel) {
@@ -4654,10 +6474,12 @@ modelInput.addEventListener("change", () => {
   scheduleAutoSave();
 });
 customModelInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   renderSetupSummary();
   scheduleAutoSave();
 });
 baseUrlInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   syncProviderPresetInput();
   renderSetupSummary();
   scheduleAutoSave();
@@ -4666,47 +6488,73 @@ apiKeyInput.addEventListener("input", () => {
   renderSetupSummary();
   scheduleAutoSave();
 });
-qaUploadUrlInput.addEventListener("input", () => {
+qaPlatformUrlInput.addEventListener("input", () => {
+  resetPlatformIntegrationState();
+  renderBrowseView();
+  renderPlatformPanels();
+  scheduleAutoSave();
+});
+qaPlatformUsernameInput.addEventListener("input", () => {
+  resetPlatformIntegrationState();
+  renderBrowseView();
+  renderPlatformPanels();
+  scheduleAutoSave();
+});
+qaPlatformPasswordInput.addEventListener("input", () => {
+  resetPlatformIntegrationState();
+  renderBrowseView();
+  renderPlatformPanels();
+  scheduleAutoSave();
+});
+literatureApiUrlInput.addEventListener("input", () => {
+  renderPlatformPanels();
   renderBrowseView();
   scheduleAutoSave();
 });
-literatureApiUrlInput.addEventListener("input", scheduleAutoSave);
 literatureApiAuthInput.addEventListener("input", scheduleAutoSave);
 toggleApiKeyVisibilityButton.addEventListener("click", () => {
   apiKeyVisible = !apiKeyVisible;
   updateApiKeyVisibilityUi();
 });
 promptInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   renderSetupSummary();
   scheduleAutoSave();
 });
 targetCountInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   renderSetupSummary();
   scheduleAutoSave();
 });
 planLimitInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   renderSetupSummary();
   scheduleAutoSave();
 });
 shardSizeInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   scheduleAutoSave();
 });
 batchSizeInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   scheduleAutoSave();
 });
 maxInFlightInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   scheduleAutoSave();
 });
 maxRetriesInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   scheduleAutoSave();
 });
 timeoutInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(false);
   scheduleAutoSave();
 });
@@ -4717,7 +6565,10 @@ batchSizeInput.addEventListener("change", () => normalizeRuntimeParameterInputs(
 maxInFlightInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
 maxRetriesInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
 timeoutInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
-resumeInput.addEventListener("change", scheduleAutoSave);
+resumeInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
+  scheduleAutoSave();
+});
 
 function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
   const lines = [
@@ -4838,6 +6689,146 @@ browseBackButton.addEventListener("click", () => {
   renderBrowseView();
 });
 
+for (const panel of [qaEvaluatePanel, modelTrialPanel]) {
+  panel.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const button = target.closest<HTMLButtonElement>("[data-platform-action]");
+    const action = button?.dataset.platformAction;
+    if (!action || button.disabled) {
+      return;
+    }
+
+    if (action === "health") {
+      void refreshPlatformHealth();
+      return;
+    }
+    if (action === "login") {
+      void refreshPlatformLogin();
+      return;
+    }
+    if (action === "open-qa") {
+      void openPlatformArea("qa-evaluate");
+      return;
+    }
+    if (action === "open-trial") {
+      void openPlatformArea("model-trial");
+    }
+  });
+}
+
+modelTrialPanel.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest<HTMLButtonElement>("[data-model-trial-action]");
+  const action = button?.dataset.modelTrialAction;
+  if (!action || button.disabled) {
+    return;
+  }
+
+  if (action === "refresh-workspace") {
+    void (async () => {
+      await loadModelTrialLocalBatches();
+      await loadModelTrialWorkspace(true);
+    })();
+    return;
+  }
+  if (action === "create-session") {
+    void createModelTrialSession();
+    return;
+  }
+  if (action === "select-session") {
+    const sessionId = Number(button.dataset.sessionId);
+    if (Number.isFinite(sessionId) && sessionId > 0) {
+      modelTrialSelectedSessionId = sessionId;
+      void loadModelTrialSessionDetail(sessionId);
+    }
+    return;
+  }
+  if (action === "delete-session") {
+    const sessionId = Number(button.dataset.sessionId);
+    if (Number.isFinite(sessionId) && sessionId > 0) {
+      void deleteModelTrialSession(sessionId);
+    }
+    return;
+  }
+  if (action === "send-message") {
+    void sendModelTrialMessage();
+  }
+});
+
+modelTrialPanel.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  if (target instanceof HTMLSelectElement && target.id === "model-trial-config-select") {
+    modelTrialSelectedConfigId = Number(target.value) || null;
+    modelTrialNoticeMessage = null;
+    modelTrialErrorMessage = null;
+    renderPlatformPanels();
+    return;
+  }
+
+  if (target instanceof HTMLSelectElement && target.id === "model-trial-batch-select") {
+    const batchId = target.value;
+    if (!batchId) {
+      modelTrialSelectedBatchId = null;
+      modelTrialLocalQuestions = [];
+      modelTrialSelectedQuestionId = null;
+      modelTrialLocalQuestionDetail = null;
+      renderPlatformPanels();
+      return;
+    }
+    void loadModelTrialLocalQuestions(batchId);
+    return;
+  }
+
+  if (target instanceof HTMLSelectElement && target.id === "model-trial-question-select") {
+    const qaId = target.value;
+    modelTrialSelectedQuestionId = qaId || null;
+    modelTrialLocalQuestionDetail = null;
+    if (modelTrialSelectedBatchId && qaId) {
+      const selectedQuestion = currentModelTrialSelectedQuestion();
+      if (selectedQuestion && !modelTrialComposer.trim()) {
+        modelTrialComposer = selectedQuestion.question;
+      }
+      void loadModelTrialLocalQuestionDetail(modelTrialSelectedBatchId, qaId);
+      return;
+    }
+    modelTrialNoticeMessage = null;
+    modelTrialErrorMessage = null;
+    renderPlatformPanels();
+  }
+});
+
+modelTrialPanel.addEventListener("input", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLTextAreaElement && target.id === "model-trial-composer") {
+    modelTrialComposer = target.value;
+  }
+});
+
+modelTrialPanel.addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (
+    target instanceof HTMLTextAreaElement &&
+    target.id === "model-trial-composer" &&
+    event.key === "Enter" &&
+    (event.metaKey || event.ctrlKey)
+  ) {
+    event.preventDefault();
+    void sendModelTrialMessage();
+  }
+});
+
 runReadinessBanner.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -4920,7 +6911,14 @@ checkUpdateButton.addEventListener("click", async () => {
     appendLog(`${t("log_update_installing")} ${response.version ?? ""}`.trim());
     await invoke("install_app_update");
   } catch (error) {
-    appendLog(`${t("log_update_failed")}: ${String(error)}`);
+    const errorText = String(error);
+    const isTimeout = errorText.includes("Update check timed out after 5 seconds");
+    const displayMessage = isTimeout ? t("log_update_timeout") : `${t("log_update_failed")}: ${errorText}`;
+    appendLog(displayMessage);
+    await message(displayMessage, {
+      title: t("action_check_update"),
+      kind: "warning"
+    });
     setStatus("idle", false);
   }
 });
@@ -5018,6 +7016,7 @@ runButton.addEventListener("click", async () => {
         prompt: composeEffectivePrompt(request.prompt, request.topicTags)
       }
     });
+    clearManagedResumeBatch(false);
     outputState = { kind: "run_success", response };
     renderOutput();
     browseSelectedBatchId = null;
@@ -5026,10 +7025,12 @@ runButton.addEventListener("click", async () => {
   } catch (error) {
     const message = String(error);
     if (isPipelineCancelledMessage(message)) {
+      await armResumeBatchForRequest(request);
       outputState = { kind: "cancelled", message: t("pipeline_cancelled") };
       renderOutput();
       appendLog(t("log_pipeline_cancelled"));
     } else {
+      await armResumeBatchForRequest(request);
       outputState = { kind: "error", phase: "run", message };
       renderOutput();
       appendLog(`${t("pipeline_failed")}: ${message}`);
@@ -5042,6 +7043,19 @@ runButton.addEventListener("click", async () => {
 });
 
 async function initializeApp() {
+  try {
+    const metadata = await invoke<AppMetadataResponse>("get_app_metadata");
+    appVersion = metadata.version;
+  } catch (error) {
+    appendLog(`app metadata failed: ${String(error)}`);
+  }
+  if (runModeBlock) {
+    runModeBlock.hidden = true;
+  }
+  openRunOutputDirButton.hidden = true;
+  if (!qaPlatformUrlInput.value.trim()) {
+    qaPlatformUrlInput.value = DEFAULT_QA_PLATFORM_URL;
+  }
   applyTranslations();
   syncProviderPresetInput();
   normalizeRuntimeParameterInputs(true);
@@ -5049,6 +7063,7 @@ async function initializeApp() {
   normalizeRuntimeParameterInputs(true);
   autoSaveEnabled = true;
   renderRunStats();
+  renderPlatformPanels();
   void loadBrowseBatches();
   maybeShowFirstLaunchModal();
 }

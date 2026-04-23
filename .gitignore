@@ -10,6 +10,7 @@ target/
 
 # Local secrets and machine-specific config
 .env.local
+config/local/generate_config*.json
 config/local/gui.pipeline.json
 config/local/updater.json
 config/local/profiles/

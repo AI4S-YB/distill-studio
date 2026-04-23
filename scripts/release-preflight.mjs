@@ -21,6 +21,43 @@ async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
 }
 
+function stripWrappingQuotes(value) {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseEnvFile(content) {
+  const parsed = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const normalized = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separatorIndex = normalized.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = normalized.slice(0, separatorIndex).trim();
+    if (!key) {
+      continue;
+    }
+
+    parsed[key] = stripWrappingQuotes(normalized.slice(separatorIndex + 1));
+  }
+
+  return parsed;
+}
+
 function printCheck(ok, label, detail = "") {
   const marker = ok ? "OK" : "FAIL";
   const suffix = detail ? ` - ${detail}` : "";
@@ -33,6 +70,7 @@ async function main() {
   const tauriConfPath = path.join(cwd, "src-tauri", "tauri.conf.json");
   const workflowPath = path.join(cwd, ".github", "workflows", "release.yml");
   const updaterConfigPath = path.join(cwd, "config", "local", "updater.json");
+  const envFilePath = path.join(cwd, ".env.local");
   const privateKeyPath = path.join(os.homedir(), ".tauri", "distill-studio.key");
   const publicKeyPath = path.join(os.homedir(), ".tauri", "distill-studio.key.pub");
 
@@ -55,9 +93,14 @@ async function main() {
     ? Buffer.from(privateKeyText.trim(), "base64").toString("utf8")
     : "";
   const privateKeyNeedsPassword = decodedPrivateKey.includes("encrypted secret key");
+  const localEnv = (await fileExists(envFilePath))
+    ? parseEnvFile(await readFile(envFilePath, "utf8"))
+    : {};
   const hasPrivateKeyPassword =
-    typeof process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD === "string" &&
-    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD.trim().length > 0;
+    (typeof process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD === "string" &&
+      process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD.trim().length > 0) ||
+    (typeof localEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD === "string" &&
+      localEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD.trim().length > 0);
 
   let updaterConfig = null;
   if (updaterConfigExists) {
@@ -96,7 +139,7 @@ async function main() {
     "Updater private key password is available when required",
     privateKeyNeedsPassword
       ? hasPrivateKeyPassword
-        ? "provided via TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+        ? "provided via TAURI_SIGNING_PRIVATE_KEY_PASSWORD or .env.local"
         : "encrypted key detected but TAURI_SIGNING_PRIVATE_KEY_PASSWORD is missing"
       : "key does not require a password"
   );

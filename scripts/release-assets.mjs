@@ -35,7 +35,7 @@ async function main() {
   const tauriConf = await readJson(path.join(cwd, "src-tauri", "tauri.conf.json"));
   const packageJson = await readJson(path.join(cwd, "package.json"));
   const version = packageJson.version ?? tauriConf.version ?? "unknown";
-  const productName = tauriConf.productName ?? "QA小灶";
+  const productName = tauriConf.productName ?? "DistillStudio";
   const bundleCandidates = [
     path.join(cwd, "target", "release", "bundle"),
     path.join(cwd, "src-tauri", "target", "release", "bundle")
@@ -62,7 +62,7 @@ async function main() {
     return base === "latest.json" || base.endsWith(".sig") || /\.(tar\.gz|zip)$/i.test(base);
   });
   const currentVersionMarkers = [version, `_${version}_`, `-${version}-`, ` v${version}`];
-  const currentProductMarkers = [productName.toLowerCase(), "qa小灶"];
+  const currentProductMarkers = [productName.toLowerCase(), "qaxiaozao", "qa小灶", "distillstudio"];
   const isCurrentArtifact = (file) => {
     const normalized = path.basename(file).toLowerCase();
     const versionMatches = currentVersionMarkers.some((marker) => normalized.includes(marker.toLowerCase()));

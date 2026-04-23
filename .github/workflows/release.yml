@@ -57,8 +57,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: app-v__VERSION__
-          releaseName: "QA小灶 v__VERSION__"
-          releaseBody: "Download the installer assets to install or update QA小灶."
+          releaseName: "Distill Studio v__VERSION__"
+          releaseBody: "Download the installer assets to install or update Distill Studio."
           releaseDraft: true
           prerelease: false
           projectPath: .
