@@ -3,12 +3,14 @@ import { constants } from "node:fs";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 const cwd = process.cwd();
 const envFilePath = path.join(cwd, ".env.local");
 const updaterConfigPath = path.join(cwd, "config", "local", "updater.json");
 const signingKeyPath = path.join(os.homedir(), ".tauri", "distill-studio.key");
 const updaterPubkeyPath = path.join(os.homedir(), ".tauri", "distill-studio.key.pub");
+const require = createRequire(import.meta.url);
 
 async function fileExists(filePath) {
   try {
@@ -167,11 +169,12 @@ async function main() {
     env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = signingPassword;
   }
 
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
+  const nodeCommand = process.execPath;
+  const writeConfigScript = path.join(cwd, "scripts", "write-tauri-release-config.mjs");
+  const tauriCliScript = require.resolve("@tauri-apps/cli/tauri.js");
 
-  await spawnCommand(npmCommand, ["run", "updater:prepare-config"], env);
-  await spawnCommand(npxCommand, ["tauri", "build", "--config", "src-tauri/tauri.release.conf.json"], env);
+  await spawnCommand(nodeCommand, [writeConfigScript], env);
+  await spawnCommand(nodeCommand, [tauriCliScript, "build", "--config", "src-tauri/tauri.release.conf.json"], env);
 }
 
 await main();
