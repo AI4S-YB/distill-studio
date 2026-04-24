@@ -6,21 +6,24 @@ on:
       - "app-v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  publish-tauri:
+  build-tauri:
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: ""
-          - platform: ubuntu-22.04
-            args: ""
-          - platform: windows-latest
-            args: ""
-    runs-on: ${{ matrix.platform }}
+          - runner: macos-latest
+            artifact_name: macos
+          - runner: ubuntu-22.04
+            artifact_name: linux
+          - runner: windows-latest
+            artifact_name: windows
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +38,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.runner == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -44,22 +47,75 @@ jobs:
         run: npm ci
 
       - name: write release tauri config
-        shell: bash
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           TAURI_UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
         run: node scripts/write-tauri-release-config.mjs
 
-      - uses: tauri-apps/tauri-action@action-v0.6.2
+      - name: build release bundles
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
+        run: npm run tauri:build:release
+
+      - name: stage release artifacts
+        run: node scripts/stage-release-artifacts.mjs ${{ matrix.artifact_name }}
+
+      - name: upload workflow artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tagName: app-v__VERSION__
-          releaseName: "Distill Studio v__VERSION__"
-          releaseBody: "Download the installer assets to install or update Distill Studio."
-          releaseDraft: true
-          prerelease: false
-          projectPath: .
-          args: --config src-tauri/tauri.release.conf.json ${{ matrix.args }}
+          name: release-${{ matrix.artifact_name }}
+          path: dist/release-artifacts/${{ matrix.artifact_name }}
+          if-no-files-found: error
+
+  publish-release:
+    needs: build-tauri
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: download workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/release-downloads
+
+      - name: assemble release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/assemble-release-assets.mjs dist/release-downloads dist/release-publish
+
+      - name: recreate draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft >/tmp/release.json 2>/dev/null; then
+            if node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync("/tmp/release.json","utf8")); process.exit(data.isDraft ? 0 : 1)'; then
+              gh release delete "$TAG" --yes
+            else
+              echo "Release $TAG already exists and is not a draft."
+              exit 1
+            fi
+          fi
+          gh release create "$TAG" \
+            --draft \
+            --title "Distill Studio v${TAG#app-v}" \
+            --notes "Download the installer assets to install or update Distill Studio."
+
+      - name: upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist/release-publish/* --clobber
