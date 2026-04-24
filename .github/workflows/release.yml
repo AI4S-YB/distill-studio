@@ -19,8 +19,6 @@ jobs:
         include:
           - runner: macos-latest
             artifact_name: macos
-          - runner: ubuntu-22.04
-            artifact_name: linux
           - runner: windows-latest
             artifact_name: windows
     runs-on: ${{ matrix.runner }}
