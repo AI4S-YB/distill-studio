@@ -135,12 +135,12 @@ async function main() {
   printCheck(privateKeyExists, "Updater private key exists", privateKeyPath);
   printCheck(publicKeyExists, "Updater public key exists", publicKeyPath);
   printCheck(
-    !privateKeyNeedsPassword || hasPrivateKeyPassword,
-    "Updater private key password is available when required",
+    true,
+    "Updater private key password handling is ready",
     privateKeyNeedsPassword
       ? hasPrivateKeyPassword
         ? "provided via TAURI_SIGNING_PRIVATE_KEY_PASSWORD or .env.local"
-        : "encrypted key detected but TAURI_SIGNING_PRIVATE_KEY_PASSWORD is missing"
+        : "encrypted key detected; no password provided, so release build will rely on Tauri's empty-password behavior"
       : "key does not require a password"
   );
   printCheck(updaterConfigExists, "Local updater override config exists", updaterConfigPath);
@@ -167,7 +167,7 @@ async function main() {
     console.log(`- git push origin app-v${cargoVersion}`);
   }
   console.log("- Configure GitHub secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_UPDATER_PUBLIC_KEY");
-  console.log("- If private key has a password, also configure TAURI_SIGNING_PRIVATE_KEY_PASSWORD");
+  console.log("- If your private key uses a non-empty password, also configure TAURI_SIGNING_PRIVATE_KEY_PASSWORD");
 }
 
 await main();

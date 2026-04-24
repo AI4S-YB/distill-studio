@@ -111,6 +111,18 @@ npm run release:summary
 https://github.com/AI4S-YB/distill-studio/releases/latest/download/latest.json
 ```
 
+如果本机已经登录 `gh`，也可以直接运行：
+
+```bash
+npm run github:sync-secrets
+```
+
+它会同步：
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_UPDATER_PUBLIC_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（仅当当前环境或 `.env.local` 已提供时）
+
 如果只是本地测试打包、不需要自动更新，也可以先不走正式 release 流程。
 
 ## 5. 本地打 Windows 安装包

@@ -151,11 +151,8 @@ async function main() {
   }
 
   if (!signingPassword && decodedSigningKey.includes("encrypted secret key")) {
-    console.error("The local signing key is encrypted, but TAURI_SIGNING_PRIVATE_KEY_PASSWORD is missing.");
-    console.error("Provide it in one of these places before running tauri:build:release:");
-    console.error("- current shell environment");
-    console.error(`- ${envFilePath}`);
-    process.exit(1);
+    console.warn("The signing key uses the encrypted secret key format, but no password was provided.");
+    console.warn("Continuing with Tauri's empty-password behavior.");
   }
 
   const env = {
