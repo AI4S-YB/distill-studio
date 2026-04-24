@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { message } from "@tauri-apps/plugin-dialog";
+import { message, open } from "@tauri-apps/plugin-dialog";
 import "./styles.css";
 
 type Lang = "zh" | "en";
+const DEFAULT_MANUAL_UPDATE_URL = "https://github.com/AI4S-YB/distill-studio/releases/latest";
 
 type TopicPreview = {
   topic_name: string;
@@ -73,6 +74,7 @@ type AppUpdateCheckResponse = {
   body: string | null;
   date: string | null;
   sourcePath: string | null;
+  manualDownloadUrl: string | null;
 };
 
 type AppUpdateProgressEvent = {
@@ -86,12 +88,19 @@ type AppMetadataResponse = {
   version: string;
 };
 
+type ManagedOutputRootResponse = {
+  outputRoot: string;
+};
+
+type ReviewStatus = "unreviewed" | "kept" | "discarded";
+
 type QaBatchSummary = {
   id: string;
   name: string;
   topicName: string;
   prompt: string;
   qaMode: string | null;
+  cotSectionHeaders: string[];
   targetCount: number | null;
   generatedCount: number;
   keptCount: number;
@@ -105,6 +114,9 @@ type QaBatchSummary = {
   model: string | null;
   outputDir: string;
   updatedAtMs: number | null;
+  reviewedCount: number;
+  reviewKeptCount: number;
+  discardedCount: number;
 };
 
 type QaRecordSummary = {
@@ -115,6 +127,16 @@ type QaRecordSummary = {
   questionType: string;
   difficulty: string;
   audience: string;
+  reviewStatus: ReviewStatus;
+  editedQuestion: string | null;
+  effectiveQuestion: string;
+};
+
+type QaRecordReview = {
+  status: ReviewStatus;
+  editedQuestion: string | null;
+  effectiveQuestion: string;
+  updatedAtMs: number | null;
 };
 
 type QaRecordPage = {
@@ -144,6 +166,16 @@ type QaRecordDetail = {
     provider: string;
     model: string;
     qa_mode: string;
+  };
+  review: QaRecordReview;
+};
+
+type SaveBatchReviewItemResponse = {
+  review: QaRecordReview;
+  summary: {
+    reviewedCount: number;
+    keptCount: number;
+    discardedCount: number;
   };
 };
 
@@ -247,7 +279,7 @@ type TrialSendMessageResponse = {
 };
 
 type UiTab = "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial";
-type BrowseView = "batches" | "questions" | "detail";
+type BrowseView = "batches" | "questions" | "detail" | "review";
 
 type ProviderPresetId =
   | "custom"
@@ -302,9 +334,12 @@ type PipelineFormRequest = {
   prompt: string;
   topicTags: string[];
   qaMode: "normal" | "cot";
+  outputLanguage: "zh" | "en";
+  cotSectionHeaders: string[];
   targetCount: number;
   planLimit: number;
   outputDir: string;
+  managedOutputRoot?: string | null;
   provider: string;
   model: string;
   baseUrl: string | null;
@@ -423,6 +458,22 @@ type RunStatsSnapshot = {
   samples: Array<{ atMs: number; generatedCount: number }>;
 };
 
+function formatCotSectionHeaders(headers: readonly string[] | null | undefined): string {
+  return normalizeCotSectionHeaders(headers).join("\n");
+}
+
+function defaultCotSectionHeadersForLang(lang: Lang): string[] {
+  return [...(lang === "zh" ? DEFAULT_COT_SECTION_HEADERS_ZH : DEFAULT_COT_SECTION_HEADERS_EN)];
+}
+
+function isDefaultCotSectionHeaderText(value: string): boolean {
+  const normalized = formatCotSectionHeaders(value.split(/\r?\n/));
+  return (
+    normalized === formatCotSectionHeaders(DEFAULT_COT_SECTION_HEADERS_ZH) ||
+    normalized === formatCotSectionHeaders(DEFAULT_COT_SECTION_HEADERS_EN)
+  );
+}
+
 const LANG_STORAGE_KEY = "distill-studio.lang";
 const FIRST_LAUNCH_COMPLETED_KEY = "distill-studio.first-launch-complete";
 const DEFAULT_PROFILE_NAME = "default";
@@ -435,21 +486,41 @@ const DEFAULT_COT_SHARD_SIZE = 10;
 const COT_SAFE_SHARD_SIZE_CAP = 10;
 const DEFAULT_COT_BATCH_SIZE = 1;
 const DEFAULT_COT_MAX_IN_FLIGHT = 2;
+const DEFAULT_COT_SECTION_HEADERS_EN = [
+  "Workflow Summary",
+  "Reference Milestones",
+  "Reference Steps",
+  "Step Rationale",
+  "Decision Points",
+  "Quality Checks",
+  "Failure Modes",
+  "Final Interpretation"
+] as const;
+const DEFAULT_COT_SECTION_HEADERS_ZH = [
+  "研究流程概述",
+  "参考里程碑",
+  "参考步骤",
+  "步骤依据",
+  "关键决策点",
+  "质量检查",
+  "失败模式",
+  "最终解释"
+] as const;
 const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetId = "qwen_dashscope";
-const DEFAULT_QA_PLATFORM_URL = "http://10.33.105.218";
+const DEFAULT_QA_PLATFORM_URL = "http://182.92.166.143";
 const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;
 const PLATFORM_REMOTE_VIRTUAL_BATCH_SOURCE = "remote-server";
 const PLATFORM_REMOTE_VIRTUAL_BATCH_SYNTHETIC_ID = "platform:remote-server";
-const COT_SECTION_CONFIG = [
-  { heading: "Workflow Summary", translationKey: "cot_section_workflow_summary" },
-  { heading: "Reference Milestones", translationKey: "cot_section_reference_milestones" },
-  { heading: "Reference Steps", translationKey: "cot_section_reference_steps" },
-  { heading: "Step Rationale", translationKey: "cot_section_step_rationale" },
-  { heading: "Decision Points", translationKey: "cot_section_decision_points" },
-  { heading: "Quality Checks", translationKey: "cot_section_quality_checks" },
-  { heading: "Failure Modes", translationKey: "cot_section_failure_modes" },
-  { heading: "Final Interpretation", translationKey: "cot_section_final_interpretation" }
-] as const;
+const DEFAULT_COT_SECTION_TRANSLATION_KEYS: Record<string, string> = {
+  "Workflow Summary": "cot_section_workflow_summary",
+  "Reference Milestones": "cot_section_reference_milestones",
+  "Reference Steps": "cot_section_reference_steps",
+  "Step Rationale": "cot_section_step_rationale",
+  "Decision Points": "cot_section_decision_points",
+  "Quality Checks": "cot_section_quality_checks",
+  "Failure Modes": "cot_section_failure_modes",
+  "Final Interpretation": "cot_section_final_interpretation"
+};
 
 const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: string }>> = {
   zh: {
@@ -1050,6 +1121,8 @@ const translations: Record<Lang, Record<string, string>> = {
     nav_copy: "像应用程序一样切换设置页。",
     actions_setup: "应用",
     action_check_update: "检查更新",
+    action_install_update: "安装更新",
+    action_retry_update: "重试更新",
     telemetry_title: "运行遥测",
     telemetry_copy: "实时查看 Rust 后端发出的阶段进度和日志。",
     setup_title: "当前配置",
@@ -1076,6 +1149,11 @@ const translations: Record<Lang, Record<string, string>> = {
     settings_tab_title: "设置",
     settings_tab_copy: "模型、接口、输出和批处理参数。",
     settings_basic_copy: "普通用户通常只需要选择模型厂商、模型并填写 API 密钥。",
+    cot_structure_section_title: "CoT结构",
+    cot_section_headers: "CoT标题结构",
+    cot_section_headers_hint: "一行一个标题。运行时会按这些标题组织 CoT 回答；留空时会自动回退到默认八段式结构。",
+    output_root: "输出目录",
+    output_root_hint: "选择生成任务和历史任务使用的根目录。程序仍会在该目录下自动创建每次运行的子文件夹。",
     settings_checklist_title: "首次配置提示",
     settings_checklist_copy: "这里仅检查能否开始使用的最小条件。填写后会自动保存在本机，无需手动保存。",
     settings_checklist_done: "已完成",
@@ -1152,9 +1230,12 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_batches_empty: "还没有历史任务记录。",
     browse_questions_title: "QA问题列表",
     browse_questions_empty: "请先选择一个批次。",
+    browse_review_title: "快审问题",
+    browse_review_empty: "这个批次里还没有可审阅的问题。",
     browse_detail_title: "QA详情",
     browse_detail_empty: "请选择一条 QA。",
     browse_questions_loading: "正在加载 QA 问题列表...",
+    browse_review_loading: "正在加载快审问题...",
     browse_detail_loading: "正在加载 QA 详情...",
     browse_back_batches: "返回批次",
     browse_back_questions: "返回问题列表",
@@ -1169,6 +1250,15 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_request_count: "请求数",
     browse_shard_progress: "分片进度",
     browse_history_count: "任务数",
+    browse_review_progress: "快审",
+    browse_review_kept: "本地保留",
+    browse_review_discarded: "本地丢弃",
+    browse_review_status: "快审状态",
+    browse_review_status_unreviewed: "未品审",
+    browse_review_status_kept: "保留",
+    browse_review_status_discarded: "丢弃",
+    browse_review_question_edited: "已改题",
+    browse_question_original: "原问题",
     browse_status_completed: "已完成",
     browse_status_running: "进行中",
     browse_status_generated: "待打包",
@@ -1188,8 +1278,16 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_action_continue_run: "继续生成",
     browse_action_load_generate: "加载到生成页",
     browse_action_delete: "删除",
+    browse_action_review: "快审",
     browse_action_upload: "上传",
     browse_action_uploading: "上传中...",
+    browse_review_save: "保存问题",
+    browse_review_saving: "保存中...",
+    browse_review_save_failed: "保存快审失败",
+    browse_review_keep: "保留",
+    browse_review_discard: "丢弃",
+    browse_review_prev_question: "上一个问题",
+    browse_review_next_question: "下一个问题",
     browse_uploaded_badge: "已上传",
     browse_platform_status_uploaded: "已上传",
     browse_platform_status_processing: "解析中",
@@ -1206,11 +1304,12 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_success: "QA 批次上传成功。",
     browse_upload_exists: "这个 QA 批次已经上传，不必重复上传。",
     browse_upload_failed: "上传失败",
+    browse_upload_no_kept_items: "这个批次还没有本地保留的问题可上传。",
     qa_platform_url: "QA评测平台地址",
     qa_platform_url_hint: "实验室内部使用。普通用户只需要填写这一个地址，程序会自动派生页面地址和接口地址。",
     qa_platform_username: "QA评测用户名",
     qa_platform_password: "QA评测密码",
-    platform_internal_hint: "实验室内部使用。生产环境通常直接填写 10.33.105.218；本机联调可填写 127.0.0.1。",
+    platform_internal_hint: "实验室内部使用。生产环境通常直接填写 182.92.166.143；本机联调可填写 127.0.0.1。",
     platform_trial_hint: "内嵌模型试用需要先确认平台地址、用户名和密码都已填写。",
     platform_trial_entry: "试用方式",
     platform_trial_entry_hint: "这里直接调用 qaevaluate 的独立 trial API，在桌面端内嵌会话列表和聊天框。",
@@ -1419,8 +1518,10 @@ const translations: Record<Lang, Record<string, string>> = {
     log_update_not_available: "当前已是最新版本",
     log_update_declined: "已取消安装更新。",
     log_update_installing: "正在安装更新",
-    log_update_timeout: "检查更新超时：5 秒内无法连接更新服务，请稍后重试。",
+    log_update_timeout: "检查更新超时：8 秒内无法连接更新服务，已自动重试一次，请稍后再试。",
     log_update_failed: "自动更新失败",
+    log_update_manual_download: "打开发布页手动下载",
+    log_update_manual_prompt: "自动更新失败。是否打开 GitHub Release 页面手动下载？",
     summary_topic_name: "Topic 名称",
     summary_goal: "目标",
     summary_target_count: "目标数量",
@@ -1441,6 +1542,8 @@ const translations: Record<Lang, Record<string, string>> = {
     summary_topic_tags: "标签",
     summary_preset: "预设",
     action_open_output_dir: "打开输出目录",
+    action_select_output_dir: "选择文件夹",
+    action_restore_default: "恢复默认",
     action_open_dataset: "打开数据集",
     action_open_pack_summary: "打开打包摘要",
     action_copy_output_dir: "复制输出目录",
@@ -1499,6 +1602,8 @@ const translations: Record<Lang, Record<string, string>> = {
     nav_copy: "Switch settings pages like a desktop app.",
     actions_setup: "App",
     action_check_update: "Check Update",
+    action_install_update: "Install Update",
+    action_retry_update: "Retry Update",
     telemetry_title: "Run Telemetry",
     telemetry_copy: "Live stage progress and backend log messages from the Rust pipeline.",
     setup_title: "Current Setup",
@@ -1525,6 +1630,11 @@ const translations: Record<Lang, Record<string, string>> = {
     settings_tab_title: "Settings",
     settings_tab_copy: "Model, endpoint, output, and batch settings.",
     settings_basic_copy: "Most users only need a provider, a model, and an API key.",
+    cot_structure_section_title: "CoT Structure",
+    cot_section_headers: "CoT Section Headers",
+    cot_section_headers_hint: "Use one header per line. The runtime will build the CoT answer format from these lines. Empty input falls back to the default 8-section structure.",
+    output_root: "Output Directory",
+    output_root_hint: "Choose the root folder used for generated runs and history. The app still creates one subfolder per run inside it.",
     settings_checklist_title: "First-Time Setup",
     settings_checklist_copy: "This checks only the minimum needed to get started. Values are saved automatically on this device.",
     settings_checklist_done: "Done",
@@ -1601,9 +1711,12 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_batches_empty: "No historical runs yet.",
     browse_questions_title: "QA Question List",
     browse_questions_empty: "Select a batch first.",
+    browse_review_title: "Fast Review",
+    browse_review_empty: "No QA items are available for review in this batch.",
     browse_detail_title: "QA Detail",
     browse_detail_empty: "Select a QA item.",
     browse_questions_loading: "Loading QA questions...",
+    browse_review_loading: "Loading fast review items...",
     browse_detail_loading: "Loading QA detail...",
     browse_back_batches: "Back to Batches",
     browse_back_questions: "Back to Questions",
@@ -1618,6 +1731,15 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_request_count: "Requests",
     browse_shard_progress: "Shard Progress",
     browse_history_count: "Runs",
+    browse_review_progress: "Reviewed",
+    browse_review_kept: "Locally Kept",
+    browse_review_discarded: "Locally Discarded",
+    browse_review_status: "Review Status",
+    browse_review_status_unreviewed: "Unreviewed",
+    browse_review_status_kept: "Kept",
+    browse_review_status_discarded: "Discarded",
+    browse_review_question_edited: "Question Edited",
+    browse_question_original: "Original Question",
     browse_status_completed: "Completed",
     browse_status_running: "Running",
     browse_status_generated: "Awaiting Pack",
@@ -1637,8 +1759,16 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_action_continue_run: "Resume Run",
     browse_action_load_generate: "Load to Generate",
     browse_action_delete: "Delete",
+    browse_action_review: "Fast Review",
     browse_action_upload: "Upload",
     browse_action_uploading: "Uploading...",
+    browse_review_save: "Save Question",
+    browse_review_saving: "Saving...",
+    browse_review_save_failed: "Failed to save fast review",
+    browse_review_keep: "Keep",
+    browse_review_discard: "Discard",
+    browse_review_prev_question: "Previous Question",
+    browse_review_next_question: "Next Question",
     browse_uploaded_badge: "Uploaded",
     browse_platform_status_uploaded: "Uploaded",
     browse_platform_status_processing: "Processing",
@@ -1655,11 +1785,12 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_success: "QA batch uploaded.",
     browse_upload_exists: "This QA batch has already been uploaded. No need to upload it again.",
     browse_upload_failed: "Upload failed",
+    browse_upload_no_kept_items: "This batch has no locally kept QA items to upload.",
     qa_platform_url: "QA Platform URL",
     qa_platform_url_hint: "Internal laboratory use. Ordinary users only need this one address, and the app derives the web/API bases automatically.",
     qa_platform_username: "QA Platform Username",
     qa_platform_password: "QA Platform Password",
-    platform_internal_hint: "Internal laboratory use. Production usually points to 10.33.105.218, while local joint debugging can use 127.0.0.1.",
+    platform_internal_hint: "Internal laboratory use. Production usually points to 182.92.166.143, while local joint debugging can use 127.0.0.1.",
     platform_trial_hint: "Embedded trial needs the platform URL, username, and password to be configured first.",
     platform_trial_entry: "Trial Mode",
     platform_trial_entry_hint: "This panel calls qaevaluate trial APIs directly and embeds the session list plus chat UI.",
@@ -1869,8 +2000,10 @@ const translations: Record<Lang, Record<string, string>> = {
     log_update_not_available: "Already on the latest version",
     log_update_declined: "Update install was cancelled.",
     log_update_installing: "Installing update",
-    log_update_timeout: "Update check timed out: could not reach the update service within 5 seconds.",
+    log_update_timeout: "Update check timed out: the update service was still unreachable after one automatic retry.",
     log_update_failed: "Auto update failed",
+    log_update_manual_download: "Open release page for manual download",
+    log_update_manual_prompt: "Auto update failed. Open the GitHub release page for manual download?",
     summary_topic_name: "Topic Name",
     summary_goal: "Goal",
     summary_target_count: "Target Count",
@@ -1891,6 +2024,8 @@ const translations: Record<Lang, Record<string, string>> = {
     summary_topic_tags: "Tags",
     summary_preset: "Preset",
     action_open_output_dir: "Open Output Directory",
+    action_select_output_dir: "Choose Folder",
+    action_restore_default: "Restore Default",
     action_open_dataset: "Open Dataset",
     action_open_pack_summary: "Open Pack Summary",
     action_copy_output_dir: "Copy Output Directory",
@@ -1964,6 +2099,8 @@ let browseLoading = false;
 let browseView: BrowseView = "batches";
 let browseQuestionsLoading = false;
 let browseDetailLoading = false;
+let browseReviewLoading = false;
+let browseReviewSaving = false;
 let browseErrorMessage: string | null = null;
 let browseUploadingBatchId: string | null = null;
 let browsePlatformStatusLoading = false;
@@ -1971,9 +2108,15 @@ let browsePlatformStatusRequestId = 0;
 let browsePlatformStatusMap = new Map<string, PlatformImportBatchStatus>();
 let browseRemoteVirtualBatch: QaBatchSummary | null = null;
 let browseRemoteVirtualBatchDetail: PlatformImportBatchDetail | null = null;
+let browseReviewItems: QaRecordSummary[] = [];
+let browseReviewIndex = 0;
+let browseReviewDrafts = new Map<string, string>();
 let managedResumeBatchId: string | null = null;
 let managedResumeBatchLabel: string | null = null;
 let appVersion = "0.1.6";
+let pendingAppUpdate: AppUpdateCheckResponse | null = null;
+let appUpdateLastError: string | null = null;
+let appUpdateManualDownloadUrl: string | null = DEFAULT_MANUAL_UPDATE_URL;
 let platformHealthState:
   | { kind: "idle" }
   | { kind: "loading" }
@@ -2059,9 +2202,6 @@ app.innerHTML = `
           <button class="tab-button" type="button" data-tab="browse" id="tab-browse">
             <span class="tab-button-title" id="tab-browse-label">Browse QA</span>
           </button>
-          <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
-            <span class="tab-button-title" id="tab-settings-label">Settings</span>
-          </button>
           <button class="tab-button" type="button" data-tab="qa-evaluate" id="tab-qa-evaluate">
             <span class="tab-button-title" id="tab-qa-evaluate-label">QA Evaluate</span>
             <span class="tab-button-badge" id="tab-qa-evaluate-badge">Internal</span>
@@ -2069,6 +2209,9 @@ app.innerHTML = `
           <button class="tab-button" type="button" data-tab="model-trial" id="tab-model-trial">
             <span class="tab-button-title" id="tab-model-trial-label">Model Trial</span>
             <span class="tab-button-badge" id="tab-model-trial-badge">Internal</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
+            <span class="tab-button-title" id="tab-settings-label">Settings</span>
           </button>
           <button class="tab-button tab-button-plain" type="button" id="check-update">
             <span class="tab-button-title" id="check-update-label">Check Update</span>
@@ -2083,7 +2226,7 @@ app.innerHTML = `
         </div>
         <section class="topic-quickstart" id="topic-quickstart"></section>
         <label for="prompt" id="topic-prompt-label">Topic prompt</label>
-        <textarea id="prompt" rows="7">Soybean seed oil and protein improvement under planting density and breeding strategy.</textarea>
+        <textarea id="prompt" rows="7">大豆籽粒油分与蛋白协同改良、种植密度响应、育种策略优化</textarea>
         <div class="mode-panel">
           <div>
             <p class="tag-title" id="qa-mode-label">QA Mode</p>
@@ -2296,11 +2439,44 @@ app.innerHTML = `
             </small>
           </label>
         </div>
+        <div class="section-block">
+          <p class="section-title" id="output-section-title">Output Directory</p>
+        </div>
+        <div class="grid two">
+          <label class="output-root-field">
+            <div class="field-label-row">
+              <span id="output-root-label">Output Directory</span>
+            </div>
+            <input id="output-root" />
+            <small class="field-hint" id="output-root-hint">
+              Choose the root folder used for generated runs and history. The app still creates one subfolder per run inside it.
+            </small>
+          </label>
+          <div class="output-root-actions">
+            <button id="select-output-root" type="button">Choose Folder</button>
+            <button id="open-output-root" class="secondary" type="button">Open Output Directory</button>
+            <button id="reset-output-root" class="secondary" type="button">Restore Default</button>
+          </div>
+        </div>
         <details class="advanced-settings" id="advanced-settings">
           <summary id="advanced-settings-summary">Advanced Settings</summary>
           <p class="panel-copy advanced-settings-copy" id="advanced-settings-copy">
             Ordinary users can usually keep the defaults here.
           </p>
+          <div class="section-block">
+            <p class="section-title" id="cot-structure-section-title">CoT Structure</p>
+          </div>
+          <div class="grid one">
+            <label>
+              <div class="field-label-row">
+                <span id="cot-section-headers-label">CoT Section Headers</span>
+              </div>
+              <textarea id="cot-section-headers" rows="8"></textarea>
+              <small class="field-hint" id="cot-section-headers-hint">
+                One section header per line. The runtime will use these lines to build the CoT answer format.
+              </small>
+            </label>
+          </div>
           <div class="section-block">
             <p class="section-title" id="integration-section-title">Platform Integrations</p>
           </div>
@@ -2310,7 +2486,7 @@ app.innerHTML = `
                 <span id="qa-platform-url-label">QA Platform URL</span>
                 <button class="field-help-button" data-help-key="qa_platform_url" type="button">?</button>
               </div>
-              <input id="qa-platform-url" placeholder="http://10.33.105.218" />
+              <input id="qa-platform-url" placeholder="http://182.92.166.143" />
               <small class="field-hint" id="qa-platform-url-hint">
                 Internal laboratory use. The app derives web and API addresses from this one field.
               </small>
@@ -2543,6 +2719,11 @@ const modelInput = document.querySelector<HTMLSelectElement>("#model");
 const customModelField = document.querySelector<HTMLLabelElement>("#custom-model-field");
 const customModelInput = document.querySelector<HTMLInputElement>("#custom-model");
 const setupChecklist = document.querySelector<HTMLElement>("#setup-checklist");
+const outputRootInput = document.querySelector<HTMLInputElement>("#output-root");
+const selectOutputRootButton = document.querySelector<HTMLButtonElement>("#select-output-root");
+const openOutputRootButton = document.querySelector<HTMLButtonElement>("#open-output-root");
+const resetOutputRootButton = document.querySelector<HTMLButtonElement>("#reset-output-root");
+const cotSectionHeadersInput = document.querySelector<HTMLTextAreaElement>("#cot-section-headers");
 const baseUrlInput = document.querySelector<HTMLInputElement>("#base-url");
 const apiKeyInput = document.querySelector<HTMLInputElement>("#api-key");
 const qaPlatformUrlInput = document.querySelector<HTMLInputElement>("#qa-platform-url");
@@ -2626,6 +2807,11 @@ if (
   !customModelField ||
   !customModelInput ||
   !setupChecklist ||
+  !outputRootInput ||
+  !selectOutputRootButton ||
+  !openOutputRootButton ||
+  !resetOutputRootButton ||
+  !cotSectionHeadersInput ||
   !baseUrlInput ||
   !apiKeyInput ||
   !qaPlatformUrlInput ||
@@ -2656,6 +2842,8 @@ if (
   throw new Error("Missing UI elements");
 }
 
+cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
+
 const lockableControls: Array<
   HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
 > = [
@@ -2675,6 +2863,11 @@ const lockableControls: Array<
   providerInput,
   modelInput,
   customModelInput,
+  outputRootInput,
+  selectOutputRootButton,
+  openOutputRootButton,
+  resetOutputRootButton,
+  cotSectionHeadersInput,
   baseUrlInput,
   apiKeyInput,
   qaPlatformUrlInput,
@@ -2843,6 +3036,7 @@ function applyQaModeDefaults(qaMode: "normal" | "cot") {
     return;
   }
 
+  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
   targetCountInput.value = String(DEFAULT_COT_TARGET_COUNT);
   shardSizeInput.value = String(DEFAULT_COT_SHARD_SIZE);
   batchSizeInput.value = String(DEFAULT_COT_BATCH_SIZE);
@@ -3138,6 +3332,7 @@ function remoteVirtualBatchToBrowseSummary(summary: PlatformImportBatchSummary):
     topicName: summary.name,
     prompt: remoteVirtualBatchPrompt(summary),
     qaMode,
+    cotSectionHeaders: defaultCotSectionHeadersForLang(currentLang),
     targetCount: summary.totalCount,
     generatedCount: summary.successCount || summary.totalCount,
     keptCount: summary.successCount || summary.totalCount,
@@ -3150,7 +3345,10 @@ function remoteVirtualBatchToBrowseSummary(summary: PlatformImportBatchSummary):
     provider: null,
     model: null,
     outputDir: "",
-    updatedAtMs: parseTimestampMs(summary.createdAt)
+    updatedAtMs: parseTimestampMs(summary.createdAt),
+    reviewedCount: 0,
+    reviewKeptCount: 0,
+    discardedCount: 0
   };
 }
 
@@ -3175,7 +3373,10 @@ function platformImportItemToQaRecordSummary(item: PlatformImportBatchItem): QaR
     axis: metadataString(metadata, "axis"),
     questionType: metadataString(metadata, "question_type", "questionType"),
     difficulty: metadataString(metadata, "difficulty"),
-    audience: metadataString(metadata, "audience")
+    audience: metadataString(metadata, "audience"),
+    reviewStatus: "unreviewed",
+    editedQuestion: null,
+    effectiveQuestion: item.questionText
   };
 }
 
@@ -3207,6 +3408,12 @@ function platformImportItemToQaRecordDetail(
       provider: metadataString(metadata, "provider") || item.source || "",
       model: metadataString(metadata, "model", "model_name") || item.sourceModel || "",
       qa_mode: qaMode === "cot" ? "cot" : "normal"
+    },
+    review: {
+      status: "unreviewed",
+      editedQuestion: null,
+      effectiveQuestion: item.questionText,
+      updatedAtMs: null
     }
   };
 }
@@ -3270,6 +3477,33 @@ function browseBatchPlatformBadgeHtml(batchId: string): string {
   const label =
     status.batchStatus === "uploaded" ? t("browse_uploaded_badge") : batchPlatformStatusLabel(status.batchStatus);
   return ` <span class="browse-inline-badge">${escapeHtml(label)}</span>`;
+}
+
+function reviewStatusLabel(status: ReviewStatus): string {
+  switch (status) {
+    case "kept":
+      return t("browse_review_status_kept");
+    case "discarded":
+      return t("browse_review_status_discarded");
+    default:
+      return t("browse_review_status_unreviewed");
+  }
+}
+
+function reviewStatusBadgeClass(status: ReviewStatus): string {
+  switch (status) {
+    case "kept":
+      return "kept";
+    case "discarded":
+      return "discarded";
+    default:
+      return "unreviewed";
+  }
+}
+
+function browseReviewSummaryLabel(batch: QaBatchSummary): string {
+  const total = batch.generatedCount || batch.totalCount;
+  return `${t("browse_review_progress")} ${formatCount(batch.reviewedCount)} / ${formatCount(total)} · ${t("browse_review_kept")} ${formatCount(batch.reviewKeptCount)} · ${t("browse_review_discarded")} ${formatCount(batch.discardedCount)}`;
 }
 
 function syncProviderFieldVisibility(presetId: ProviderPresetId) {
@@ -3351,8 +3585,20 @@ function migrateLegacyStubRequest(request: PipelineFormRequest): PipelineFormReq
 }
 
 function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRequest {
+  const normalizedHeaders = (() => {
+    const normalized = (request.cotSectionHeaders ?? [])
+      .map((value) => value.trim().replace(/:+$/, "").trim())
+      .filter(Boolean);
+    return normalized.length
+      ? normalized
+      : defaultCotSectionHeadersForLang(request.outputLanguage ?? currentLang);
+  })();
   if (request.qaMode !== "cot") {
-    return request;
+    const currentHeaders = request.cotSectionHeaders ?? [];
+    return currentHeaders.length === normalizedHeaders.length &&
+      currentHeaders.every((value, index) => value === normalizedHeaders[index])
+      ? request
+      : { ...request, cotSectionHeaders: normalizedHeaders };
   }
 
   const nextTargetCount = Math.min(request.targetCount || DEFAULT_COT_TARGET_COUNT, COT_TARGET_COUNT_CAP);
@@ -3374,6 +3620,7 @@ function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRe
 
   return {
     ...request,
+    cotSectionHeaders: normalizedHeaders,
     targetCount: nextTargetCount,
     shardSize: nextShardSize,
     batchSize: nextBatchSize,
@@ -3781,6 +4028,104 @@ function currentBrowseBatch(): QaBatchSummary | null {
   );
 }
 
+function currentBrowseReviewItem(): QaRecordSummary | null {
+  return browseReviewItems[browseReviewIndex] ?? null;
+}
+
+function currentBrowseReviewDraft(): string {
+  const item = currentBrowseReviewItem();
+  if (!item) {
+    return "";
+  }
+  return browseReviewDrafts.get(item.id) ?? item.effectiveQuestion;
+}
+
+function moveToNextBrowseReviewItem() {
+  if (browseReviewIndex < browseReviewItems.length - 1) {
+    browseReviewIndex += 1;
+  }
+}
+
+function updateBrowseBatchReviewSummary(
+  batchId: string,
+  summary: { reviewedCount: number; keptCount: number; discardedCount: number }
+) {
+  browseBatches = browseBatches.map((batch) =>
+    batch.id === batchId
+      ? {
+          ...batch,
+          reviewedCount: summary.reviewedCount,
+          reviewKeptCount: summary.keptCount,
+          discardedCount: summary.discardedCount
+        }
+      : batch
+  );
+  if (browsePageData?.batch.id === batchId) {
+    browsePageData = {
+      ...browsePageData,
+      batch: {
+        ...browsePageData.batch,
+        reviewedCount: summary.reviewedCount,
+        reviewKeptCount: summary.keptCount,
+        discardedCount: summary.discardedCount
+      }
+    };
+  }
+  if (browseDetailData?.batch.id === batchId) {
+    browseDetailData = {
+      ...browseDetailData,
+      batch: {
+        ...browseDetailData.batch,
+        reviewedCount: summary.reviewedCount,
+        reviewKeptCount: summary.keptCount,
+        discardedCount: summary.discardedCount
+      }
+    };
+  }
+}
+
+function applyBrowseReviewUpdate(
+  batchId: string,
+  qaId: string,
+  response: SaveBatchReviewItemResponse
+) {
+  updateBrowseBatchReviewSummary(batchId, response.summary);
+  browseReviewItems = browseReviewItems.map((item) =>
+    item.id === qaId
+      ? {
+          ...item,
+          reviewStatus: response.review.status,
+          editedQuestion: response.review.editedQuestion,
+          effectiveQuestion: response.review.effectiveQuestion
+        }
+      : item
+  );
+  browsePageData =
+    browsePageData && browsePageData.batch.id === batchId
+      ? {
+          ...browsePageData,
+          items: browsePageData.items.map((item) =>
+            item.id === qaId
+              ? {
+                  ...item,
+                  reviewStatus: response.review.status,
+                  editedQuestion: response.review.editedQuestion,
+                  effectiveQuestion: response.review.effectiveQuestion
+                }
+              : item
+          )
+        }
+      : browsePageData;
+  browseDetailData =
+    browseDetailData && browseDetailData.batch.id === batchId && browseDetailData.item.id === qaId
+      ? {
+          ...browseDetailData,
+          review: response.review
+        }
+      : browseDetailData;
+  browseReviewDrafts.set(qaId, response.review.effectiveQuestion);
+}
+
 function clearBrowseRemoteVirtualBatch() {
   browseRemoteVirtualBatch = null;
   browseRemoteVirtualBatchDetail = null;
@@ -3788,6 +4133,10 @@ function clearBrowseRemoteVirtualBatch() {
 
 function currentQaPlatformUrl(): string {
   return qaPlatformUrlInput.value.trim();
+}
+
+function currentManagedOutputRoot(): string {
+  return outputRootInput.value.trim();
 }
 
 function hasQaPlatformCredentials(): boolean {
@@ -4242,8 +4591,19 @@ function truncateText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
-function parseCotAnswerSections(answer: string): Array<{ label: string; value: string }> {
-  const headingPattern = COT_SECTION_CONFIG.map(({ heading }) => escapeRegExp(heading)).join("|");
+function normalizeCotSectionHeaders(headers: string[] | null | undefined): string[] {
+  const normalized = (headers ?? [])
+    .map((value) => value.trim().replace(/:+$/, "").trim())
+    .filter(Boolean);
+  return normalized.length ? normalized : defaultCotSectionHeadersForLang(currentLang);
+}
+
+function parseCotAnswerSections(
+  answer: string,
+  headers: string[] | null | undefined
+): Array<{ label: string; value: string }> {
+  const normalizedHeaders = normalizeCotSectionHeaders(headers);
+  const headingPattern = normalizedHeaders.map((heading) => escapeRegExp(heading)).join("|");
   const matcher = new RegExp(`^(${headingPattern})\\s*:\\s*`, "gm");
   const matches = Array.from(answer.matchAll(matcher));
   if (!matches.length) {
@@ -4256,10 +4616,10 @@ function parseCotAnswerSections(answer: string): Array<{ label: string; value: s
       const start = (match.index ?? 0) + match[0].length;
       const end = index + 1 < matches.length ? (matches[index + 1].index ?? answer.length) : answer.length;
       const value = answer.slice(start, end).trim();
-      const section = COT_SECTION_CONFIG.find((item) => item.heading === heading);
-      return section && value
+      const translationKey = DEFAULT_COT_SECTION_TRANSLATION_KEYS[heading];
+      return value
         ? {
-            label: t(section.translationKey),
+            label: translationKey ? t(translationKey) : heading,
             value
           }
         : null;
@@ -4294,11 +4654,24 @@ function renderBrowseView() {
     return;
   }
 
+  if (browseView === "review") {
+    browseBackButton.hidden = false;
+    browseBackButton.textContent = t("browse_back_batches");
+    browseViewTitle.textContent = batch ? `${batch.topicName || batch.name} · ${t("browse_review_title")}` : t("browse_review_title");
+    browseViewMeta.textContent = browseReviewLoading
+      ? t("browse_review_loading")
+      : batch
+        ? browseReviewSummaryLabel(batch)
+        : t("browse_review_empty");
+    browseContent.innerHTML = renderBrowseReview();
+    return;
+  }
+
   browseBackButton.hidden = false;
   browseBackButton.textContent = t("browse_back_questions");
   browseViewTitle.textContent = t("browse_detail_title");
   browseViewMeta.textContent = browseDetailData
-    ? `${batch ? `${batch.topicName || batch.name} · ` : ""}${truncateText(browseDetailData.item.question, 88)}`
+    ? `${batch ? `${batch.topicName || batch.name} · ` : ""}${truncateText(browseDetailData.review.effectiveQuestion, 88)}`
     : browseDetailLoading
       ? t("browse_detail_loading")
       : t("browse_detail_empty");
@@ -4325,6 +4698,9 @@ function renderBrowseBatches(): string {
           : null,
         `${t("browse_generated_items")} ${formatCount(batch.generatedCount)}`,
         `${t("browse_kept_items")} ${formatCount(batch.keptCount)}`,
+        !remoteVirtual
+          ? `${t("browse_review_progress")} ${formatCount(batch.reviewedCount)} / ${formatCount(batch.generatedCount || batch.totalCount)}`
+          : null,
         batch.requestCount !== null
           ? `${t("browse_request_count")} ${formatCount(batch.requestCount)}`
           : null
@@ -4369,6 +4745,11 @@ function renderBrowseBatches(): string {
             ${
               remoteVirtual
                 ? ""
+                : `<button type="button" class="browse-mini-button" data-batch-action="review" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_review"))}</button>`
+            }
+            ${
+              remoteVirtual
+                ? ""
                 : `<button type="button" class="browse-mini-button browse-mini-button-danger" data-batch-action="delete" data-batch-id="${escapeHtml(batch.id)}">${escapeHtml(t("browse_action_delete"))}</button>`
             }
             ${
@@ -4406,8 +4787,9 @@ function renderBrowseQaList(): string {
             .join(" · ");
           return `
             <button class="browse-row${active ? " active" : ""}" type="button" data-qa-id="${escapeHtml(item.id)}">
-              <span class="browse-row-title">${escapeHtml(truncateText(item.question, 100))}</span>
+              <span class="browse-row-title">${escapeHtml(truncateText(item.effectiveQuestion, 100))}</span>
               <span class="browse-row-meta">${escapeHtml(meta)}</span>
+              <span class="browse-row-copy">${escapeHtml(`${reviewStatusLabel(item.reviewStatus)}${item.editedQuestion ? ` · ${t("browse_review_question_edited")}` : ""}`)}</span>
             </button>
           `;
         })
@@ -4437,10 +4819,13 @@ function renderBrowseDetail(): string {
   }
 
   const { batch, item } = browseDetailData;
-  const cotSections = item.qa_mode === "cot" ? parseCotAnswerSections(item.answer) : [];
+  const review = browseDetailData.review;
+  const cotSections =
+    item.qa_mode === "cot" ? parseCotAnswerSections(item.answer, batch.cotSectionHeaders) : [];
   const cards = [
     { label: t("browse_batch_name"), value: batch.topicName || batch.name },
     { label: t("browse_task_status"), value: batchStatusLabel(batch.status) },
+    { label: t("browse_review_status"), value: reviewStatusLabel(review.status) },
     { label: t("browse_qa_mode"), value: qaModeLabel(item.qa_mode) },
     {
       label: t("browse_target_items"),
@@ -4448,6 +4833,8 @@ function renderBrowseDetail(): string {
     },
     { label: t("browse_generated_items"), value: formatCount(batch.generatedCount) },
     { label: t("browse_kept_items"), value: formatCount(batch.keptCount) },
+    { label: t("browse_review_kept"), value: formatCount(batch.reviewKeptCount) },
+    { label: t("browse_review_discarded"), value: formatCount(batch.discardedCount) },
     {
       label: t("browse_shard_progress"),
       value: batch.shardCount
@@ -4467,7 +4854,8 @@ function renderBrowseDetail(): string {
     },
     { label: t("browse_output_dir"), value: batch.outputDir, wide: true },
     { label: t("browse_prompt"), value: batch.prompt || t("empty_value"), wide: true },
-    { label: t("browse_question"), value: item.question, wide: true },
+    { label: t("browse_question"), value: review.effectiveQuestion, wide: true },
+    ...(review.editedQuestion ? [{ label: t("browse_question_original"), value: item.question, wide: true }] : []),
     { label: t("browse_source_type"), value: item.source_type },
     { label: t("browse_grounding"), value: item.grounding }
   ];
@@ -4489,6 +4877,63 @@ function renderBrowseDetail(): string {
     .join("")}</div>`;
 }
 
+function renderBrowseReview(): string {
+  if (browseErrorMessage) {
+    return `<div class="empty-state">${escapeHtml(browseErrorMessage)}</div>`;
+  }
+
+  if (browseReviewLoading) {
+    return `<div class="empty-state">${escapeHtml(t("browse_review_loading"))}</div>`;
+  }
+
+  const item = currentBrowseReviewItem();
+  const batch = currentBrowseBatch();
+  if (!item || !batch) {
+    return `<div class="empty-state">${escapeHtml(t("browse_review_empty"))}</div>`;
+  }
+
+  const draft = currentBrowseReviewDraft();
+  const dirty = draft.trim() !== item.effectiveQuestion.trim();
+  const total = browseReviewItems.length;
+  const meta = [item.subtopic, item.axis, item.questionType, item.difficulty]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <section class="browse-review-shell">
+      <article class="browse-review-card">
+        <div class="browse-review-header">
+          <div class="browse-review-header-copy">
+            <p class="result-card-label">${escapeHtml(t("browse_review_progress"))}</p>
+            <p class="browse-review-progress">${escapeHtml(`${formatCount(browseReviewIndex + 1)} / ${formatCount(total)}`)}</p>
+            <p class="browse-row-meta">${escapeHtml(meta || t("empty_value"))}</p>
+          </div>
+          <span class="browse-review-badge ${escapeHtml(reviewStatusBadgeClass(item.reviewStatus))}">${escapeHtml(reviewStatusLabel(item.reviewStatus))}</span>
+        </div>
+        <label class="field output-root-field browse-review-editor">
+          <span>${escapeHtml(t("browse_question"))}</span>
+          <textarea id="browse-review-question" rows="8">${escapeHtml(draft)}</textarea>
+        </label>
+        ${
+          item.editedQuestion
+            ? `<p class="browse-row-copy">${escapeHtml(`${t("browse_question_original")}: ${item.question}`)}</p>`
+            : ""
+        }
+        <div class="browse-review-actions">
+          <button type="button" class="browse-mini-button${!dirty || browseReviewSaving ? " browse-mini-button-muted" : ""}" id="browse-review-save" ${!dirty || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t(browseReviewSaving ? "browse_review_saving" : "browse_review_save"))}</button>
+          <button type="button" class="browse-mini-button${item.reviewStatus === "kept" ? " active" : ""}" id="browse-review-keep" ${browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_keep"))}</button>
+          <button type="button" class="browse-mini-button browse-mini-button-danger${item.reviewStatus === "discarded" ? " active" : ""}" id="browse-review-discard" ${browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_discard"))}</button>
+        </div>
+      </article>
+      <div class="browse-review-nav">
+        <button type="button" class="browse-review-nav-button" id="browse-review-prev" ${browseReviewIndex <= 0 || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_prev_question"))}</button>
+        <span class="browse-page-label">${escapeHtml(browseReviewSummaryLabel(batch))}</span>
+        <button type="button" class="browse-review-nav-button" id="browse-review-next" ${browseReviewIndex >= total - 1 || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_next_question"))}</button>
+      </div>
+    </section>
+  `;
+}
+
 async function deleteBrowseBatch(batchId: string) {
   if (isRemoteVirtualBrowseBatch(batchId)) {
     return;
@@ -4505,6 +4950,8 @@ async function deleteBrowseBatch(batchId: string) {
       browseSelectedBatchId = null;
       browsePageData = null;
       browseDetailData = null;
+      browseReviewItems = [];
+      browseReviewDrafts = new Map();
     }
     await loadBrowseBatches();
     window.alert(t("browse_delete_success"));
@@ -4565,7 +5012,11 @@ async function uploadBrowseBatch(batchId: string) {
     renderPlatformPanels();
     window.alert(message);
   } catch (error) {
-    window.alert(`${t("browse_upload_failed")}: ${String(error)}`);
+    const detail = String(error);
+    const message = detail.includes("no kept QA items")
+      ? t("browse_upload_no_kept_items")
+      : `${t("browse_upload_failed")}: ${detail}`;
+    window.alert(message);
   } finally {
     browseUploadingBatchId = null;
     renderBrowseView();
@@ -5053,16 +5504,22 @@ async function loadBrowseBatches() {
       browseSelectedBatchId = null;
       browsePageData = null;
       browseDetailData = null;
+      browseReviewItems = [];
+      browseReviewDrafts = new Map();
       browseQuestionsLoading = false;
       browseDetailLoading = false;
+      browseReviewLoading = false;
       clearBrowsePlatformStatuses();
     } else if (!browseSelectedBatchId || !browseBatches.some((batch) => batch.id === browseSelectedBatchId)) {
       browseView = "batches";
       browseSelectedBatchId = null;
       browsePageData = null;
       browseDetailData = null;
+      browseReviewItems = [];
+      browseReviewDrafts = new Map();
       browseQuestionsLoading = false;
       browseDetailLoading = false;
+      browseReviewLoading = false;
     }
     const localBatchIds = localBrowseBatches().map((batch) => batch.id);
     if (localBatchIds.length && hasPlatformAuth) {
@@ -5081,8 +5538,11 @@ async function loadBrowseBatches() {
     browseSelectedBatchId = null;
     browsePageData = null;
     browseDetailData = null;
+    browseReviewItems = [];
+    browseReviewDrafts = new Map();
     browseQuestionsLoading = false;
     browseDetailLoading = false;
+    browseReviewLoading = false;
     browseErrorMessage = `Browse QA failed: ${String(error)}`;
     appendLog(`Browse QA failed: ${String(error)}`);
   } finally {
@@ -5097,8 +5557,11 @@ async function loadBrowseQaPage(batchId: string, page: number) {
   browseView = "questions";
   browseQuestionsLoading = true;
   browseDetailLoading = false;
+  browseReviewLoading = false;
   browsePageData = null;
   browseDetailData = null;
+  browseReviewItems = [];
+  browseReviewDrafts = new Map();
   browseErrorMessage = null;
   renderBrowseView();
 
@@ -5152,6 +5615,76 @@ async function loadBrowseDetail(batchId: string, qaId: string) {
     appendLog(`Browse QA detail failed: ${String(error)}`);
   } finally {
     browseDetailLoading = false;
+    renderBrowseView();
+  }
+}
+
+async function loadBrowseReview(batchId: string) {
+  if (isRemoteVirtualBrowseBatch(batchId)) {
+    return;
+  }
+
+  browseSelectedBatchId = batchId;
+  browseView = "review";
+  browseReviewLoading = true;
+  browseDetailData = null;
+  browseReviewItems = [];
+  browseReviewIndex = 0;
+  browseReviewDrafts = new Map();
+  browseErrorMessage = null;
+  renderBrowseView();
+
+  try {
+    browseReviewItems = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
+      batchId
+    });
+    for (const item of browseReviewItems) {
+      browseReviewDrafts.set(item.id, item.effectiveQuestion);
+    }
+  } catch (error) {
+    browseReviewItems = [];
+    browseErrorMessage = `Load QA review failed: ${String(error)}`;
+    appendLog(`Browse QA review failed: ${String(error)}`);
+  } finally {
+    browseReviewLoading = false;
+    renderBrowseView();
+  }
+}
+
+async function saveBrowseReview(
+  batchId: string,
+  qaId: string,
+  nextStatus?: ReviewStatus
+) {
+  if (browseReviewSaving) {
+    return;
+  }
+
+  const item = browseReviewItems.find((entry) => entry.id === qaId);
+  if (!item) {
+    return;
+  }
+
+  browseReviewSaving = true;
+  renderBrowseView();
+  try {
+    const response = await invoke<SaveBatchReviewItemResponse>("save_batch_review_item", {
+      batchId,
+      qaId,
+      editedQuestion: currentBrowseReviewDraft(),
+      status: nextStatus ?? null
+    });
+    applyBrowseReviewUpdate(batchId, qaId, response);
+    if (nextStatus === "kept" || nextStatus === "discarded") {
+      moveToNextBrowseReviewItem();
+    }
+    browseErrorMessage = null;
+  } catch (error) {
+    const message = `${t("browse_review_save_failed")}: ${String(error)}`;
+    appendLog(message);
+    window.alert(message);
+  } finally {
+    browseReviewSaving = false;
     renderBrowseView();
   }
 }
@@ -5298,10 +5831,13 @@ function applyTranslations() {
   setText("tab-model-trial-label", t("tab_model_trial"));
   setText("tab-qa-evaluate-badge", t("tab_internal_badge"));
   setText("tab-model-trial-badge", t("tab_internal_badge"));
-  setText("check-update-label", t("action_check_update"));
+  updateCheckButtonUi();
   setText("topic-tab-title", t("topic_tab_title"));
   setText("settings-tab-title", t("settings_tab_title"));
   setText("settings-basic-copy", t("settings_basic_copy"));
+  setText("cot-structure-section-title", t("cot_structure_section_title"));
+  setText("cot-section-headers-label", t("cot_section_headers"));
+  setText("cot-section-headers-hint", t("cot_section_headers_hint"));
   setText(
     "settings-version",
     currentLang === "zh" ? `当前版本：v${appVersion}` : `Current version: v${appVersion}`
@@ -5312,6 +5848,12 @@ function applyTranslations() {
   setText("model-trial-tab-title", t("model_trial_tab_title"));
   setText("model-trial-tab-copy", t("model_trial_tab_copy"));
   setText("model-section-title", t("model_section_title"));
+  setText("output-section-title", t("output_root"));
+  setText("output-root-label", t("output_root"));
+  setText("output-root-hint", t("output_root_hint"));
+  setText("select-output-root", t("action_select_output_dir"));
+  setText("open-output-root", t("action_open_output_dir"));
+  setText("reset-output-root", t("action_restore_default"));
   setText("integration-section-title", t("integration_section_title"));
   setText("runtime-section-title", t("runtime_section_title"));
   setText("advanced-settings-summary", t("advanced_settings_summary"));
@@ -5470,7 +6012,7 @@ function syncRuntimeParameterInputBounds() {
   batchSizeInput.min = "1";
   batchSizeInput.max = String(batchCap);
   maxInFlightInput.min = "1";
-  maxInFlightInput.max = currentQaMode() === "cot" ? "1" : "";
+  maxInFlightInput.max = currentQaMode() === "cot" ? String(DEFAULT_COT_MAX_IN_FLIGHT) : "";
   maxRetriesInput.min = "0";
   timeoutInput.min = "1";
 }
@@ -6048,6 +6590,7 @@ function setStatus(nextStatus: "idle" | "previewing" | "running" | "stopping" | 
   checkUpdateButton.disabled = busy;
   setControlsLocked(isPipelineBusyStatus(nextStatus));
   updateRunButtonUi();
+  updateCheckButtonUi();
 }
 
 function appendLog(line: string) {
@@ -6085,6 +6628,60 @@ async function openResultPath(path: string) {
   }
 }
 
+async function loadManagedOutputRoot() {
+  try {
+    const response = await invoke<ManagedOutputRootResponse>("get_managed_output_root");
+    if (!outputRootInput.value.trim()) {
+      outputRootInput.value = response.outputRoot;
+    }
+  } catch (error) {
+    appendLog(`${t("log_load_failed")}: ${String(error)}`);
+  }
+}
+
+async function resetManagedOutputRootToDefault(logSelection: boolean) {
+  const previousValue = outputRootInput.value.trim();
+  outputRootInput.value = "";
+  try {
+    const response = await invoke<ManagedOutputRootResponse>("get_managed_output_root");
+    outputRootInput.value = response.outputRoot;
+    clearManagedResumeBatch(false);
+    await persistCurrentConfig(true);
+    if (logSelection) {
+      appendLog(`${t("log_selected_output")}: ${response.outputRoot}`);
+    }
+    if (previousValue !== response.outputRoot) {
+      void loadBrowseBatches();
+    }
+  } catch (error) {
+    outputRootInput.value = previousValue;
+    appendLog(`${t("log_load_failed")}: ${String(error)}`);
+  }
+}
+
+async function chooseManagedOutputRoot() {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      defaultPath: currentManagedOutputRoot() || undefined
+    });
+    if (!selected || Array.isArray(selected)) {
+      return;
+    }
+    if (selected === currentManagedOutputRoot()) {
+      return;
+    }
+    outputRootInput.value = selected;
+    clearManagedResumeBatch(false);
+    await persistCurrentConfig(true);
+    appendLog(`${t("log_selected_output")}: ${selected}`);
+    void loadBrowseBatches();
+  } catch (error) {
+    appendLog(`${t("log_browse_failed")}: ${String(error)}`);
+  }
+}
+
 function collectRequest() {
   normalizeRuntimeParameterInputs(true);
 
@@ -6092,9 +6689,12 @@ function collectRequest() {
     prompt: promptInput.value.trim(),
     topicTags: [...topicTags],
     qaMode: currentQaMode(),
+    outputLanguage: currentLang,
+    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/)),
     targetCount: readNumber(targetCountInput),
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
+    managedOutputRoot: currentManagedOutputRoot() || null,
     provider: providerInput.value,
     model: currentModelValue(),
     baseUrl: baseUrlInput.value.trim() || null,
@@ -6165,8 +6765,12 @@ function applyRequest(request: PipelineFormRequest) {
   topicTags = [...request.topicTags];
   qaModeNormalInput.checked = (request.qaMode ?? "normal") !== "cot";
   qaModeCotInput.checked = (request.qaMode ?? "normal") === "cot";
+  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders);
   targetCountInput.value = String(request.targetCount);
   planLimitInput.value = String(request.planLimit);
+  if (request.managedOutputRoot?.trim()) {
+    outputRootInput.value = request.managedOutputRoot.trim();
+  }
   providerInput.value = request.provider;
   baseUrlInput.value = request.baseUrl ?? "";
   apiKeyInput.value = request.apiKey ?? "";
@@ -6209,7 +6813,13 @@ void listen<PipelineProgressEvent>("pipeline-progress", (event) => {
 });
 
 void listen<AppUpdateProgressEvent>("app-update-progress", (event) => {
+  if (event.payload.status === "failed") {
+    appUpdateLastError = event.payload.message;
+  } else if (event.payload.status === "completed") {
+    appUpdateLastError = null;
+  }
   appendLog(event.payload.message);
+  updateCheckButtonUi();
 });
 
 async function persistCurrentConfig(silent = true) {
@@ -6276,8 +6886,12 @@ async function loadConfig(auto = false) {
 }
 
 langSelect.addEventListener("change", () => {
+  const shouldSyncCotHeaders = isDefaultCotSectionHeaderText(cotSectionHeadersInput.value);
   currentLang = langSelect.value === "zh" ? "zh" : "en";
   window.localStorage.setItem(LANG_STORAGE_KEY, currentLang);
+  if (shouldSyncCotHeaders) {
+    cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
+  }
   applyTranslations();
 });
 
@@ -6565,6 +7179,34 @@ batchSizeInput.addEventListener("change", () => normalizeRuntimeParameterInputs(
 maxInFlightInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
 maxRetriesInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
 timeoutInput.addEventListener("change", () => normalizeRuntimeParameterInputs(true));
+outputRootInput.addEventListener("input", () => {
+  clearManagedResumeBatchOnUserEdit();
+  scheduleAutoSave();
+});
+cotSectionHeadersInput.addEventListener("input", () => {
+  scheduleAutoSave();
+});
+outputRootInput.addEventListener("change", () => {
+  clearManagedResumeBatchOnUserEdit();
+  void (async () => {
+    await persistCurrentConfig(true);
+    await loadBrowseBatches();
+  })();
+});
+selectOutputRootButton.addEventListener("click", () => {
+  void chooseManagedOutputRoot();
+});
+openOutputRootButton.addEventListener("click", async () => {
+  const outputRoot = currentManagedOutputRoot();
+  if (!outputRoot) {
+    return;
+  }
+  await openResultPath(outputRoot);
+});
+resetOutputRootButton.addEventListener("click", () => {
+  clearManagedResumeBatchOnUserEdit();
+  void resetManagedOutputRootToDefault(true);
+});
 resumeInput.addEventListener("change", () => {
   clearManagedResumeBatchOnUserEdit();
   scheduleAutoSave();
@@ -6602,6 +7244,52 @@ function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
   return lines.join("\n");
 }
 
+function updateCheckButtonUi() {
+  const label = document.querySelector<HTMLElement>("#check-update-label");
+  if (!label) {
+    return;
+  }
+
+  if (pendingAppUpdate?.updateAvailable) {
+    label.textContent = appUpdateLastError ? t("action_retry_update") : t("action_install_update");
+    return;
+  }
+
+  label.textContent = t("action_check_update");
+}
+
+function classifyUpdateErrorMessage(errorText: string): string {
+  if (errorText.includes("timed out after 8 seconds")) {
+    return t("log_update_timeout");
+  }
+  return `${t("log_update_failed")}: ${errorText}`;
+}
+
+async function offerManualUpdateFallback() {
+  const manualUrl =
+    pendingAppUpdate?.manualDownloadUrl?.trim() || appUpdateManualDownloadUrl?.trim() || "";
+  if (!manualUrl) {
+    return;
+  }
+
+  const shouldOpen = window.confirm(t("log_update_manual_prompt"));
+  if (!shouldOpen) {
+    return;
+  }
+
+  try {
+    await invoke("open_external_url", { url: manualUrl });
+    appendLog(`${t("log_update_manual_download")}: ${manualUrl}`);
+  } catch (error) {
+    appendLog(`${t("platform_open_failed")}: ${String(error)}`);
+  }
+}
+
+async function startInstallPendingUpdate(response: AppUpdateCheckResponse) {
+  appendLog(`${t("log_update_installing")} ${response.version ?? ""}`.trim());
+  await invoke("install_app_update");
+}
+
 browseContent.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -6619,6 +7307,10 @@ browseContent.addEventListener("click", (event) => {
     if (action === "open") {
       browseDetailData = null;
       void loadBrowseQaPage(actionBatchId, 1);
+      return;
+    }
+    if (action === "review") {
+      void loadBrowseReview(actionBatchId);
       return;
     }
     if (action === "delete") {
@@ -6660,6 +7352,39 @@ browseContent.addEventListener("click", (event) => {
     return;
   }
 
+  if (browseView === "review" && browseSelectedBatchId) {
+    const reviewItem = currentBrowseReviewItem();
+    if (!reviewItem) {
+      return;
+    }
+    const button = target.closest<HTMLButtonElement>("button");
+    if (!button || button.disabled) {
+      return;
+    }
+    if (button.id === "browse-review-save") {
+      void saveBrowseReview(browseSelectedBatchId, reviewItem.id);
+      return;
+    }
+    if (button.id === "browse-review-keep") {
+      void saveBrowseReview(browseSelectedBatchId, reviewItem.id, "kept");
+      return;
+    }
+    if (button.id === "browse-review-discard") {
+      void saveBrowseReview(browseSelectedBatchId, reviewItem.id, "discarded");
+      return;
+    }
+    if (button.id === "browse-review-prev" && browseReviewIndex > 0) {
+      browseReviewIndex -= 1;
+      renderBrowseView();
+      return;
+    }
+    if (button.id === "browse-review-next" && browseReviewIndex < browseReviewItems.length - 1) {
+      browseReviewIndex += 1;
+      renderBrowseView();
+      return;
+    }
+  }
+
   if (!browsePageData || !browseSelectedBatchId) {
     return;
   }
@@ -6678,10 +7403,34 @@ browseContent.addEventListener("click", (event) => {
   }
 });
 
+browseContent.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  if (target.id !== "browse-review-question") {
+    return;
+  }
+  const item = currentBrowseReviewItem();
+  if (!item) {
+    return;
+  }
+  browseReviewDrafts.set(item.id, target.value);
+  const saveButton = browseContent.querySelector<HTMLButtonElement>("#browse-review-save");
+  if (saveButton) {
+    const dirty = target.value.trim() !== item.effectiveQuestion.trim();
+    saveButton.disabled = !dirty || browseReviewSaving;
+    saveButton.classList.toggle("browse-mini-button-muted", !dirty || browseReviewSaving);
+    saveButton.textContent = t(browseReviewSaving ? "browse_review_saving" : "browse_review_save");
+  }
+});
+
 browseBackButton.addEventListener("click", () => {
   browseErrorMessage = null;
   if (browseView === "detail") {
     browseView = "questions";
+  } else if (browseView === "review") {
+    browseView = "batches";
   } else if (browseView === "questions") {
     browseView = "batches";
   }
@@ -6879,8 +7628,25 @@ checkUpdateButton.addEventListener("click", async () => {
   setStatus("updating", true);
 
   try {
+    if (pendingAppUpdate?.updateAvailable) {
+      const shouldInstall = window.confirm(buildUpdatePrompt(pendingAppUpdate));
+      if (!shouldInstall) {
+        appendLog(t("log_update_declined"));
+        setStatus("idle", false);
+        return;
+      }
+
+      appUpdateLastError = null;
+      updateCheckButtonUi();
+      await startInstallPendingUpdate(pendingAppUpdate);
+      return;
+    }
+
     const response = await invoke<AppUpdateCheckResponse>("check_for_app_update");
+    appUpdateManualDownloadUrl = response.manualDownloadUrl ?? appUpdateManualDownloadUrl;
     if (!response.configured) {
+      pendingAppUpdate = null;
+      appUpdateLastError = null;
       appendLog(t("log_update_not_configured"));
       setStatus("idle", false);
       return;
@@ -6891,6 +7657,8 @@ checkUpdateButton.addEventListener("click", async () => {
     }
 
     if (!response.updateAvailable) {
+      pendingAppUpdate = null;
+      appUpdateLastError = null;
       appendLog(`${t("log_update_not_available")} (${response.currentVersion})`);
       await message(`${t("log_update_not_available")} (${response.currentVersion})`, {
         title: t("action_check_update"),
@@ -6900,6 +7668,9 @@ checkUpdateButton.addEventListener("click", async () => {
       return;
     }
 
+    pendingAppUpdate = response;
+    appUpdateLastError = null;
+    updateCheckButtonUi();
     appendLog(`${t("log_update_available")} ${response.version ?? ""}`.trim());
     const shouldInstall = window.confirm(buildUpdatePrompt(response));
     if (!shouldInstall) {
@@ -6908,17 +7679,20 @@ checkUpdateButton.addEventListener("click", async () => {
       return;
     }
 
-    appendLog(`${t("log_update_installing")} ${response.version ?? ""}`.trim());
-    await invoke("install_app_update");
+    await startInstallPendingUpdate(response);
   } catch (error) {
     const errorText = String(error);
-    const isTimeout = errorText.includes("Update check timed out after 5 seconds");
-    const displayMessage = isTimeout ? t("log_update_timeout") : `${t("log_update_failed")}: ${errorText}`;
+    if (errorText.includes("No update is currently available.")) {
+      pendingAppUpdate = null;
+    }
+    const displayMessage = classifyUpdateErrorMessage(errorText);
+    appUpdateLastError = displayMessage;
     appendLog(displayMessage);
     await message(displayMessage, {
       title: t("action_check_update"),
       kind: "warning"
     });
+    await offerManualUpdateFallback();
     setStatus("idle", false);
   }
 });
@@ -7049,6 +7823,7 @@ async function initializeApp() {
   } catch (error) {
     appendLog(`app metadata failed: ${String(error)}`);
   }
+  await loadManagedOutputRoot();
   if (runModeBlock) {
     runModeBlock.hidden = true;
   }

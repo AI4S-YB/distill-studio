@@ -1,13 +1,13 @@
 use anyhow::Context;
 use distill_core::{
-    bootstrap_topic, default_pack_config, default_qa_mode, draft_question_plans, pack_qa_records,
-    GenerateConfig, GenerateSummary, GeneratedQa, PackConfig, PackedDataset, ProviderConfig,
-    QaShard, QuestionPlan, RuntimeConfig, TopicSpec,
+    bootstrap_topic, default_cot_section_headers, default_cot_section_headers_for_language,
+    default_output_language, default_pack_config, default_qa_mode, draft_question_plans,
+    pack_qa_records, GenerateConfig, GenerateSummary, GeneratedQa, PackConfig, PackedDataset,
+    ProviderConfig, QaShard, QuestionPlan, RuntimeConfig, TopicSpec,
 };
-use distill_runtime::{
-    generate_to_directory_with_progress, RuntimeProgress, RuntimeProgressKind,
-};
+use distill_runtime::{generate_to_directory_with_progress, RuntimeProgress, RuntimeProgressKind};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,13 +18,14 @@ use std::sync::{
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, Window};
 use tauri_plugin_updater::UpdaterExt;
-use tokio::time::{timeout, Duration};
+use tokio::time::{sleep, timeout, Duration};
 use url::Url;
 
 const COT_SAFE_BATCH_SIZE: usize = 1;
 const COT_SAFE_MAX_IN_FLIGHT: usize = 2;
 const COT_SAFE_SHARD_SIZE_CAP: usize = 10;
 const QA_PLATFORM_BATCH_SOURCE: &str = "qa-xiaozhao";
+const DEFAULT_RELEASES_PAGE_URL: &str = "https://github.com/AI4S-YB/distill-studio/releases/latest";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,9 +35,13 @@ struct PipelineRequest {
     topic_tags: Vec<String>,
     #[serde(default = "default_qa_mode")]
     qa_mode: String,
+    #[serde(default = "default_output_language")]
+    output_language: String,
     target_count: u32,
     plan_limit: usize,
     output_dir: String,
+    #[serde(default)]
+    managed_output_root: Option<String>,
     provider: String,
     model: String,
     base_url: Option<String>,
@@ -65,6 +70,8 @@ struct PipelineRequest {
     literature_api_url: Option<String>,
     #[serde(default)]
     literature_api_auth_token: Option<String>,
+    #[serde(default)]
+    cot_section_headers: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -166,7 +173,66 @@ struct QaBatchSummary {
     status: String,
     provider: Option<String>,
     model: Option<String>,
+    cot_section_headers: Vec<String>,
     output_dir: String,
+    updated_at_ms: Option<u64>,
+    reviewed_count: usize,
+    review_kept_count: usize,
+    discarded_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RepackQaBatchResponse {
+    batch: QaBatchSummary,
+    kept_count: usize,
+    total_input: usize,
+    dropped_off_topic: usize,
+    dataset_path: String,
+    pack_summary_path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+enum ReviewStatus {
+    #[default]
+    Unreviewed,
+    Kept,
+    Discarded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BatchReviewItemState {
+    #[serde(default)]
+    status: ReviewStatus,
+    #[serde(default)]
+    edited_question: Option<String>,
+    #[serde(default)]
+    updated_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BatchReviewState {
+    #[serde(default)]
+    items: BTreeMap<String, BatchReviewItemState>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct QaBatchReviewSummary {
+    reviewed_count: usize,
+    kept_count: usize,
+    discarded_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QaRecordReview {
+    status: ReviewStatus,
+    edited_question: Option<String>,
+    effective_question: String,
     updated_at_ms: Option<u64>,
 }
 
@@ -180,6 +246,9 @@ struct QaRecordSummary {
     question_type: String,
     difficulty: String,
     audience: String,
+    review_status: ReviewStatus,
+    edited_question: Option<String>,
+    effective_question: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,6 +267,14 @@ struct QaRecordPage {
 struct QaRecordDetail {
     batch: QaBatchSummary,
     item: GeneratedQa,
+    review: QaRecordReview,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveBatchReviewItemResponse {
+    review: QaRecordReview,
+    summary: QaBatchReviewSummary,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +402,12 @@ struct PlatformImportBatchStatusLookupPayload {
 struct AppMetadataResponse {
     product_name: String,
     version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedOutputRootResponse {
+    output_root: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -600,6 +683,7 @@ struct AppUpdateCheckResponse {
     body: Option<String>,
     date: Option<String>,
     source_path: Option<String>,
+    manual_download_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -671,6 +755,22 @@ fn normalize_runtime_for_qa_mode(
         max_retries,
         request_timeout_secs,
         resume,
+    }
+}
+
+fn normalize_cot_section_headers_for_language(
+    headers: &[String],
+    output_language: &str,
+) -> Vec<String> {
+    let normalized = headers
+        .iter()
+        .map(|value| value.trim().trim_end_matches(':').trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        default_cot_section_headers_for_language(output_language)
+    } else {
+        normalized
     }
 }
 
@@ -752,7 +852,8 @@ fn list_local_pipeline_profiles(app: AppHandle) -> Result<Vec<ConfigProfileSumma
     let has_default = profiles.iter().any(|profile| profile.name == default_name);
     let legacy_path = legacy_local_pipeline_config_path(&app).map_err(error_to_string)?;
     if !has_default && legacy_path.exists() {
-        let default_path = local_pipeline_profile_path(&app, &default_name).map_err(error_to_string)?;
+        let default_path =
+            local_pipeline_profile_path(&app, &default_name).map_err(error_to_string)?;
         profiles.push(ConfigProfileSummary {
             name: default_name,
             path: default_path.display().to_string(),
@@ -763,6 +864,66 @@ fn list_local_pipeline_profiles(app: AppHandle) -> Result<Vec<ConfigProfileSumma
     Ok(profiles)
 }
 
+fn load_default_pipeline_request(app: &AppHandle) -> anyhow::Result<Option<PipelineRequest>> {
+    let default_name = default_profile_name();
+    let path = local_pipeline_profile_path(app, &default_name)?;
+    if path.exists() {
+        return Ok(Some(read_json(&path)?));
+    }
+
+    let legacy_path = legacy_local_pipeline_config_path(app)?;
+    if legacy_path.exists() {
+        return Ok(Some(read_json(&legacy_path)?));
+    }
+
+    Ok(None)
+}
+
+fn default_managed_output_root(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    Ok(runtime_data_root(app)?.join("output"))
+}
+
+fn configured_managed_output_root(app: &AppHandle) -> anyhow::Result<PathBuf> {
+    let Some(request) = load_default_pipeline_request(app)? else {
+        return default_managed_output_root(app);
+    };
+
+    let Some(root) = request
+        .managed_output_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return default_managed_output_root(app);
+    };
+
+    resolve_app_relative_path(app, root)
+}
+
+fn managed_output_root_for_request(
+    app: &AppHandle,
+    request: &PipelineRequest,
+) -> anyhow::Result<PathBuf> {
+    let Some(root) = request
+        .managed_output_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return configured_managed_output_root(app);
+    };
+
+    resolve_app_relative_path(app, root)
+}
+
+#[tauri::command]
+fn get_managed_output_root(app: AppHandle) -> Result<ManagedOutputRootResponse, String> {
+    let output_root = default_managed_output_root(&app).map_err(error_to_string)?;
+    Ok(ManagedOutputRootResponse {
+        output_root: output_root.display().to_string(),
+    })
+}
+
 #[tauri::command]
 fn list_qa_batches(app: AppHandle) -> Result<Vec<QaBatchSummary>, String> {
     let mut batches = load_qa_batches(&app).map_err(error_to_string)?;
@@ -771,7 +932,10 @@ fn list_qa_batches(app: AppHandle) -> Result<Vec<QaBatchSummary>, String> {
 }
 
 #[tauri::command]
-fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<PipelineRequest, String> {
+fn load_batch_pipeline_request(
+    app: AppHandle,
+    batch_id: String,
+) -> Result<PipelineRequest, String> {
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let topic_path = batch_dir.join("topic.json");
     let config_path = batch_dir.join("generate_config.json");
@@ -813,7 +977,11 @@ fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<Pipel
     let target_count = topic
         .as_ref()
         .map(|value| value.target_count)
-        .or_else(|| config.as_ref().map(|value| value.runtime.target_count as u32))
+        .or_else(|| {
+            config
+                .as_ref()
+                .map(|value| value.runtime.target_count as u32)
+        })
         .unwrap_or(10);
 
     let config = config.unwrap_or_else(|| GenerateConfig {
@@ -836,6 +1004,8 @@ fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<Pipel
             resume: true,
         },
         qa_mode: default_qa_mode(),
+        output_language: default_output_language(),
+        cot_section_headers: default_cot_section_headers(),
         supporting_context: None,
     });
 
@@ -843,9 +1013,11 @@ fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<Pipel
         prompt,
         topic_tags: Vec::new(),
         qa_mode: config.qa_mode,
+        output_language: config.output_language,
         target_count,
         plan_limit: plan_limit.max(1),
         output_dir: "__managed__".to_string(),
+        managed_output_root: batch_dir.parent().map(|value| value.display().to_string()),
         provider: config.provider.provider,
         model: config.provider.model,
         base_url: config.provider.base_url,
@@ -866,6 +1038,7 @@ fn load_batch_pipeline_request(app: AppHandle, batch_id: String) -> Result<Pipel
         qa_platform_password: None,
         literature_api_url: None,
         literature_api_auth_token: None,
+        cot_section_headers: config.cot_section_headers,
     })
 }
 
@@ -874,6 +1047,12 @@ fn delete_qa_batch(app: AppHandle, batch_id: String) -> Result<(), String> {
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     fs::remove_dir_all(&batch_dir).map_err(error_to_string)?;
     Ok(())
+}
+
+#[tauri::command]
+fn repack_qa_batch(app: AppHandle, batch_id: String) -> Result<RepackQaBatchResponse, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    repack_batch_dir(&app, &batch_dir).map_err(error_to_string)
 }
 
 #[tauri::command]
@@ -950,7 +1129,10 @@ async fn platform_login_with_token(
 
     let client = reqwest::Client::new();
     let login_response = client
-        .post(format!("{}/api/auth/login", endpoints.platform_api_base_url))
+        .post(format!(
+            "{}/api/auth/login",
+            endpoints.platform_api_base_url
+        ))
         .json(&serde_json::json!({
             "username": username,
             "password": password,
@@ -963,7 +1145,10 @@ async fn platform_login_with_token(
         let body = login_response.text().await.unwrap_or_default();
         let detail = body.trim();
         return Err(if detail.is_empty() {
-            format!("platform login failed with status {}", login_status.as_u16())
+            format!(
+                "platform login failed with status {}",
+                login_status.as_u16()
+            )
         } else {
             format!(
                 "platform login failed with status {}: {}",
@@ -989,7 +1174,10 @@ async fn platform_login_with_token(
         let body = me_response.text().await.unwrap_or_default();
         let detail = body.trim();
         return Err(if detail.is_empty() {
-            format!("platform profile fetch failed with status {}", me_status.as_u16())
+            format!(
+                "platform profile fetch failed with status {}",
+                me_status.as_u16()
+            )
         } else {
             format!(
                 "platform profile fetch failed with status {}: {}",
@@ -1022,7 +1210,9 @@ async fn platform_login_with_token(
     Ok((endpoints, token, user))
 }
 
-async fn decode_platform_envelope<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, String> {
+async fn decode_platform_envelope<T: DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, String> {
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
@@ -1092,17 +1282,56 @@ async fn platform_api_delete<T: DeserializeOwned>(
 #[tauri::command]
 async fn check_platform_health(platform_url: String) -> Result<PlatformHealthResponse, String> {
     let endpoints = derive_platform_endpoints(&platform_url).map_err(error_to_string)?;
+    let client = reqwest::Client::new();
     let health_url = format!("{}/health", endpoints.platform_api_base_url);
-    let response = reqwest::Client::new()
-        .get(&health_url)
+    let auth_probe_url = format!("{}/api/auth/login", endpoints.platform_api_base_url);
+
+    if let Ok(response) = client.get(&health_url).send().await {
+        if response.status().is_success() {
+            return Ok(PlatformHealthResponse {
+                reachable: true,
+                endpoints,
+                message: "ok".to_string(),
+            });
+        }
+    }
+
+    if let Ok(response) = client
+        .post(&auth_probe_url)
+        .json(&serde_json::json!({
+            "username": "__distill_probe__",
+            "password": "__distill_probe__",
+        }))
+        .send()
+        .await
+    {
+        let status = response.status();
+        if status.is_success()
+            || matches!(
+                status,
+                reqwest::StatusCode::BAD_REQUEST
+                    | reqwest::StatusCode::UNAUTHORIZED
+                    | reqwest::StatusCode::FORBIDDEN
+                    | reqwest::StatusCode::UNPROCESSABLE_ENTITY
+            )
+        {
+            return Ok(PlatformHealthResponse {
+                reachable: true,
+                endpoints,
+                message: "ok".to_string(),
+            });
+        }
+    }
+
+    let response = client
+        .get(&endpoints.platform_web_base_url)
         .send()
         .await
         .map_err(error_to_string)?;
-    let status = response.status();
-    if !status.is_success() {
+    if !response.status().is_success() {
         return Err(format!(
             "platform health check failed with status {}",
-            status.as_u16()
+            response.status().as_u16()
         ));
     }
 
@@ -1137,19 +1366,28 @@ async fn load_model_trial_workspace(
     let configs = platform_api_get::<Vec<TrialLlmConfigOption>>(
         &client,
         &token,
-        format!("{}/api/expert/model-trial/configs", endpoints.platform_api_base_url),
+        format!(
+            "{}/api/expert/model-trial/configs",
+            endpoints.platform_api_base_url
+        ),
     )
     .await?;
     let sources = platform_api_get::<Vec<TrialSourceItem>>(
         &client,
         &token,
-        format!("{}/api/expert/model-trial/sources", endpoints.platform_api_base_url),
+        format!(
+            "{}/api/expert/model-trial/sources",
+            endpoints.platform_api_base_url
+        ),
     )
     .await?;
     let sessions = platform_api_get::<Vec<TrialSessionSummary>>(
         &client,
         &token,
-        format!("{}/api/expert/model-trial/sessions", endpoints.platform_api_base_url),
+        format!(
+            "{}/api/expert/model-trial/sessions",
+            endpoints.platform_api_base_url
+        ),
     )
     .await?;
 
@@ -1199,7 +1437,10 @@ async fn create_model_trial_session(
     let data = platform_api_post::<_, TrialSessionCreateResponseData>(
         &client,
         &token,
-        format!("{}/api/expert/model-trial/sessions", endpoints.platform_api_base_url),
+        format!(
+            "{}/api/expert/model-trial/sessions",
+            endpoints.platform_api_base_url
+        ),
         &serde_json::json!({
             "llm_config_id": llm_config_id,
             "source_qa_item_id": source_qa_item_id,
@@ -1360,8 +1601,14 @@ async fn upload_qa_batch(
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
     let items = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let review_state = load_batch_review_state(&batch_dir).map_err(error_to_string)?;
+    let items = upload_ready_records(items, &review_state);
     if items.is_empty() {
-        return Err("batch has no QA items to upload".to_string());
+        return Err(if !review_state.items.is_empty() {
+            "batch has no kept QA items to upload".to_string()
+        } else {
+            "batch has no QA items to upload".to_string()
+        });
     }
 
     let technical_type_code = if matches!(batch.qa_mode.as_deref(), Some("cot")) {
@@ -1377,7 +1624,12 @@ async fn upload_qa_batch(
             answer: item.answer.clone(),
             context: format!(
                 "Topic: {}\nSubtopic: {}\nAxis: {}\nQuestion Type: {}\nAudience: {}\nQA Mode: {}",
-                item.topic_name, item.subtopic, item.axis, item.question_type, item.audience, item.qa_mode
+                item.topic_name,
+                item.subtopic,
+                item.axis,
+                item.question_type,
+                item.audience,
+                item.qa_mode
             ),
             difficulty: item.difficulty.clone(),
             source: QA_PLATFORM_BATCH_SOURCE.to_string(),
@@ -1487,11 +1739,19 @@ async fn get_qa_batch_platform_statuses(
     }
 
     let client = reqwest::Client::new();
-    let response = platform_api_post::<PlatformImportBatchStatusLookupPayload, Vec<PlatformImportBatchStatus>>(
+    let response = platform_api_post::<
+        PlatformImportBatchStatusLookupPayload,
+        Vec<PlatformImportBatchStatus>,
+    >(
         &client,
         &token,
-        format!("{}/api/expert/imports/status", endpoints.platform_api_base_url),
-        &PlatformImportBatchStatusLookupPayload { items: lookup_items },
+        format!(
+            "{}/api/expert/imports/status",
+            endpoints.platform_api_base_url
+        ),
+        &PlatformImportBatchStatusLookupPayload {
+            items: lookup_items,
+        },
     )
     .await?;
 
@@ -1507,19 +1767,24 @@ async fn get_qa_batch_platform_statuses(
             let legacy = legacy_platform_external_batch_id(&batch_id)
                 .and_then(|external_batch_id| status_map.get(&external_batch_id));
             match (exact, legacy) {
-                (Some(status), _) if status.exists => normalize_platform_batch_status_for_batch_id(status, &batch_id),
-                (_, Some(status)) if status.exists => normalize_platform_batch_status_for_batch_id(status, &batch_id),
-                (Some(status), _) => normalize_platform_batch_status_for_batch_id(status, &batch_id),
-                (_, Some(status)) => normalize_platform_batch_status_for_batch_id(status, &batch_id),
+                (Some(status), _) if status.exists => {
+                    normalize_platform_batch_status_for_batch_id(status, &batch_id)
+                }
+                (_, Some(status)) if status.exists => {
+                    normalize_platform_batch_status_for_batch_id(status, &batch_id)
+                }
+                (Some(status), _) => {
+                    normalize_platform_batch_status_for_batch_id(status, &batch_id)
+                }
+                (_, Some(status)) => {
+                    normalize_platform_batch_status_for_batch_id(status, &batch_id)
+                }
                 _ => missing_platform_batch_status(&batch_id),
             }
         })
         .collect();
 
-    Ok(QaBatchPlatformStatusResponse {
-        endpoints,
-        items,
-    })
+    Ok(QaBatchPlatformStatusResponse { endpoints, items })
 }
 
 fn platform_status_lookup_candidates(batch_id: &str) -> Vec<String> {
@@ -1576,6 +1841,7 @@ fn list_batch_qa_records(
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
     let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let review_state = load_batch_review_state(&batch_dir).map_err(error_to_string)?;
     let page_size = page_size.unwrap_or(20).clamp(1, 200);
     let requested_page = page.unwrap_or(1).max(1);
     let total_items = records.len();
@@ -1592,15 +1858,7 @@ fn list_batch_qa_records(
     } else {
         records[start..end]
             .iter()
-            .map(|item| QaRecordSummary {
-                id: item.id.clone(),
-                question: item.question.clone(),
-                subtopic: item.subtopic.clone(),
-                axis: item.axis.clone(),
-                question_type: item.question_type.clone(),
-                difficulty: item.difficulty.clone(),
-                audience: item.audience.clone(),
-            })
+            .map(|item| summarize_record(item, &review_state))
             .collect()
     };
 
@@ -1621,17 +1879,10 @@ fn list_batch_qa_question_options(
 ) -> Result<Vec<QaRecordSummary>, String> {
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let review_state = load_batch_review_state(&batch_dir).map_err(error_to_string)?;
     Ok(records
         .into_iter()
-        .map(|item| QaRecordSummary {
-            id: item.id,
-            question: item.question,
-            subtopic: item.subtopic,
-            axis: item.axis,
-            question_type: item.question_type,
-            difficulty: item.difficulty,
-            audience: item.audience,
-        })
+        .map(|item| summarize_record(&item, &review_state))
         .collect())
 }
 
@@ -1644,12 +1895,56 @@ fn get_batch_qa_record(
     let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
     let batch = build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)?;
     let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let review_state = load_batch_review_state(&batch_dir).map_err(error_to_string)?;
     let item = records
         .into_iter()
         .find(|record| record.id == qa_id)
         .ok_or_else(|| format!("QA record not found: {qa_id}"))?;
 
-    Ok(QaRecordDetail { batch, item })
+    Ok(QaRecordDetail {
+        batch,
+        review: review_snapshot_for_item(&item, &review_state),
+        item,
+    })
+}
+
+#[tauri::command]
+fn save_batch_review_item(
+    app: AppHandle,
+    batch_id: String,
+    qa_id: String,
+    edited_question: Option<String>,
+    status: Option<String>,
+) -> Result<SaveBatchReviewItemResponse, String> {
+    let batch_dir = resolve_batch_dir(&app, &batch_id).map_err(error_to_string)?;
+    let records = load_batch_records(&batch_dir).map_err(error_to_string)?;
+    let item = records
+        .iter()
+        .find(|record| record.id == qa_id)
+        .ok_or_else(|| format!("QA record not found: {qa_id}"))?;
+    let mut review_state = load_batch_review_state(&batch_dir).map_err(error_to_string)?;
+    let entry = review_state.items.entry(qa_id.clone()).or_default();
+
+    if let Some(status) = status {
+        entry.status = parse_review_status(&status)
+            .ok_or_else(|| format!("invalid review status: {status}"))?;
+    }
+
+    if let Some(question) = edited_question {
+        entry.edited_question = normalize_edited_question(item, Some(question));
+    }
+
+    entry.updated_at_ms = system_time_to_ms(SystemTime::now());
+    if entry.status == ReviewStatus::Unreviewed && entry.edited_question.is_none() {
+        review_state.items.remove(&qa_id);
+    }
+
+    persist_batch_review_state(&batch_dir, &review_state).map_err(error_to_string)?;
+    let review = review_snapshot_for_item(item, &review_state);
+    Ok(SaveBatchReviewItemResponse {
+        review,
+        summary: summarize_review_state(&review_state),
+    })
 }
 
 #[tauri::command]
@@ -1693,6 +1988,7 @@ async fn check_for_app_update(
     window: Window,
 ) -> Result<AppUpdateCheckResponse, String> {
     let current_version = app.package_info().version.to_string();
+    let manual_download_url = manual_download_url(&app);
     let (updater, source_path) = match build_effective_updater(&app).map_err(error_to_string)? {
         Some(value) => value,
         None => {
@@ -1710,20 +2006,60 @@ async fn check_for_app_update(
                 body: None,
                 date: None,
                 source_path: None,
+                manual_download_url,
             });
         }
     };
 
     emit_app_update_event(&window, "check", "running", "Checking for app updates.");
-    let update = match timeout(Duration::from_secs(5), updater.check()).await {
-        Ok(result) => result.map_err(error_to_string)?,
-        Err(_) => {
-            let message =
-                "Update check timed out after 5 seconds while connecting to the update service.";
-            emit_app_update_event(&window, "check", "failed", message);
-            return Err(message.to_string());
+    let mut update = None;
+    let mut last_error = None;
+    for attempt in 1..=2 {
+        match timeout(Duration::from_secs(8), updater.check()).await {
+            Ok(Ok(result)) => {
+                update = result;
+                last_error = None;
+                break;
+            }
+            Ok(Err(error)) => {
+                let message = error_to_string(error);
+                last_error = Some(message.clone());
+                if attempt < 2 {
+                    emit_app_update_event(
+                        &window,
+                        "check",
+                        "running",
+                        &format!(
+                            "Update check attempt {} failed. Retrying once: {}",
+                            attempt, message
+                        ),
+                    );
+                    sleep(Duration::from_millis(600)).await;
+                    continue;
+                }
+            }
+            Err(_) => {
+                let message =
+                    "Update check timed out after 8 seconds while connecting to the update service.";
+                last_error = Some(message.to_string());
+                if attempt < 2 {
+                    emit_app_update_event(
+                        &window,
+                        "check",
+                        "running",
+                        "Update check timed out once. Retrying one more time.",
+                    );
+                    sleep(Duration::from_millis(600)).await;
+                    continue;
+                }
+            }
         }
-    };
+    }
+
+    if let Some(message) = last_error {
+        emit_app_update_event(&window, "check", "failed", &message);
+        return Err(message);
+    }
 
     if let Some(update) = update {
         emit_app_update_event(
@@ -1740,6 +2076,7 @@ async fn check_for_app_update(
             body: update.body,
             date: update.date.map(|value| value.to_string()),
             source_path: source_path.map(|value| value.display().to_string()),
+            manual_download_url,
         })
     } else {
         emit_app_update_event(
@@ -1756,6 +2093,7 @@ async fn check_for_app_update(
             body: None,
             date: None,
             source_path: source_path.map(|value| value.display().to_string()),
+            manual_download_url,
         })
     }
 }
@@ -1769,8 +2107,21 @@ async fn install_app_update(app: AppHandle, window: Window) -> Result<(), String
         );
     };
 
-    emit_app_update_event(&window, "install", "running", "Preparing update installation.");
-    let Some(update) = updater.check().await.map_err(error_to_string)? else {
+    emit_app_update_event(
+        &window,
+        "install",
+        "running",
+        "Preparing update installation.",
+    );
+    let Some(update) = timeout(Duration::from_secs(8), updater.check())
+        .await
+        .map_err(|_| {
+            let message = "Update install check timed out after 8 seconds.".to_string();
+            emit_app_update_event(&window, "install", "failed", &message);
+            message
+        })?
+        .map_err(error_to_string)?
+    else {
         emit_app_update_event(
             &window,
             "install",
@@ -1829,7 +2180,11 @@ async fn install_app_update(app: AppHandle, window: Window) -> Result<(), String
             },
         )
         .await
-        .map_err(error_to_string)?;
+        .map_err(|error| {
+            let message = error_to_string(error);
+            emit_app_update_event(&window, "install", "failed", &message);
+            message
+        })?;
 
     emit_app_update_event(
         &window,
@@ -1911,12 +2266,16 @@ async fn run_pipeline_inner(
 
     let (output_dir, reused_existing_output) =
         if request.output_dir.trim() == "__managed__" || request.output_dir.trim().is_empty() {
+            let managed_output_root =
+                managed_output_root_for_request(&app, &request).map_err(error_to_string)?;
             if request.managed_run_mode == "resume-batch" {
-                let batch_id = request
-                    .managed_run_batch_id
-                    .as_deref()
-                    .ok_or_else(|| "managed_run_batch_id is required for resume-batch".to_string())?;
-                (resolve_batch_dir(&app, batch_id).map_err(error_to_string)?, true)
+                let batch_id = request.managed_run_batch_id.as_deref().ok_or_else(|| {
+                    "managed_run_batch_id is required for resume-batch".to_string()
+                })?;
+                (
+                    resolve_batch_dir(&app, batch_id).map_err(error_to_string)?,
+                    true,
+                )
             } else if request.managed_run_mode == "resume-latest" {
                 if let Some(existing_dir) =
                     find_latest_matching_batch_dir(&app, &request).map_err(error_to_string)?
@@ -1924,17 +2283,19 @@ async fn run_pipeline_inner(
                     (existing_dir, true)
                 } else {
                     (
-                        next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?,
+                        next_managed_output_dir(&managed_output_root, &topic.topic_name)
+                            .map_err(error_to_string)?,
                         false,
                     )
                 }
             } else {
                 (
-                    next_managed_output_dir(&app, &topic.topic_name).map_err(error_to_string)?,
+                    next_managed_output_dir(&managed_output_root, &topic.topic_name)
+                        .map_err(error_to_string)?,
                     false,
                 )
             }
-    } else {
+        } else {
             (
                 resolve_app_relative_path(&app, &request.output_dir).map_err(error_to_string)?,
                 false,
@@ -1962,6 +2323,11 @@ async fn run_pipeline_inner(
             request.resume,
         ),
         qa_mode: request.qa_mode.clone(),
+        output_language: request.output_language.clone(),
+        cot_section_headers: normalize_cot_section_headers_for_language(
+            &request.cot_section_headers,
+            &request.output_language,
+        ),
         supporting_context: None,
     };
     let generated_dir = output_dir.join("generated");
@@ -1986,7 +2352,10 @@ async fn run_pipeline_inner(
                 output_dir.display()
             )
         } else {
-            format!("Wrote topic, plans, and config into {}.", output_dir.display())
+            format!(
+                "Wrote topic, plans, and config into {}.",
+                output_dir.display()
+            )
         },
         3,
         total_steps,
@@ -1998,7 +2367,10 @@ async fn run_pipeline_inner(
         "running",
         &format!(
             "Generating {} {} items with {} / {}.",
-            config.runtime.target_count, config.qa_mode, config.provider.provider, config.provider.model
+            config.runtime.target_count,
+            config.qa_mode,
+            config.provider.provider,
+            config.provider.model
         ),
         3,
         total_steps,
@@ -2049,11 +2421,8 @@ async fn run_pipeline_inner(
         4,
         total_steps,
     );
-    let (_, records) = load_generated_records(&generated_dir).map_err(error_to_string)?;
-    let pack_config: PackConfig = default_pack_config();
-    let packed = pack_qa_records(&topic, records, &pack_config);
-    write_jsonl(&dataset_path, &packed.items).map_err(error_to_string)?;
-    write_json(&pack_summary_path, &packed).map_err(error_to_string)?;
+    let packed = pack_generated_batch(&topic, &generated_dir, &dataset_path, &pack_summary_path)
+        .map_err(error_to_string)?;
     emit_pipeline_event(
         &window,
         "pack",
@@ -2083,7 +2452,10 @@ async fn run_pipeline_inner(
         &window,
         "complete",
         "completed",
-        &format!("Pipeline finished. Dataset written to {}.", response.dataset_path),
+        &format!(
+            "Pipeline finished. Dataset written to {}.",
+            response.dataset_path
+        ),
         total_steps,
         total_steps,
     );
@@ -2112,7 +2484,48 @@ fn write_jsonl(path: &Path, records: &[GeneratedQa]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<GeneratedQa>)> {
+fn pack_generated_batch(
+    topic: &TopicSpec,
+    generated_dir: &Path,
+    dataset_path: &Path,
+    pack_summary_path: &Path,
+) -> anyhow::Result<PackedDataset> {
+    let (_, records) = load_generated_records(generated_dir)?;
+    let pack_config: PackConfig = default_pack_config();
+    let packed = pack_qa_records(topic, records, &pack_config);
+    write_jsonl(dataset_path, &packed.items)?;
+    write_json(pack_summary_path, &packed)?;
+    Ok(packed)
+}
+
+fn repack_batch_dir(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<RepackQaBatchResponse> {
+    let topic_path = batch_dir.join("topic.json");
+    let generated_dir = batch_dir.join("generated");
+    let dataset_path = batch_dir.join("dataset.jsonl");
+    let pack_summary_path = batch_dir.join("pack_summary.json");
+
+    if !topic_path.exists() {
+        anyhow::bail!("topic.json not found in {}", batch_dir.display());
+    }
+    if !generated_dir.exists() || !has_generated_shards(batch_dir) {
+        anyhow::bail!("generated shards not found in {}", batch_dir.display());
+    }
+
+    let topic: TopicSpec = read_json(&topic_path)?;
+    let packed = pack_generated_batch(&topic, &generated_dir, &dataset_path, &pack_summary_path)?;
+    let batch = build_qa_batch_summary(app, batch_dir)?;
+
+    Ok(RepackQaBatchResponse {
+        batch,
+        kept_count: packed.kept,
+        total_input: packed.total_input,
+        dropped_off_topic: packed.dropped_off_topic,
+        dataset_path: dataset_path.display().to_string(),
+        pack_summary_path: pack_summary_path.display().to_string(),
+    })
+}
+
+fn load_generated_shards(input_dir: &Path) -> anyhow::Result<Vec<QaShard>> {
     let mut paths = fs::read_dir(input_dir)?
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|path| {
@@ -2122,17 +2535,22 @@ fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<Gener
         .collect::<Vec<_>>();
     paths.sort();
 
-    let mut topic_name = String::new();
-    let mut records = Vec::new();
+    paths
+        .into_iter()
+        .map(|path| -> anyhow::Result<QaShard> {
+            let content = fs::read_to_string(&path)?;
+            Ok(serde_json::from_str(&content)?)
+        })
+        .collect()
+}
 
-    for path in paths {
-        let content = fs::read_to_string(&path)?;
-        let shard: QaShard = serde_json::from_str(&content)?;
-        if topic_name.is_empty() {
-            topic_name = shard.topic_name.clone();
-        }
-        records.extend(shard.items);
-    }
+fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<GeneratedQa>)> {
+    let shards = load_generated_shards(input_dir)?;
+    let topic_name = shards
+        .first()
+        .map(|shard| shard.topic_name.clone())
+        .unwrap_or_default();
+    let records = shards.into_iter().flat_map(|shard| shard.items).collect();
 
     Ok((topic_name, records))
 }
@@ -2140,13 +2558,18 @@ fn load_generated_records(input_dir: &Path) -> anyhow::Result<(String, Vec<Gener
 fn load_batch_records(batch_dir: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
     let dataset_path = batch_dir.join("dataset.jsonl");
     if dataset_path.exists() {
-        return read_jsonl_records(&dataset_path);
+        let records = read_jsonl_records(&dataset_path)?;
+        if !records.is_empty() {
+            return Ok(records);
+        }
     }
 
     let pack_summary_path = batch_dir.join("pack_summary.json");
     if pack_summary_path.exists() {
         let packed: PackedDataset = read_json(&pack_summary_path)?;
-        return Ok(packed.items);
+        if !packed.items.is_empty() {
+            return Ok(packed.items);
+        }
     }
 
     let generated_dir = batch_dir.join("generated");
@@ -2156,6 +2579,120 @@ fn load_batch_records(batch_dir: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
     }
 
     anyhow::bail!("no QA records found in {}", batch_dir.display());
+}
+
+fn batch_review_state_path(batch_dir: &Path) -> PathBuf {
+    batch_dir.join("review_state.json")
+}
+
+fn load_batch_review_state(batch_dir: &Path) -> anyhow::Result<BatchReviewState> {
+    let path = batch_review_state_path(batch_dir);
+    if !path.exists() {
+        return Ok(BatchReviewState::default());
+    }
+    read_json(&path)
+}
+
+fn persist_batch_review_state(batch_dir: &Path, state: &BatchReviewState) -> anyhow::Result<()> {
+    let path = batch_review_state_path(batch_dir);
+    if state.items.is_empty() {
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        return Ok(());
+    }
+    write_json(&path, state)
+}
+
+fn parse_review_status(value: &str) -> Option<ReviewStatus> {
+    match value.trim() {
+        "unreviewed" => Some(ReviewStatus::Unreviewed),
+        "kept" => Some(ReviewStatus::Kept),
+        "discarded" => Some(ReviewStatus::Discarded),
+        _ => None,
+    }
+}
+
+fn normalize_edited_question(item: &GeneratedQa, value: Option<String>) -> Option<String> {
+    value.and_then(|question| {
+        let trimmed = question.trim();
+        if trimmed.is_empty() || trimmed == item.question.trim() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn review_snapshot_for_item(item: &GeneratedQa, state: &BatchReviewState) -> QaRecordReview {
+    let review = state.items.get(&item.id);
+    let edited_question = review
+        .and_then(|value| value.edited_question.clone())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    QaRecordReview {
+        status: review.map(|value| value.status).unwrap_or_default(),
+        effective_question: edited_question
+            .clone()
+            .unwrap_or_else(|| item.question.clone()),
+        edited_question,
+        updated_at_ms: review.and_then(|value| value.updated_at_ms),
+    }
+}
+
+fn summarize_record(item: &GeneratedQa, review_state: &BatchReviewState) -> QaRecordSummary {
+    let review = review_snapshot_for_item(item, review_state);
+    QaRecordSummary {
+        id: item.id.clone(),
+        question: item.question.clone(),
+        subtopic: item.subtopic.clone(),
+        axis: item.axis.clone(),
+        question_type: item.question_type.clone(),
+        difficulty: item.difficulty.clone(),
+        audience: item.audience.clone(),
+        review_status: review.status,
+        edited_question: review.edited_question,
+        effective_question: review.effective_question,
+    }
+}
+
+fn summarize_review_state(state: &BatchReviewState) -> QaBatchReviewSummary {
+    let mut summary = QaBatchReviewSummary::default();
+    for item in state.items.values() {
+        match item.status {
+            ReviewStatus::Kept => {
+                summary.reviewed_count += 1;
+                summary.kept_count += 1;
+            }
+            ReviewStatus::Discarded => {
+                summary.reviewed_count += 1;
+                summary.discarded_count += 1;
+            }
+            ReviewStatus::Unreviewed => {}
+        }
+    }
+    summary
+}
+
+fn upload_ready_records(
+    records: Vec<GeneratedQa>,
+    review_state: &BatchReviewState,
+) -> Vec<GeneratedQa> {
+    if review_state.items.is_empty() {
+        return records;
+    }
+
+    records
+        .into_iter()
+        .filter_map(|mut item| {
+            let review = review_snapshot_for_item(&item, review_state);
+            if review.status != ReviewStatus::Kept {
+                return None;
+            }
+            item.question = review.effective_question;
+            Some(item)
+        })
+        .collect()
 }
 
 fn read_jsonl_records(path: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
@@ -2181,7 +2718,7 @@ fn read_jsonl_records(path: &Path) -> anyhow::Result<Vec<GeneratedQa>> {
 }
 
 fn load_qa_batches(app: &AppHandle) -> anyhow::Result<Vec<QaBatchSummary>> {
-    let output_root = runtime_data_root(app)?.join("output");
+    let output_root = configured_managed_output_root(app)?;
     if !output_root.exists() {
         return Ok(Vec::new());
     }
@@ -2231,8 +2768,8 @@ fn find_latest_matching_batch_dir(
 }
 
 fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<QaBatchSummary> {
-    let runtime_root = runtime_data_root(app)?;
-    let id = path_relative_id(&runtime_root, batch_dir)?;
+    let output_root = configured_managed_output_root(app)?;
+    let id = path_relative_id(&output_root, batch_dir)?;
     let name = batch_dir
         .file_name()
         .and_then(|value| value.to_str())
@@ -2245,6 +2782,7 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
     let dataset_path = batch_dir.join("dataset.jsonl");
     let generated_dir = batch_dir.join("generated");
     let generated_summary_path = generated_dir.join("summary.json");
+    let review_state_path = batch_review_state_path(batch_dir);
 
     let topic = if topic_path.exists() {
         Some(read_json::<TopicSpec>(&topic_path)?)
@@ -2266,11 +2804,42 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
     } else {
         None
     };
-    let generated_records = if generated_dir.exists() {
-        Some(load_generated_records(&generated_dir)?.1)
+    let generated_shards = if generated_dir.exists() {
+        Some(load_generated_shards(&generated_dir)?)
     } else {
         None
     };
+    let generated_records = generated_shards.as_ref().map(|shards| {
+        shards
+            .iter()
+            .flat_map(|shard| shard.items.iter().cloned())
+            .collect::<Vec<_>>()
+    });
+    let review_summary = summarize_review_state(&load_batch_review_state(batch_dir)?);
+    let fallback_shard_count = config
+        .as_ref()
+        .map(|value| {
+            value
+                .runtime
+                .target_count
+                .div_ceil(value.runtime.shard_size)
+        })
+        .or_else(|| generated_shards.as_ref().map(|shards| shards.len()));
+    let fallback_completed_shards = generated_shards
+        .as_ref()
+        .map(|shards| shards.iter().filter(|shard| shard.completed).count())
+        .unwrap_or(0);
+    let fallback_request_count = generated_shards.as_ref().map(|shards| {
+        let batch_size = config
+            .as_ref()
+            .map(|value| value.runtime.batch_size)
+            .unwrap_or(1)
+            .max(1);
+        shards
+            .iter()
+            .map(|shard| shard.item_count.div_ceil(batch_size))
+            .sum::<usize>()
+    });
 
     let generated_count = if let Some(summary) = &generated_summary {
         summary.generated_count
@@ -2297,6 +2866,9 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
         if generated_summary
             .as_ref()
             .is_some_and(|summary| summary.completed_shards >= summary.shard_count)
+            || generated_shards.as_ref().is_some_and(|shards| {
+                !shards.is_empty() && shards.iter().all(|shard| shard.completed)
+            })
         {
             "generated".to_string()
         } else {
@@ -2312,6 +2884,7 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
         topic_path.as_path(),
         config_path.as_path(),
         generated_summary_path.as_path(),
+        review_state_path.as_path(),
     ])
     .into_iter()
     .chain(latest_modified_ms_in_dir(&generated_dir))
@@ -2334,26 +2907,49 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
         generated_count,
         kept_count,
         total_count,
-        shard_count: generated_summary.as_ref().map(|value| value.shard_count),
+        shard_count: generated_summary
+            .as_ref()
+            .map(|value| value.shard_count)
+            .or(fallback_shard_count),
         completed_shards: generated_summary
             .as_ref()
             .map(|value| value.completed_shards)
-            .unwrap_or(0),
+            .unwrap_or(fallback_completed_shards),
         skipped_shards: generated_summary
             .as_ref()
             .map(|value| value.skipped_shards)
             .unwrap_or(0),
-        request_count: generated_summary.as_ref().map(|value| value.request_count),
+        request_count: generated_summary
+            .as_ref()
+            .map(|value| value.request_count)
+            .or(fallback_request_count),
         status,
         provider: config.as_ref().map(|value| value.provider.provider.clone()),
         model: config.as_ref().map(|value| value.provider.model.clone()),
+        cot_section_headers: config
+            .as_ref()
+            .map(|value| {
+                normalize_cot_section_headers_for_language(
+                    &value.cot_section_headers,
+                    &value.output_language,
+                )
+            })
+            .unwrap_or_else(default_cot_section_headers),
         output_dir: batch_dir.display().to_string(),
         updated_at_ms,
+        reviewed_count: review_summary.reviewed_count,
+        review_kept_count: review_summary.kept_count,
+        discarded_count: review_summary.discarded_count,
     })
 }
 
 fn resolve_batch_dir(app: &AppHandle, batch_id: &str) -> anyhow::Result<PathBuf> {
-    let batch_dir = resolve_app_relative_path(app, batch_id)?;
+    let output_root = configured_managed_output_root(app)?;
+    let batch_dir = if Path::new(batch_id).is_absolute() {
+        PathBuf::from(batch_id)
+    } else {
+        output_root.join(batch_id)
+    };
     if !batch_dir.exists() {
         anyhow::bail!("batch directory does not exist: {}", batch_dir.display());
     }
@@ -2372,7 +2968,8 @@ fn path_relative_id(root: &Path, path: &Path) -> anyhow::Result<String> {
 }
 
 fn latest_modified_ms(paths: &[&Path]) -> Option<u64> {
-    paths.iter()
+    paths
+        .iter()
         .filter_map(|path| fs::metadata(path).ok())
         .filter_map(|metadata| metadata.modified().ok())
         .filter_map(system_time_to_ms)
@@ -2407,7 +3004,8 @@ fn has_generated_shards(batch_dir: &Path) -> bool {
             path.file_name()
                 .and_then(|value| value.to_str())
                 .is_some_and(|name| {
-                    name.starts_with("shard_") && path.extension().and_then(|ext| ext.to_str()) == Some("json")
+                    name.starts_with("shard_")
+                        && path.extension().and_then(|ext| ext.to_str()) == Some("json")
                 })
         })
 }
@@ -2418,8 +3016,7 @@ fn system_time_to_ms(time: SystemTime) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
-fn next_managed_output_dir(app: &AppHandle, topic_name: &str) -> anyhow::Result<PathBuf> {
-    let output_root = runtime_data_root(app)?.join("output");
+fn next_managed_output_dir(output_root: &Path, topic_name: &str) -> anyhow::Result<PathBuf> {
     fs::create_dir_all(&output_root)?;
 
     let slug = slugify_for_path(topic_name);
@@ -2474,8 +3071,8 @@ fn dev_app_root() -> Option<PathBuf> {
         .parent()
         .map(Path::to_path_buf)?;
 
-    let has_workspace_markers =
-        app_root.join("package.json").exists() && app_root.join("src-tauri/tauri.conf.json").exists();
+    let has_workspace_markers = app_root.join("package.json").exists()
+        && app_root.join("src-tauri/tauri.conf.json").exists();
     if has_workspace_markers {
         Some(app_root)
     } else {
@@ -2601,10 +3198,39 @@ fn load_updater_runtime_config(
         anyhow::bail!("updater endpoints are empty in {}", path.display());
     }
 
-    Ok(Some((
-        UpdaterRuntimeConfig { pubkey, endpoints },
-        path,
-    )))
+    Ok(Some((UpdaterRuntimeConfig { pubkey, endpoints }, path)))
+}
+
+fn release_page_url_from_endpoint(endpoint: &str) -> Option<String> {
+    let trimmed = endpoint.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(prefix) = trimmed.strip_suffix("/releases/latest/download/latest.json") {
+        return Some(format!("{prefix}/releases/latest"));
+    }
+
+    if let Some((prefix, suffix)) = trimmed.split_once("/releases/download/") {
+        if let Some((tag, _)) = suffix.split_once('/') {
+            return Some(format!("{prefix}/releases/tag/{tag}"));
+        }
+    }
+
+    None
+}
+
+fn manual_download_url(app: &AppHandle) -> Option<String> {
+    load_updater_runtime_config(app)
+        .ok()
+        .flatten()
+        .and_then(|(config, _)| {
+            config
+                .endpoints
+                .iter()
+                .find_map(|endpoint| release_page_url_from_endpoint(endpoint))
+        })
+        .or_else(|| Some(DEFAULT_RELEASES_PAGE_URL.to_string()))
 }
 
 fn build_runtime_updater(
@@ -2615,8 +3241,7 @@ fn build_runtime_updater(
         .endpoints
         .iter()
         .map(|value| {
-            Url::parse(value)
-                .with_context(|| format!("invalid updater endpoint URL `{value}`"))
+            Url::parse(value).with_context(|| format!("invalid updater endpoint URL `{value}`"))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -2904,12 +3529,14 @@ pub fn run() {
             stop_pipeline,
             preview_topic_spec,
             get_app_metadata,
+            get_managed_output_root,
             save_local_pipeline_config,
             load_local_pipeline_config,
             list_local_pipeline_profiles,
             list_qa_batches,
             load_batch_pipeline_request,
             delete_qa_batch,
+            repack_qa_batch,
             check_platform_health,
             login_platform,
             load_model_trial_workspace,
@@ -2924,6 +3551,7 @@ pub fn run() {
             list_batch_qa_records,
             list_batch_qa_question_options,
             get_batch_qa_record,
+            save_batch_review_item,
             open_path,
             open_external_url,
             run_pipeline,

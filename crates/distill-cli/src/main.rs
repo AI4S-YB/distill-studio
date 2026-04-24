@@ -85,7 +85,11 @@ async fn main() -> Result<()> {
             let topic = serde_json::from_str(&content)?;
             let plans = draft_question_plans(&topic, limit);
             write_json(&output, &plans)?;
-            println!("Wrote {} question plans to {}", plans.len(), output.display());
+            println!(
+                "Wrote {} question plans to {}",
+                plans.len(),
+                output.display()
+            );
         }
         Commands::Generate {
             topic,

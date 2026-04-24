@@ -379,6 +379,16 @@ label span {
   flex: 1;
 }
 
+.output-root-field {
+  grid-column: 1 / -1;
+}
+
+.output-root-actions {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
 textarea {
   resize: vertical;
   min-height: 160px;
@@ -1679,6 +1689,10 @@ pre {
   border-radius: 4px;
 }
 
+.browse-mini-button.active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
 .browse-mini-button-danger {
   background: var(--danger);
 }
@@ -1768,6 +1782,91 @@ pre {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-content: start;
+}
+
+.browse-review-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.browse-review-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+.browse-review-header,
+.browse-review-actions,
+.browse-review-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.browse-review-nav-button {
+  min-width: 136px;
+}
+
+.browse-review-nav-button:disabled {
+  background: #d7dde5;
+  color: #8c98a8;
+  border: 1px dashed #aeb8c5;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+  filter: grayscale(0.15);
+}
+
+.browse-review-nav-button:disabled:hover {
+  filter: grayscale(0.15);
+}
+
+.browse-review-header-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.browse-review-progress {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.browse-review-editor {
+  gap: 8px;
+}
+
+.browse-review-editor textarea {
+  min-height: 180px;
+}
+
+.browse-review-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.browse-review-badge.kept {
+  border-color: rgba(28, 68, 43, 0.18);
+  background: rgba(28, 68, 43, 0.08);
+  color: #1c442b;
+}
+
+.browse-review-badge.discarded {
+  border-color: rgba(138, 60, 35, 0.18);
+  background: rgba(138, 60, 35, 0.08);
+  color: var(--danger);
 }
 
 .run-status {

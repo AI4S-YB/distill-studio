@@ -1,11 +1,13 @@
 use anyhow::{anyhow, Context, Result};
 use distill_core::{
-    GenerateConfig, GenerateSummary, GeneratedQa, QaShard, QuestionPlan, TopicSpec,
+    default_cot_section_headers_for_language, GenerateConfig, GenerateSummary, GeneratedQa,
+    QaShard, QuestionPlan, TopicSpec,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::future::{pending, Future};
 use std::path::Path;
 use std::sync::{
@@ -17,7 +19,6 @@ use tokio::sync::Semaphore;
 use tokio::time::{sleep, Duration};
 
 const CANCEL_POLL_INTERVAL_MS: u64 = 100;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DraftQa {
     question: String,
@@ -149,15 +150,25 @@ pub async fn generate_to_directory_with_progress(
         let shard_path = output_dir.join(format!("shard_{:04}.json", shard_id));
         let shard_target = shard_target_count(config, shard_id);
         let shard_index = shard_id + 1;
+        let existing_shard = if config.runtime.resume && tokio::fs::try_exists(&shard_path).await? {
+            let existing = tokio::fs::read_to_string(&shard_path).await?;
+            Some(serde_json::from_str::<QaShard>(&existing)?)
+        } else {
+            None
+        };
+        let existing_completed_count = existing_shard
+            .as_ref()
+            .map(|shard| shard.items.len().min(shard_target))
+            .unwrap_or(0);
         emit_runtime_progress(
             progress,
             RuntimeProgress {
                 kind: RuntimeProgressKind::ShardStarted,
                 shard_index,
                 shard_count,
-                shard_item_completed: Some(0),
+                shard_item_completed: Some(existing_completed_count),
                 shard_item_total: Some(shard_target),
-                total_generated: Some(generated_count),
+                total_generated: Some(generated_count + existing_completed_count),
                 target_count: Some(config.runtime.target_count),
                 retry_attempt: None,
                 retry_limit: None,
@@ -177,10 +188,12 @@ pub async fn generate_to_directory_with_progress(
             },
         );
 
-        if config.runtime.resume && tokio::fs::try_exists(&shard_path).await? {
-            let existing = tokio::fs::read_to_string(&shard_path).await?;
-            let shard: QaShard = serde_json::from_str(&existing)?;
+        if let Some(shard) = existing_shard
+            .as_ref()
+            .filter(|shard| shard.completed && shard.items.len().min(shard_target) >= shard_target)
+        {
             skipped_shards += 1;
+            request_count += shard.item_count.div_ceil(config.runtime.batch_size);
             generated_count += shard.item_count;
             emit_runtime_progress(
                 progress,
@@ -217,10 +230,12 @@ pub async fn generate_to_directory_with_progress(
             plans,
             config,
             &client,
+            &shard_path,
             shard_id,
             shard_count,
             shard_target,
             generated_count,
+            existing_shard,
             progress,
             cancel_flag,
         )
@@ -287,15 +302,27 @@ async fn generate_one_shard(
     plans: &[QuestionPlan],
     config: &GenerateConfig,
     client: &reqwest::Client,
+    shard_path: &Path,
     shard_id: usize,
     shard_count: usize,
     shard_target: usize,
     generated_before_shard: usize,
+    existing_shard: Option<QaShard>,
     progress: Option<&RuntimeProgressCallback>,
     cancel_flag: Option<&AtomicBool>,
 ) -> Result<QaShard> {
     let start_index = shard_id * config.runtime.shard_size;
-    let requests = build_batch_requests(plans, config, shard_id, shard_target);
+    let mut persisted_items = existing_shard
+        .map(|shard| {
+            shard
+                .items
+                .into_iter()
+                .take(shard_target)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let initial_completed = persisted_items.len();
+    let requests = build_batch_requests(plans, config, shard_id, shard_target, initial_completed);
     let semaphore = Arc::new(Semaphore::new(config.runtime.max_in_flight.max(1)));
     let mut inflight = FuturesUnordered::new();
 
@@ -324,58 +351,54 @@ async fn generate_one_shard(
         });
     }
 
-    let mut collected = Vec::new();
-    let mut completed_in_shard = 0usize;
+    let mut pending_results = BTreeMap::new();
+    let mut next_persist_offset = initial_completed;
     while let Some(result) = inflight.next().await {
         check_canceled(cancel_flag)?;
         let result = result?;
-        completed_in_shard += result.items.len();
-        emit_runtime_progress(
-            progress,
-            RuntimeProgress {
-                kind: RuntimeProgressKind::BatchCompleted,
-                shard_index: shard_id + 1,
-                shard_count,
-                shard_item_completed: Some(completed_in_shard.min(shard_target)),
-                shard_item_total: Some(shard_target),
-                total_generated: Some(generated_before_shard + completed_in_shard.min(shard_target)),
-                target_count: Some(config.runtime.target_count),
-                retry_attempt: None,
-                retry_limit: None,
-                attempt_number: None,
-                attempt_limit: None,
-                error_message: None,
-                batch_index: Some(result.batch_index),
-                batch_count_in_shard: Some(result.batch_count_in_shard),
-                batch_size: Some(result.count),
-                duration_ms: Some(result.duration_ms),
-                backoff_secs: None,
-                subtopic: Some(result.plan.subtopic.clone()),
-                axis: Some(result.plan.axis.clone()),
-                question_type: Some(result.plan.question_type.clone()),
-                difficulty: Some(result.plan.difficulty.clone()),
-                audience: Some(result.plan.audience.clone()),
-            },
-        );
-        collected.push(result);
+        pending_results.insert(result.shard_offset, result);
+
+        while let Some(next_result) = pending_results.remove(&next_persist_offset) {
+            persisted_items.extend(next_result.items);
+            next_persist_offset = persisted_items.len();
+            let shard = build_shard(topic, shard_id, start_index, &persisted_items, false);
+            tokio::fs::write(shard_path, serde_json::to_string_pretty(&shard)?).await?;
+            emit_runtime_progress(
+                progress,
+                RuntimeProgress {
+                    kind: RuntimeProgressKind::BatchCompleted,
+                    shard_index: shard_id + 1,
+                    shard_count,
+                    shard_item_completed: Some(next_persist_offset.min(shard_target)),
+                    shard_item_total: Some(shard_target),
+                    total_generated: Some(
+                        generated_before_shard + next_persist_offset.min(shard_target),
+                    ),
+                    target_count: Some(config.runtime.target_count),
+                    retry_attempt: None,
+                    retry_limit: None,
+                    attempt_number: None,
+                    attempt_limit: None,
+                    error_message: None,
+                    batch_index: Some(next_result.batch_index),
+                    batch_count_in_shard: Some(next_result.batch_count_in_shard),
+                    batch_size: Some(next_result.count),
+                    duration_ms: Some(next_result.duration_ms),
+                    backoff_secs: None,
+                    subtopic: Some(next_result.plan.subtopic.clone()),
+                    axis: Some(next_result.plan.axis.clone()),
+                    question_type: Some(next_result.plan.question_type.clone()),
+                    difficulty: Some(next_result.plan.difficulty.clone()),
+                    audience: Some(next_result.plan.audience.clone()),
+                },
+            );
+        }
     }
 
-    collected.sort_by_key(|result| result.shard_offset);
-
-    let mut items = Vec::with_capacity(shard_target);
-    for result in collected {
-        items.extend(result.items);
-    }
-    items.truncate(shard_target);
-
-    Ok(QaShard {
-        shard_id,
-        topic_name: topic.topic_name.clone(),
-        item_count: items.len(),
-        start_index,
-        end_index: start_index + items.len().saturating_sub(1),
-        items,
-    })
+    persisted_items.truncate(shard_target);
+    let shard = build_shard(topic, shard_id, start_index, &persisted_items, true);
+    tokio::fs::write(shard_path, serde_json::to_string_pretty(&shard)?).await?;
+    Ok(shard)
 }
 
 fn emit_runtime_progress(progress: Option<&RuntimeProgressCallback>, event: RuntimeProgress) {
@@ -426,12 +449,13 @@ fn build_batch_requests(
     config: &GenerateConfig,
     shard_id: usize,
     shard_target: usize,
+    start_offset: usize,
 ) -> Vec<BatchRequest> {
     let start_index = shard_id * config.runtime.shard_size;
     let batch_count_in_shard = shard_target.div_ceil(config.runtime.batch_size);
     let mut requests = Vec::new();
-    let mut shard_offset = 0usize;
-    let mut batch_index = 0usize;
+    let mut shard_offset = start_offset;
+    let mut batch_index = start_offset / config.runtime.batch_size;
 
     while shard_offset < shard_target {
         let count = config
@@ -456,6 +480,24 @@ fn build_batch_requests(
     requests
 }
 
+fn build_shard(
+    topic: &TopicSpec,
+    shard_id: usize,
+    start_index: usize,
+    items: &[GeneratedQa],
+    completed: bool,
+) -> QaShard {
+    QaShard {
+        shard_id,
+        topic_name: topic.topic_name.clone(),
+        item_count: items.len(),
+        start_index,
+        end_index: start_index + items.len().saturating_sub(1),
+        completed,
+        items: items.to_vec(),
+    }
+}
+
 async fn run_batch_request(
     client: &reqwest::Client,
     topic: &TopicSpec,
@@ -465,7 +507,10 @@ async fn run_batch_request(
     progress: Option<&RuntimeProgressCallback>,
     cancel_flag: Option<&AtomicBool>,
 ) -> Result<BatchResult> {
-    let shard_count = config.runtime.target_count.div_ceil(config.runtime.shard_size);
+    let shard_count = config
+        .runtime
+        .target_count
+        .div_ceil(config.runtime.shard_size);
     let request_started_at = Instant::now();
     let drafts = generate_batch_with_retries(
         client,
@@ -482,7 +527,11 @@ async fn run_batch_request(
         .into_iter()
         .enumerate()
         .map(|(idx, draft)| GeneratedQa {
-            id: format!("{}-{:06}", slugify(&topic.topic_name), request.global_offset + idx),
+            id: format!(
+                "{}-{:06}",
+                slugify(&topic.topic_name),
+                request.global_offset + idx
+            ),
             shard_id: request.shard_id,
             topic_name: topic.topic_name.clone(),
             subtopic: plan.subtopic.clone(),
@@ -556,11 +605,13 @@ async fn generate_batch_with_retries(
         );
         let attempt_started_at = Instant::now();
         let result = match config.provider.provider.as_str() {
-            "openai-compatible" => run_with_cancel(
-                generate_batch_openai_compatible(client, topic, plan, config, request.count),
-                cancel_flag,
-            )
-            .await,
+            "openai-compatible" => {
+                run_with_cancel(
+                    generate_batch_openai_compatible(client, topic, plan, config, request.count),
+                    cancel_flag,
+                )
+                .await
+            }
             "stub" => {
                 check_canceled(cancel_flag)?;
                 Ok(generate_stub_batch(topic, plan, config, request.count))
@@ -575,30 +626,30 @@ async fn generate_batch_with_retries(
                 emit_runtime_progress(
                     progress,
                     RuntimeProgress {
-                    kind: RuntimeProgressKind::BatchRetry,
-                    shard_index: request.shard_id + 1,
-                    shard_count,
-                    shard_item_completed: None,
-                    shard_item_total: None,
-                    total_generated: None,
-                    target_count: Some(config.runtime.target_count),
-                    retry_attempt: Some(attempt),
-                    retry_limit: Some(config.runtime.max_retries),
-                    attempt_number: Some(attempt),
-                    attempt_limit: Some(attempt_limit),
-                    error_message: Some(err.to_string()),
-                    batch_index: Some(request.batch_index),
-                    batch_count_in_shard: Some(request.batch_count_in_shard),
-                    batch_size: Some(request.count),
-                    duration_ms: Some(duration_ms(attempt_started_at.elapsed())),
-                    backoff_secs: Some(2u64.pow(attempt).min(30)),
-                    subtopic: Some(plan.subtopic.clone()),
-                    axis: Some(plan.axis.clone()),
-                    question_type: Some(plan.question_type.clone()),
-                    difficulty: Some(plan.difficulty.clone()),
-                    audience: Some(plan.audience.clone()),
-                },
-            );
+                        kind: RuntimeProgressKind::BatchRetry,
+                        shard_index: request.shard_id + 1,
+                        shard_count,
+                        shard_item_completed: None,
+                        shard_item_total: None,
+                        total_generated: None,
+                        target_count: Some(config.runtime.target_count),
+                        retry_attempt: Some(attempt),
+                        retry_limit: Some(config.runtime.max_retries),
+                        attempt_number: Some(attempt),
+                        attempt_limit: Some(attempt_limit),
+                        error_message: Some(err.to_string()),
+                        batch_index: Some(request.batch_index),
+                        batch_count_in_shard: Some(request.batch_count_in_shard),
+                        batch_size: Some(request.count),
+                        duration_ms: Some(duration_ms(attempt_started_at.elapsed())),
+                        backoff_secs: Some(2u64.pow(attempt).min(30)),
+                        subtopic: Some(plan.subtopic.clone()),
+                        axis: Some(plan.axis.clone()),
+                        question_type: Some(plan.question_type.clone()),
+                        difficulty: Some(plan.difficulty.clone()),
+                        audience: Some(plan.audience.clone()),
+                    },
+                );
                 let backoff = 2u64.pow(attempt).min(30);
                 cancelable_sleep(Duration::from_secs(backoff), cancel_flag).await?;
             }
@@ -677,7 +728,12 @@ async fn generate_batch_openai_compatible(
         .and_then(|choice| choice.message.content)
         .ok_or_else(|| anyhow!("provider returned no message content"))?;
 
-    parse_model_json(&content, count)
+    let drafts = parse_model_json(&content, count)?;
+    if config.qa_mode == "cot" {
+        let headers = effective_cot_section_headers(config);
+        validate_cot_drafts(&drafts, &headers)?;
+    }
+    Ok(drafts)
 }
 
 fn parse_model_json(content: &str, expected_count: usize) -> Result<Vec<DraftQa>> {
@@ -698,6 +754,81 @@ fn parse_model_json(content: &str, expected_count: usize) -> Result<Vec<DraftQa>
 
     drafts.truncate(expected_count);
     Ok(drafts)
+}
+
+fn effective_cot_section_headers(config: &GenerateConfig) -> Vec<String> {
+    let normalized = config
+        .cot_section_headers
+        .iter()
+        .map(|value| value.trim().trim_end_matches(':').trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        default_cot_section_headers_for_language(&config.output_language)
+    } else {
+        normalized
+    }
+}
+
+fn validate_cot_drafts(drafts: &[DraftQa], headers: &[String]) -> Result<()> {
+    for (index, draft) in drafts.iter().enumerate() {
+        validate_cot_answer(&draft.answer, headers)
+            .with_context(|| format!("invalid CoT answer structure for item {}", index + 1))?;
+    }
+    Ok(())
+}
+
+fn validate_cot_answer(answer: &str, headers: &[String]) -> Result<()> {
+    let trimmed = answer.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("answer is empty"));
+    }
+
+    let markers = headers
+        .iter()
+        .map(|header| format!("{header}:"))
+        .collect::<Vec<_>>();
+    let mut last_index = 0usize;
+    for (position, marker) in markers.iter().enumerate() {
+        let header = headers[position].as_str();
+        let relative = trimmed[last_index..]
+            .find(marker)
+            .ok_or_else(|| anyhow!("missing section header `{header}`"))?;
+        let absolute = last_index + relative;
+        if position > 0 && absolute == last_index {
+            return Err(anyhow!("section `{header}` is empty or out of order"));
+        }
+        last_index = absolute + marker.len();
+    }
+
+    for index in 0..headers.len().saturating_sub(1) {
+        let current = headers[index].as_str();
+        let next = headers[index + 1].as_str();
+        let current_marker = &markers[index];
+        let next_marker = &markers[index + 1];
+        let current_index = trimmed
+            .find(current_marker)
+            .ok_or_else(|| anyhow!("missing section header `{current}`"))?;
+        let next_index = trimmed
+            .find(next_marker)
+            .ok_or_else(|| anyhow!("missing section header `{next}`"))?;
+        let body = trimmed[current_index + current_marker.len()..next_index].trim();
+        if body.is_empty() {
+            return Err(anyhow!("section `{current}` has no content"));
+        }
+    }
+
+    let final_header = headers[headers.len() - 1].as_str();
+    let final_marker = &markers[markers.len() - 1];
+    let final_index = trimmed
+        .find(final_marker)
+        .ok_or_else(|| anyhow!("missing section header `{final_header}`"))?;
+    let final_body = trimmed[final_index + final_marker.len()..].trim();
+    if final_body.is_empty() {
+        return Err(anyhow!("section `{final_header}` has no content"));
+    }
+
+    Ok(())
 }
 
 fn extract_json_object(content: &str) -> Result<serde_json::Value> {
@@ -726,7 +857,9 @@ fn extract_json_object(content: &str) -> Result<serde_json::Value> {
         })
         .ok_or_else(|| anyhow!("failed to locate fenced JSON object in model response"));
 
-    if let Ok(fenced_json) = fenced.and_then(|json| serde_json::from_str(json).map_err(anyhow::Error::from)) {
+    if let Ok(fenced_json) =
+        fenced.and_then(|json| serde_json::from_str(json).map_err(anyhow::Error::from))
+    {
         return Ok(fenced_json);
     }
 
@@ -797,7 +930,7 @@ fn build_user_prompt(
     count: usize,
 ) -> String {
     if config.qa_mode == "cot" {
-        return build_cot_user_prompt(topic, plan, count);
+        return build_cot_user_prompt(topic, plan, config, count);
     }
 
     build_normal_user_prompt(topic, plan, config, count)
@@ -810,6 +943,11 @@ fn build_normal_user_prompt(
     count: usize,
 ) -> String {
     let topic_keywords = topic.keywords.join(", ");
+    let language_instruction = if config.output_language == "zh" {
+        "All questions and answers must be written in Simplified Chinese. Even if the topic statement or source terms are in English, produce the final QA in natural Chinese."
+    } else {
+        "All questions and answers must be written in English."
+    };
     let evidence_context = config
         .supporting_context
         .as_deref()
@@ -818,7 +956,7 @@ fn build_normal_user_prompt(
         .map(|value| format!("\nLiterature evidence context:\n{value}\n"))
         .unwrap_or_default();
     format!(
-        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}{evidence_context}\nGenerate {count} diverse QA pairs as JSON with this schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nRules:\n- Every question must stay tightly within the exact research topic and the selected subtopic.\n- Each QA pair must mention or strongly imply at least two topic-specific concepts from this set: {topic_keywords}.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Keep questions meaningfully distinct from each other.\n- Answers should be concise, informative, and directly answer the question without tutorial padding.\n- If literature evidence context is provided, prefer claims that are aligned with that evidence; do not fabricate citations.\n- Emphasize the most central concepts explicitly present in the topic instead of drifting into generic background facts.\n- Do not include markdown fences or commentary.\n- Return JSON only.",
+        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}{evidence_context}\nGenerate {count} diverse QA pairs as JSON with this schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nRules:\n- {language_instruction}\n- Every question must stay tightly within the exact research topic and the selected subtopic.\n- Each QA pair must mention or strongly imply at least two topic-specific concepts from this set: {topic_keywords}.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Keep questions meaningfully distinct from each other.\n- Answers should be concise, informative, and directly answer the question without tutorial padding.\n- If literature evidence context is provided, prefer claims that are aligned with that evidence; do not fabricate citations.\n- Emphasize the most central concepts explicitly present in the topic instead of drifting into generic background facts.\n- Do not include markdown fences or commentary.\n- Return JSON only.",
         topic = topic.topic_name,
         goal = topic.goal,
         intent = topic.user_intent,
@@ -829,15 +967,32 @@ fn build_normal_user_prompt(
         question_type = plan.question_type,
         difficulty = plan.difficulty,
         audience = plan.audience,
+        language_instruction = language_instruction,
         evidence_context = evidence_context,
         count = count
     )
 }
 
-fn build_cot_user_prompt(topic: &TopicSpec, plan: &QuestionPlan, count: usize) -> String {
+fn build_cot_user_prompt(
+    topic: &TopicSpec,
+    plan: &QuestionPlan,
+    config: &GenerateConfig,
+    count: usize,
+) -> String {
     let topic_keywords = topic.keywords.join(", ");
+    let section_rules = effective_cot_section_headers(config)
+        .iter()
+        .enumerate()
+        .map(|(index, header)| format!("  {}. {}:", index + 1, header))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let language_instruction = if config.output_language == "zh" {
+        "All questions, answers, and section headers must be written in Simplified Chinese."
+    } else {
+        "All questions, answers, and section headers must be written in English."
+    };
     format!(
-        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}\n\nGenerate {count} research-oriented QA pairs as JSON with this exact top-level schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nHard output requirements:\n- Return exactly one JSON object.\n- The first character of your response must be `{{` and the last character must be `}}`.\n- Do not include markdown fences, explanations, comments, or any text before or after the JSON object.\n- Every `answer` value must be a JSON string. If you need line breaks, encode them inside the string as `\\n`.\n- Do not add any extra top-level keys besides `items`.\n\nTask intent:\n- The question should read like a real agricultural life science or breeding research problem.\n- The answer must be a compact CoT-style research planning response for scientists, not a casual explanation.\n\nAnswer format rules:\n- The answer must be plain text with these section headers in order:\n  1. Workflow Summary:\n  2. Reference Milestones:\n  3. Reference Steps:\n  4. Step Rationale:\n  5. Decision Points:\n  6. Quality Checks:\n  7. Failure Modes:\n  8. Final Interpretation:\n- Keep the response compact, analyst-facing, and free of code or software installation notes.\n- `Reference Milestones`, `Reference Steps`, and `Step Rationale` should each contain 3 to 5 short numbered items.\n- `Decision Points` and `Quality Checks` should each contain 2 to 4 short bullet items.\n- `Failure Modes` should contain 3 to 5 short bullet items.\n- The workflow should reflect agricultural life science, crop improvement, plant biology, breeding, omics, field trials, phenotyping, or related research logic whenever appropriate.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Make the answer decision-aware: explain what must be judged, what quality signals matter, and what common failures would invalidate interpretation.\n- Avoid generic textbook prose; write like a senior research workflow planner.\n- Return valid JSON only.",
+        "Topic: {topic}\nGoal: {goal}\nUser intent: {intent}\nTopic keywords: {topic_keywords}\nSubtopic: {subtopic}\nSubtopic intent: {subtopic_intent}\nAxis: {axis}\nQuestion type: {question_type}\nDifficulty: {difficulty}\nAudience: {audience}\n\nGenerate {count} research-oriented QA pairs as JSON with this exact top-level schema:\n{{\"items\":[{{\"question\":\"...\",\"answer\":\"...\",\"source_type\":\"model_synthesized\",\"grounding\":\"derived\"}}]}}\n\nHard output requirements:\n- Return exactly one JSON object.\n- The first character of your response must be `{{` and the last character must be `}}`.\n- Do not include markdown fences, explanations, comments, or any text before or after the JSON object.\n- Every `answer` value must be a JSON string. If you need line breaks, encode them inside the string as `\\n`.\n- Do not add any extra top-level keys besides `items`.\n\nTask intent:\n- The question should read like a real agricultural life science or breeding research problem.\n- The answer must be a compact CoT-style research planning response for scientists, not a casual explanation.\n\nAnswer format rules:\n- {language_instruction}\n- The answer must be plain text with these section headers in order:\n{section_rules}\n- Keep the response compact, analyst-facing, and free of code or software installation notes.\n- Use short numbered items where a stepwise plan or milestone list is appropriate.\n- Use short bullet items where decisions, checks, or risks are appropriate.\n- The workflow should reflect agricultural life science, crop improvement, plant biology, breeding, omics, field trials, phenotyping, or related research logic whenever appropriate.\n- Use the subtopic `{subtopic}` and axis `{axis}` as hard constraints.\n- Make the answer decision-aware: explain what must be judged, what quality signals matter, and what common failures would invalidate interpretation.\n- Avoid generic textbook prose; write like a senior research workflow planner.\n- Return valid JSON only.",
         topic = topic.topic_name,
         goal = topic.goal,
         intent = topic.user_intent,
@@ -848,6 +1003,8 @@ fn build_cot_user_prompt(topic: &TopicSpec, plan: &QuestionPlan, count: usize) -
         question_type = plan.question_type,
         difficulty = plan.difficulty,
         audience = plan.audience,
+        language_instruction = language_instruction,
+        section_rules = section_rules,
         count = count
     )
 }
@@ -858,6 +1015,7 @@ fn generate_stub_batch(
     config: &GenerateConfig,
     count: usize,
 ) -> Vec<DraftQa> {
+    let cot_headers = effective_cot_section_headers(config);
     (0..count)
         .map(|idx| DraftQa {
             question: format!(
@@ -868,10 +1026,31 @@ fn generate_stub_batch(
                 plan.question_type,
                 idx + 1
             ),
-            answer: format!(
-                "This synthetic answer explains how {} relates to {} for a {} audience. It is generated by the {} provider scaffold and is intended as a stable placeholder until live API generation is enabled.",
-                plan.subtopic, plan.axis, plan.audience, config.provider.provider
-            ),
+            answer: if config.qa_mode == "cot" {
+                cot_headers
+                    .iter()
+                    .enumerate()
+                    .map(|(header_index, header)| {
+                        let body = match header_index {
+                            0 => format!("Frame a compact research workflow for {} under {}.", plan.subtopic, plan.axis),
+                            1 => "1. Define the target phenotype.\n2. Select the comparison cohort.\n3. Lock the readout criteria.".to_string(),
+                            2 => format!("1. Prepare samples and metadata.\n2. Run the primary measurement for {}.\n3. Compare signal patterns across conditions.", plan.axis),
+                            3 => "1. The topic anchors biological scope.\n2. The axis controls the inference lens.\n3. The audience determines reporting depth.".to_string(),
+                            4 => "- Decide whether the effect size is actionable.\n- Decide whether confounders dominate the signal.".to_string(),
+                            5 => "- Confirm sample labels and trait definitions are consistent.\n- Confirm the readout is reproducible across replicates.".to_string(),
+                            6 => "- Weak phenotype definition.\n- Unbalanced comparison groups.\n- Noise larger than the observed effect.".to_string(),
+                            _ => format!("Use this stub only as a formatting placeholder for {} and {}.", topic.topic_name, plan.subtopic),
+                        };
+                        format!("{header}:\n{body}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                format!(
+                    "This synthetic answer explains how {} relates to {} for a {} audience. It is generated by the {} provider scaffold and is intended as a stable placeholder until live API generation is enabled.",
+                    plan.subtopic, plan.axis, plan.audience, config.provider.provider
+                )
+            },
             source_type: Some("model_synthesized".to_string()),
             grounding: Some("derived".to_string()),
         })
