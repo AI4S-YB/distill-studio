@@ -1215,6 +1215,7 @@ const translations: Record<Lang, Record<string, string>> = {
     model_trial_tab_copy: "直接在桌面端内嵌试用对话，选择模型和参考 QA 后即可开始测试。",
     model_section_title: "模型配置",
     integration_section_title: "平台接口",
+    literature_section_title: "文献接口",
     runtime_section_title: "运行参数",
     advanced_settings_summary: "高级设置",
     advanced_settings_copy: "这里主要是平台接口和运行参数。普通用户一般保持默认即可。",
@@ -1738,6 +1739,7 @@ const translations: Record<Lang, Record<string, string>> = {
     model_trial_tab_copy: "Use the dedicated qaevaluate trial API directly inside the desktop app.",
     model_section_title: "Model Configuration",
     integration_section_title: "Platform Integrations",
+    literature_section_title: "Literature API",
     runtime_section_title: "Runtime Parameters",
     advanced_settings_summary: "Advanced Settings",
     advanced_settings_copy: "These fields are mainly for integrations and runtime tuning. Most users can keep the defaults.",
@@ -2561,6 +2563,46 @@ app.innerHTML = `
           <p class="panel-copy" id="settings-basic-copy">Most users only need to choose a provider, model, and API key.</p>
         </div>
         <section class="setup-checklist" id="setup-checklist"></section>
+
+        <!-- Platform Integrations -->
+        <div class="section-block">
+          <p class="section-title" id="integration-section-title">Platform Integrations</p>
+        </div>
+        <div class="grid three">
+          <label>
+            <div class="field-label-row">
+              <span id="qa-platform-url-label">QA Platform URL</span>
+              <button class="field-help-button" data-help-key="qa_platform_url" type="button">?</button>
+            </div>
+            <input id="qa-platform-url" placeholder="http://182.92.166.143" />
+            <small class="field-hint" id="qa-platform-url-hint">
+              Internal laboratory use. The app derives web and API addresses from this one field.
+            </small>
+          </label>
+          <label>
+            <div class="field-label-row">
+              <span id="qa-platform-username-label">QA Platform Username</span>
+              <button class="field-help-button" data-help-key="qa_platform_username" type="button">?</button>
+            </div>
+            <input id="qa-platform-username" placeholder="your-account" />
+          </label>
+          <label>
+            <div class="field-label-row">
+              <span id="qa-platform-password-label">QA Platform Password</span>
+              <button class="field-help-button" data-help-key="qa_platform_password" type="button">?</button>
+            </div>
+            <input id="qa-platform-password" type="password" />
+          </label>
+        </div>
+
+        <!-- Platform Account -->
+        <div class="section-block">
+          <p class="section-title" id="platform-account-title">Platform Account</p>
+          <div id="platform-account-card"></div>
+          <div id="password-change-form-container" hidden></div>
+        </div>
+
+        <!-- Model Configuration -->
         <div class="section-block">
           <p class="section-title" id="model-section-title">Model Configuration</p>
         </div>
@@ -2630,97 +2672,36 @@ app.innerHTML = `
             </small>
           </label>
         </div>
-        <div class="section-block">
-          <p class="section-title" id="output-section-title">Output Directory</p>
-        </div>
-        <div class="grid two">
-          <label class="output-root-field">
-            <div class="field-label-row">
-              <span id="output-root-label">Output Directory</span>
-            </div>
-            <input id="output-root" />
-            <small class="field-hint" id="output-root-hint">
-              Choose the root folder used for generated runs and history. The app still creates one subfolder per run inside it.
-            </small>
-          </label>
-          <div class="output-root-actions">
-            <button id="select-output-root" type="button">Choose Folder</button>
-            <button id="open-output-root" class="secondary" type="button">Open Output Directory</button>
-            <button id="reset-output-root" class="secondary" type="button">Restore Default</button>
-          </div>
-        </div>
+
+        <!-- Advanced Settings (collapsed) -->
         <details class="advanced-settings" id="advanced-settings">
           <summary id="advanced-settings-summary">Advanced Settings</summary>
           <p class="panel-copy advanced-settings-copy" id="advanced-settings-copy">
             Ordinary users can usually keep the defaults here.
           </p>
+
+          <!-- Output Directory -->
           <div class="section-block">
-            <p class="section-title" id="cot-structure-section-title">CoT Structure</p>
-          </div>
-          <div class="grid one">
-            <label>
-              <div class="field-label-row">
-                <span id="cot-section-headers-label">CoT Section Headers</span>
-              </div>
-              <textarea id="cot-section-headers" rows="8"></textarea>
-              <small class="field-hint" id="cot-section-headers-hint">
-                One section header per line. The runtime will use these lines to build the CoT answer format.
-              </small>
-            </label>
-          </div>
-          <div class="section-block">
-            <p class="section-title" id="integration-section-title">Platform Integrations</p>
-          </div>
-          <div class="grid three">
-            <label>
-              <div class="field-label-row">
-                <span id="qa-platform-url-label">QA Platform URL</span>
-                <button class="field-help-button" data-help-key="qa_platform_url" type="button">?</button>
-              </div>
-              <input id="qa-platform-url" placeholder="http://182.92.166.143" />
-              <small class="field-hint" id="qa-platform-url-hint">
-                Internal laboratory use. The app derives web and API addresses from this one field.
-              </small>
-            </label>
-            <label>
-              <div class="field-label-row">
-                <span id="qa-platform-username-label">QA Platform Username</span>
-                <button class="field-help-button" data-help-key="qa_platform_username" type="button">?</button>
-              </div>
-              <input id="qa-platform-username" placeholder="your-account" />
-            </label>
-            <label>
-              <div class="field-label-row">
-                <span id="qa-platform-password-label">QA Platform Password</span>
-                <button class="field-help-button" data-help-key="qa_platform_password" type="button">?</button>
-              </div>
-              <input id="qa-platform-password" type="password" />
-            </label>
+            <p class="section-title" id="output-section-title">Output Directory</p>
           </div>
           <div class="grid two">
-            <label>
+            <label class="output-root-field">
               <div class="field-label-row">
-                <span id="literature-api-url-label">Literature API URL</span>
-                <button class="field-help-button" data-help-key="literature_api_url" type="button">?</button>
+                <span id="output-root-label">Output Directory</span>
               </div>
-              <input id="literature-api-url" placeholder="https://example.com/literature/api" />
-            </label>
-            <label>
-              <div class="field-label-row">
-                <span id="literature-api-auth-label">Literature API Auth Token</span>
-                <button class="field-help-button" data-help-key="literature_api_auth" type="button">?</button>
-              </div>
-              <input id="literature-api-auth" type="password" />
-              <small class="field-hint" id="literature-api-auth-hint">
-                Authentication token for the literature API, stored in local settings.
+              <input id="output-root" />
+              <small class="field-hint" id="output-root-hint">
+                Choose the root folder used for generated runs and history. The app still creates one subfolder per run inside it.
               </small>
             </label>
+            <div class="output-root-actions">
+              <button id="select-output-root" type="button">Choose Folder</button>
+              <button id="open-output-root" class="secondary" type="button">Open Output Directory</button>
+              <button id="reset-output-root" class="secondary" type="button">Restore Default</button>
+            </div>
           </div>
-          <div class="section-block">
-            <p class="section-title" id="platform-account-title">Platform Account</p>
-            <div id="platform-account-card"></div>
-            <div id="password-change-form-container"></div>
-          </div>
+
+          <!-- Runtime Parameters -->
           <div class="section-block">
             <p class="section-title" id="runtime-section-title">Runtime Parameters</p>
             <p class="field-hint runtime-constraint-hint" id="runtime-constraint-hint"></p>
@@ -2772,21 +2753,60 @@ app.innerHTML = `
             </label>
             <label>
               <div class="field-label-row">
-                <span id="timeout-secs-label">Timeout secs</span>
+                <span id="request-timeout-secs-label">Timeout secs</span>
                 <button class="field-help-button" data-help-key="timeout_secs" type="button">?</button>
               </div>
-              <input id="request-timeout-secs" type="number" value="180" />
+              <input id="request-timeout-secs" type="number" value="120" />
             </label>
-            <label class="toggle">
+            <label>
               <div class="field-label-row">
-                <span id="resume-existing-label">Resume existing shards</span>
+                <span id="resume-label">Resume existing shards</span>
                 <button class="field-help-button" data-help-key="resume_existing" type="button">?</button>
               </div>
               <input id="resume" type="checkbox" checked />
             </label>
           </div>
+
+          <!-- CoT Structure -->
+          <div class="section-block">
+            <p class="section-title" id="cot-structure-section-title">CoT Structure</p>
+          </div>
+          <div class="grid one">
+            <label>
+              <div class="field-label-row">
+                <span id="cot-section-headers-label">CoT Section Headers</span>
+              </div>
+              <textarea id="cot-section-headers" rows="8"></textarea>
+              <small class="field-hint" id="cot-section-headers-hint">
+                One section header per line. The runtime will use these lines to build the CoT answer format.
+              </small>
+            </label>
+          </div>
+
+          <!-- Literature API -->
+          <div class="section-block">
+            <p class="section-title" id="literature-section-title">Literature API</p>
+          </div>
+          <div class="grid two">
+            <label>
+              <div class="field-label-row">
+                <span id="literature-api-url-label">Literature API URL</span>
+                <button class="field-help-button" data-help-key="literature_api_url" type="button">?</button>
+              </div>
+              <input id="literature-api-url" placeholder="https://example.com/literature/api" />
+            </label>
+            <label>
+              <div class="field-label-row">
+                <span id="literature-api-auth-label">Literature API Auth Token</span>
+                <button class="field-help-button" data-help-key="literature_api_auth" type="button">?</button>
+              </div>
+              <input id="literature-api-auth" type="password" />
+              <small class="field-hint" id="literature-api-auth-hint">
+                Authentication token for the literature API, stored in local settings.
+              </small>
+            </label>
+          </div>
         </details>
-      </section>
       <section class="tab-panel" data-tab-panel="qa-evaluate" hidden>
         <div class="tab-copy-block">
           <p class="panel-title" id="qa-evaluate-tab-title">QA Evaluate</p>
@@ -6539,6 +6559,7 @@ function applyTranslations() {
   setText("settings-tab-title", t("settings_tab_title"));
   setText("settings-basic-copy", t("settings_basic_copy"));
   setText("cot-structure-section-title", t("cot_structure_section_title"));
+  setText("literature-section-title", t("literature_section_title"));
   setText("cot-section-headers-label", t("cot_section_headers"));
   setText("cot-section-headers-hint", t("cot_section_headers_hint"));
   setText(
