@@ -175,6 +175,17 @@ async function main() {
 
   await spawnCommand(nodeCommand, [writeConfigScript], env);
   await spawnCommand(nodeCommand, [tauriCliScript, "build", "--config", "src-tauri/tauri.release.conf.json"], env);
+
+  // Post-build: ad-hoc deep-codesign the macOS .app bundle to reduce Gatekeeper warnings
+  if (os.platform() === "darwin") {
+    const bundlePath = path.join(cwd, "target", "release", "bundle", "macos", "DistillStudio.app");
+    try {
+      await spawnCommand("codesign", ["--deep", "--force", "-s", "-", bundlePath], {});
+      console.log("Post-build codesign completed for macOS bundle.");
+    } catch {
+      console.warn("Post-build codesign skipped (bundle not found or codesign unavailable).");
+    }
+  }
 }
 
 await main();
