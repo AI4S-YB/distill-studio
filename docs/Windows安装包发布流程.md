@@ -178,8 +178,8 @@ npm run release:assets
 3. 打 tag，例如：
 
 ```bash
-git tag app-v0.1.7
-git push origin app-v0.1.7
+git tag app-v0.1.8
+git push origin app-v0.1.8
 ```
 
 4. 通过 GitHub Actions 或本地手动发布 release 资产
