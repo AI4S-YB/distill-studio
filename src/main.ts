@@ -283,6 +283,7 @@ type BrowseView = "batches" | "questions" | "detail" | "review";
 
 type ProviderPresetId =
   | "custom"
+  | "platform"
   | "qwen_dashscope"
   | "deepseek"
   | "moonshot_kimi"
@@ -1417,6 +1418,7 @@ const translations: Record<Lang, Record<string, string>> = {
     preset_tencent_hunyuan: "腾讯混元",
     preset_baidu_qianfan: "百度千帆",
     preset_stub_local: "Stub 本地测试",
+    preset_platform: "平台模型",
     custom_model: "自定义模型",
     model_custom_option: "自定义模型...",
     topic_prompt: "主题描述",
@@ -1941,6 +1943,7 @@ const translations: Record<Lang, Record<string, string>> = {
     preset_tencent_hunyuan: "Tencent Hunyuan",
     preset_baidu_qianfan: "Baidu Qianfan",
     preset_stub_local: "Stub Local Test",
+    preset_platform: "Platform Model",
     custom_model: "Custom Model",
     model_custom_option: "Custom model...",
     topic_prompt: "Topic Prompt",
@@ -2265,6 +2268,18 @@ type ModelChangelogEntry = {
   createdAt: string;
 };
 
+type PlatformGenerateModel = {
+  id: number;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  batchSize: number;
+  maxInFlight: number;
+};
+
 type FeedbackResponse = {
   id: number;
   createdAt: string;
@@ -2312,6 +2327,9 @@ let exportsStatsState:
   | { kind: "loading" }
   | { kind: "success"; data: ExportsStatsData }
   | { kind: "error"; message: string } = { kind: "idle" };
+
+let platformGenerateModels: PlatformGenerateModel[] = [];
+let selectedPlatformModelId: number | null = null;
 
 let feedbackFormState:
   | { kind: "idle" }
@@ -2622,6 +2640,7 @@ app.innerHTML = `
               <option id="provider-preset-option-hunyuan" value="tencent_hunyuan">Tencent Hunyuan</option>
               <option id="provider-preset-option-qianfan" value="baidu_qianfan">Baidu Qianfan</option>
               <option id="provider-preset-option-stub" value="stub_local" hidden>Stub Local Test</option>
+              <option id="provider-preset-option-platform" value="platform" hidden>Platform Model</option>
             </select>
             <small class="field-hint" id="provider-preset-hint">
               Selecting a provider fills the adapter type, model list, and base URL. Switch to Custom if you need a private gateway or manual values.
@@ -3749,6 +3768,24 @@ function syncModelOptions(presetId: ProviderPresetId, preferredModel?: string | 
 
   modelInput.replaceChildren();
 
+  // Platform preset: populate from fetched platform models
+  if (presetId === "platform") {
+    for (const pm of platformGenerateModels) {
+      const option = document.createElement("option");
+      option.value = String(pm.id);
+      option.textContent = `${pm.name} (${pm.model})`;
+      option.dataset.platformModelId = String(pm.id);
+      modelInput.append(option);
+    }
+    if (platformGenerateModels.length > 0) {
+      const firstId = String(platformGenerateModels[0].id);
+      modelInput.value = resolvedModel && platformGenerateModels.some(m => String(m.id) === resolvedModel) ? resolvedModel : firstId;
+      modelInput.dispatchEvent(new Event("change"));
+    }
+    customModelField.hidden = true;
+    return;
+  }
+
   for (const model of models) {
     const option = document.createElement("option");
     option.value = model;
@@ -3860,7 +3897,46 @@ function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRe
   };
 }
 
+async function loadPlatformGenerateModels() {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    platformGenerateModels = [];
+    selectedPlatformModelId = null;
+    return;
+  }
+  try {
+    platformGenerateModels = await invoke<PlatformGenerateModel[]>("get_generate_models", auth);
+  } catch {
+    platformGenerateModels = [];
+  }
+}
+
+function updatePlatformPresetOption() {
+  const opt = document.querySelector<HTMLOptionElement>("#provider-preset-option-platform");
+  if (!opt) return;
+  const isLoggedIn = platformLoginState.kind === "success" && platformGenerateModels.length > 0;
+  opt.hidden = !isLoggedIn;
+  // If current preset is "platform" but no longer valid, reset to first available
+  if (providerPresetInput.value === "platform" && !isLoggedIn) {
+    const firstPreset = providerPresetInput.querySelector<HTMLOptionElement>("option:not([hidden]):not([value=platform])");
+    if (firstPreset) {
+      providerPresetInput.value = firstPreset.value;
+      applyProviderPreset(firstPreset.value as ProviderPresetId);
+    }
+  }
+}
+
+function isUsingPlatformModel(): boolean {
+  return providerPresetInput.value === "platform" && selectedPlatformModelId !== null;
+}
+
+function currentPlatformGenerateModel(): PlatformGenerateModel | null {
+  if (!isUsingPlatformModel()) return null;
+  return platformGenerateModels.find(m => m.id === selectedPlatformModelId) ?? null;
+}
+
 function syncProviderPresetInput() {
+  updatePlatformPresetOption();
   const presetId = detectProviderPreset({
     provider: providerInput.value,
     baseUrl: baseUrlInput.value
@@ -4799,6 +4875,12 @@ function renderPlatformPanels() {
   renderModelTrialPanel();
   renderPlatformAccountCard();
   updatePlatformStatusBadge();
+  // Load platform models after login state change
+  void loadPlatformGenerateModels().then(() => {
+    updatePlatformPresetOption();
+    syncProviderPresetInput();
+    renderSetupSummary();
+  });
 }
 
 function updatePlatformStatusBadge() {
@@ -6636,6 +6718,7 @@ function applyTranslations() {
   setText("provider-preset-option-hunyuan", t("preset_tencent_hunyuan"));
   setText("provider-preset-option-qianfan", t("preset_baidu_qianfan"));
   setText("provider-preset-option-stub", t("preset_stub_local"));
+  setText("provider-preset-option-platform", t("preset_platform"));
   setText("target-count-label", t("target_count"));
   setText("plan-limit-label", t("plan_limit"));
   setText("shard-size-label", t("shard_size"));
@@ -7422,13 +7505,13 @@ function collectRequest() {
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
     managedOutputRoot: currentManagedOutputRoot() || null,
-    provider: providerInput.value,
-    model: currentModelValue(),
+    provider: isUsingPlatformModel() ? "openai-compatible" : providerInput.value,
+    model: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.model ?? currentModelValue()) : currentModelValue(),
     baseUrl: baseUrlInput.value.trim() || null,
     apiKey: apiKeyInput.value.trim() || null,
     apiKeyEnv: null,
-    temperature: 0.8,
-    maxTokens: providerInput.value === "openai-compatible" ? 2400 : 800,
+    temperature: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.temperature ?? 0.8) : 0.8,
+    maxTokens: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.maxTokens ?? 800) : (providerInput.value === "openai-compatible" ? 2400 : 800),
     shardSize: readNumber(shardSizeInput),
     batchSize: readNumber(batchSizeInput),
     maxInFlight: readNumber(maxInFlightInput),
@@ -7810,6 +7893,23 @@ modelInput.addEventListener("change", () => {
   } else {
     customModelInput.value = "";
   }
+
+  // Platform model selected: auto-fill proxy config and lock runtime params
+  if (providerPresetInput.value === "platform") {
+    const modelId = Number(modelInput.value);
+    const pm = platformGenerateModels.find(m => m.id === modelId);
+    if (pm && platformLoginState.kind === "success") {
+      selectedPlatformModelId = modelId;
+      baseUrlInput.value = platformLoginState.response.endpoints.platformApiBaseUrl + "/api/generate";
+      apiKeyInput.value = qaPlatformPasswordInput.value;
+      batchSizeInput.value = String(pm.batchSize);
+      maxInFlightInput.value = String(pm.maxInFlight);
+      modelInput.options[modelInput.selectedIndex]?.style && normalizeRuntimeParameterInputs(false);
+    }
+  } else {
+    selectedPlatformModelId = null;
+  }
+
   syncProviderPresetInput();
   renderSetupSummary();
   scheduleAutoSave();

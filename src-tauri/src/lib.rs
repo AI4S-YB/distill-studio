@@ -810,6 +810,20 @@ struct FeedbackResponse {
     created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformGenerateModel {
+    id: i64,
+    name: String,
+    provider: String,
+    base_url: String,
+    model: String,
+    temperature: f32,
+    max_tokens: u32,
+    batch_size: usize,
+    max_in_flight: usize,
+}
+
 #[derive(Default)]
 struct ActivePipelineState {
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
@@ -1205,7 +1219,7 @@ fn derive_platform_endpoints(platform_url: &str) -> anyhow::Result<PlatformEndpo
         .ok_or_else(|| anyhow::anyhow!("platform url is missing host"))?
         .to_string();
     let scheme = normalized.scheme().to_string();
-    let is_local = matches!(host.as_str(), "127.0.0.1" | "localhost");
+    let uses_development_ports = matches!(host.as_str(), "127.0.0.1" | "localhost" | "182.92.166.143");
 
     let normalized_platform_url = if let Some(port) = normalized.port() {
         format!("{scheme}://{host}:{port}")
@@ -1213,7 +1227,7 @@ fn derive_platform_endpoints(platform_url: &str) -> anyhow::Result<PlatformEndpo
         format!("{scheme}://{host}")
     };
 
-    if is_local {
+    if uses_development_ports {
         return Ok(PlatformEndpoints {
             normalized_platform_url,
             platform_web_base_url: format!("{scheme}://{host}:3100"),
@@ -1646,6 +1660,24 @@ async fn get_exports_stats(
     )
     .await?;
     Ok(data)
+}
+
+#[tauri::command]
+async fn get_generate_models(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<Vec<PlatformGenerateModel>, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let models = platform_api_get::<Vec<PlatformGenerateModel>>(
+        &client,
+        &token,
+        format!("{}/api/generate/models", endpoints.platform_api_base_url),
+    )
+    .await?;
+    Ok(models)
 }
 
 #[tauri::command]
@@ -3860,6 +3892,7 @@ pub fn run() {
             submit_feedback,
             get_platform_stats,
             get_exports_stats,
+            get_generate_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
