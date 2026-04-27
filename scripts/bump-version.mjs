@@ -1,10 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 
 const cwd = process.cwd();
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const version = args.find((value) => value !== "--dry-run");
+const execFileAsync = promisify(execFile);
 
 if (!version) {
   console.error("Usage: npm run release:bump -- <version>");
@@ -35,6 +38,10 @@ async function main() {
   const tauriConf = await readJson(tauriConfPath);
   const cargoToml = await readFile(cargoTomlPath, "utf8");
   const releaseDoc = await readFile(releaseDocPath, "utf8");
+
+  await execFileAsync(process.execPath, [path.join(cwd, "scripts", "sync-design-doc.mjs"), "--check-version", version], {
+    cwd
+  });
 
   const packageBefore = packageJson.version;
   const tauriBefore = tauriConf.version;
@@ -70,6 +77,9 @@ async function main() {
   await writeJson(tauriConfPath, tauriConf);
   await writeFile(cargoTomlPath, nextCargoToml, "utf8");
   await writeFile(releaseDocPath, nextReleaseDoc, "utf8");
+  await execFileAsync(process.execPath, [path.join(cwd, "scripts", "sync-design-doc.mjs")], {
+    cwd
+  });
 
   console.log(`Bumped version to ${version}`);
   for (const line of summary) {

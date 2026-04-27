@@ -22,3 +22,4 @@ src-tauri/output/
 # Misc
 *.log
 session.md
+distill-studio-功能设计文档.md

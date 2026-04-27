@@ -2030,3 +2030,343 @@ textarea:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- v0.1.8: Recent updates, feedback, platform account ---- */
+
+.recent-updates-panel {
+  padding: 16px;
+}
+
+.recent-updates-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.recent-updates-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bg-subtle);
+}
+
+.recent-updates-card.error {
+  border-color: var(--danger);
+}
+
+.recent-updates-card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.recent-updates-disconnected {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: 14px;
+}
+
+.recent-updates-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.recent-updates-refresh {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.recent-updates-loading {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recent-updates-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.recent-updates-news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.news-item {
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 12px;
+}
+
+.news-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.news-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.news-item-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.news-item-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.news-item-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Feedback panel */
+
+.feedback-panel {
+  padding: 16px;
+}
+
+.feedback-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-width: 600px;
+}
+
+.feedback-section {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bg-subtle);
+}
+
+.feedback-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.feedback-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.feedback-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.feedback-button:hover {
+  background: var(--bg-subtle);
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feedback-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.feedback-form input,
+.feedback-form textarea,
+.feedback-form select {
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.feedback-form input:focus,
+.feedback-form textarea:focus,
+.feedback-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.feedback-submit-button {
+  padding: 8px 16px;
+  font-size: 13px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.feedback-submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.feedback-submit-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.feedback-success {
+  font-size: 13px;
+  color: #2e7d32;
+  margin: 8px 0 0;
+}
+
+.feedback-error {
+  font-size: 13px;
+  color: var(--danger);
+  margin: 8px 0 0;
+}
+
+.feedback-login-required {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Platform account card (settings) */
+
+.platform-account-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.platform-account-card.disconnected {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.platform-account-card.connected {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.platform-account-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.platform-account-label {
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.platform-account-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.platform-account-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.platform-account-actions button {
+  padding: 6px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.platform-account-actions button:hover {
+  background: var(--bg-subtle);
+}
+
+/* Password change form */
+
+.password-change-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  margin-top: 8px;
+}
+
+.password-change-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.password-change-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.password-change-form input {
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.password-change-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}

@@ -694,6 +694,55 @@ struct AppUpdateProgressEvent {
     message: String,
 }
 
+// ---- v0.1.8: News, Dashboard, Auth ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformNews {
+    id: i64,
+    title: String,
+    content: String,
+    #[serde(alias = "is_published")]
+    is_published: bool,
+    #[serde(default, alias = "created_by_name")]
+    created_by_name: Option<String>,
+    #[serde(alias = "created_at")]
+    created_at: String,
+    #[serde(default, alias = "updated_at")]
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DashboardOverviewResponse {
+    total_qas: u32,
+    reviewed_qas: u32,
+    ongoing_tasks: u32,
+    pending_qas: u32,
+    imported_batches: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangePasswordResponse {
+    success: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DashboardApiData {
+    metrics: DashboardApiMetrics,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DashboardApiMetrics {
+    total_qas: u32,
+    reviewed_qas: u32,
+    ongoing_tasks: u32,
+    pending_qas: u32,
+    imported_batches: u32,
+}
+
 #[derive(Default)]
 struct ActivePipelineState {
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
@@ -1351,6 +1400,98 @@ async fn login_platform(
     let (endpoints, _token, user) =
         platform_login_with_token(&platform_url, &username, &password).await?;
     Ok(PlatformLoginResponse { endpoints, user })
+}
+
+// ---- v0.1.8: News, Dashboard, Password, Logout ----
+
+#[tauri::command]
+async fn get_platform_news(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<Vec<PlatformNews>, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let news = platform_api_get::<Vec<PlatformNews>>(
+        &client,
+        &token,
+        format!("{}/api/news", endpoints.platform_api_base_url),
+    )
+    .await?;
+    Ok(news)
+}
+
+#[tauri::command]
+async fn get_dashboard_overview(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<DashboardOverviewResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let data = platform_api_get::<DashboardApiData>(
+        &client,
+        &token,
+        format!(
+            "{}/api/admin/dashboard",
+            endpoints.platform_api_base_url
+        ),
+    )
+    .await?;
+    Ok(DashboardOverviewResponse {
+        total_qas: data.metrics.total_qas,
+        reviewed_qas: data.metrics.reviewed_qas,
+        ongoing_tasks: data.metrics.ongoing_tasks,
+        pending_qas: data.metrics.pending_qas,
+        imported_batches: data.metrics.imported_batches,
+    })
+}
+
+#[tauri::command]
+async fn change_platform_password(
+    platform_url: String,
+    username: String,
+    current_password: String,
+    new_password: String,
+) -> Result<ChangePasswordResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &current_password).await?;
+    let client = reqwest::Client::new();
+    platform_api_post::<_, serde_json::Value>(
+        &client,
+        &token,
+        format!(
+            "{}/api/me/change-password",
+            endpoints.platform_api_base_url
+        ),
+        &serde_json::json!({
+            "current_password": current_password,
+            "new_password": new_password,
+        }),
+    )
+    .await?;
+    Ok(ChangePasswordResponse { success: true })
+}
+
+#[tauri::command]
+async fn logout_platform(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    platform_api_post::<_, serde_json::Value>(
+        &client,
+        &token,
+        format!("{}/api/auth/logout", endpoints.platform_api_base_url),
+        &serde_json::json!({}),
+    )
+    .await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -3556,7 +3697,11 @@ pub fn run() {
             open_external_url,
             run_pipeline,
             check_for_app_update,
-            install_app_update
+            install_app_update,
+            get_platform_news,
+            get_dashboard_overview,
+            change_platform_password,
+            logout_platform,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

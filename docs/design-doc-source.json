@@ -1,0 +1,114 @@
+{
+  "docTitle": "Distill Studio 功能设计文档",
+  "docFileName": "distill-studio-功能设计文档.md",
+  "externalSyncTargets": [
+    "/Users/kentnf/projects/Documents/ProjMgr/QA/01.plan_proposal/distill-studio-功能设计文档.md"
+  ],
+  "maintenanceRules": [
+    "当前目录下的设计文档是本地文档，文件名固定为 `distill-studio-功能设计文档.md`，并且被 Git 忽略。",
+    "版本功能更新的源数据维护在 `docs/design-doc-source.json`，这是受 Git 管理的唯一事实来源。",
+    "每次准备发布新版本前，必须先在 `docs/design-doc-source.json` 中补齐该版本的日期与功能更新，再执行 `npm run release:bump -- <version>`。",
+    "本地 `release:bump` 与 `release:prepare` 会自动生成当前目录文档，并同步拷贝到 `/Users/kentnf/projects/Documents/ProjMgr/QA/01.plan_proposal/`。",
+    "GitHub Actions 无法访问本机 `/Users/...` 路径，所以外部目录同步发生在本地 release 脚本阶段，而不是云端 workflow。"
+  ],
+  "overview": [
+    "Distill Studio 是一个面向科研与高吞吐问答数据蒸馏的桌面应用，目标是把“主题输入 -> QA 生成 -> 本地筛选 -> 上传平台 -> 自动更新”做成可持续迭代的桌面工作流。",
+    "产品包含 GUI 与 CLI 两条入口：GUI 面向日常任务运行、历史浏览和平台联动；CLI 面向调试、批处理和离线重打包。",
+    "当前典型场景偏农业、生物育种和科研分析，但软件架构本身是通用 QA 生成与筛选框架。"
+  ],
+  "mainFunctions": [
+    "主题驱动 QA 生成：输入研究主题后自动生成 topic、plan、配置和批量 QA 数据。",
+    "双模式问答生成：支持普通 QA 和 CoT QA，两者共享流水线但使用不同回答结构与运行约束。",
+    "托管输出与历史任务：自动写入批次目录，支持浏览历史任务、继续未完成任务和查看原始输出。",
+    "快审与本地筛选：支持在浏览页里逐条编辑问题、标记保留或丢弃，并仅上传保留项。",
+    "QA 评测平台联动：支持平台地址配置、联通检查、登录校验、批次上传与状态查询。",
+    "模型试用与更新发布：支持模型试用工作区，以及基于 GitHub Releases 的桌面自动更新。",
+    "服务端概览与消息联动：在客户端已连接服务器时，展示当日/本周新增 QA 数量、模型更新提醒和最新服务端消息。",
+    "用户反馈入口：支持通过工作邮箱、GitHub Issue 或登录后提交服务器表单等方式反馈功能建议。"
+  ],
+  "architecture": [
+    "前端：原生 TypeScript + Vite 单页应用，入口在 `src/main.ts`，样式在 `src/styles.css`。",
+    "桌面壳：Tauri v2，后端命令层在 `src-tauri/src/lib.rs`。",
+    "核心 Rust workspace：`distill-core` 负责数据结构与 pack 规则，`distill-runtime` 负责生成运行时，`distill-cli` 负责命令行入口。",
+    "发布链路：本地版本 bump 与设计文档同步在 Node 脚本里完成；正式安装包通过 GitHub Actions 构建并发布。",
+    "v0.1.8 起的服务端联动设计遵循“连接后增强、断开不阻塞”的原则：统计卡片、模型提醒和消息中心都依赖服务器接口，但本地 QA 生成、快审和导出流程必须继续独立可用。",
+    "v0.1.8 在主导航中新增 `最近更新` 页面入口，并放在 `QA生成` 之前；该页有三个区域：服务端概览（今日/本周 QA 数量）、模型更新提醒（本周模型变更）、平台消息（公告与通知）。",
+    "v0.1.8 在主导航底部新增 `功能建议` 按钮，作为独立 tab-panel，三种反馈方式：邮箱 zhengyi@yzwlab.cn、GitHub issue、登录后内联表单。",
+    "v0.1.8 新增的五组后端接口协议：dashboard overview（今日/本周 QA 统计）、model changelog（模型变更列表）、platform messages（平台消息）、change password（修改密码）、submit feedback（反馈表单提交），均由 QA 评测平台提供 HTTP API，前端通过 Tauri 命令调用。"
+  ],
+  "versionHistory": [
+    {
+      "version": "0.1.1",
+      "date": "2026-04-20",
+      "highlights": [
+        "建立 Tauri 桌面应用的基础发布形态，补齐桌面打包所需图标资源。",
+        "打通 GitHub Releases 与桌面更新链路的最小闭环。"
+      ]
+    },
+    {
+      "version": "0.1.2",
+      "date": "2026-04-21",
+      "highlights": [
+        "收敛 QA 工作流与设置页交互，降低首次配置和切换模型时的操作成本。",
+        "同步前端、Rust 与 Tauri 版本信息，形成可重复的版本管理基础。"
+      ]
+    },
+    {
+      "version": "0.1.3",
+      "date": "2026-04-21",
+      "highlights": [
+        "引入 CoT QA 模式，支持科研导向的结构化回答生成。",
+        "浏览详情页开始按 CoT 段落结构拆分展示，方便人工检查研究思路质量。"
+      ]
+    },
+    {
+      "version": "0.1.4",
+      "date": "2026-04-22",
+      "highlights": [
+        "补齐运行中停止、任务参数锁定、批次级进度回调和运行统计面板。",
+        "增强历史任务浏览与续跑链路，使未完成任务可以从 GUI 中恢复。"
+      ]
+    },
+    {
+      "version": "0.1.5",
+      "date": "2026-04-22",
+      "highlights": [
+        "继续扩展浏览 QA 体验，包括分页、详情查看、远程服务器虚拟任务聚合入口等能力。",
+        "完善平台联动和历史任务视图，使本地任务与平台数据能在同一界面汇总。"
+      ]
+    },
+    {
+      "version": "0.1.6",
+      "date": "2026-04-24",
+      "highlights": [
+        "稳定自动更新与 GitHub release 流程，修复 Windows release build 的签名与 spawn 兼容问题。",
+        "增强更新失败后的恢复路径，支持重试安装与手动下载回退。"
+      ]
+    },
+    {
+      "version": "0.1.7",
+      "date": "2026-04-25",
+      "highlights": [
+        "新增用户可选输出目录，程序继续托管批次子目录，但不再强制固定到单一系统路径。",
+        "生成阶段支持 shard 半成品落盘与续跑，避免长任务中断后丢失未完成 shard 进度。",
+        "浏览页新增快审工作流，支持逐题编辑、保留或丢弃，并仅上传本地保留问题。",
+        "修复 QA 评测联通检查与实际登录状态不一致的问题。",
+        "CoT 模式支持按语言生成结构化回答、在设置里编辑段落标题，并修复跨语言打包时被误判 off-topic 的问题。",
+        "发布流程收敛为仅构建 macOS 与 Windows，避免 Linux 构建失败阻塞正式 release。"
+      ]
+    },
+    {
+      "version": "0.1.8",
+      "date": "2026-04-27",
+      "highlights": [
+        "主导航新增 `最近更新` 页面，放在 QA 生成上方，作为所有服务端联动信息的统一入口。",
+        "最近更新页划分为三个区域：顶部服务端概览区（今日/本周 QA 数量、刷新时间）、中部模型更新提醒区（本周模型变更列表）、底部平台消息区（公告/通知）。各区域有 loading、loaded、empty、disconnected 四种状态。",
+        "未连接 QA 评测平台时，最近更新页整体显示'此页面需要连接 QA 评测平台'的提示，不展示白屏。",
+        "设置页 Platform Integrations 区域新增登录状态卡，显示当前登录用户名和角色，并提供内联表单修改密码入口（当前密码 → 新密码 → 确认新密码 → 提交）。",
+        "主导航底部新增 `功能建议` 独立按钮，点击切换到独立 tab-panel，展示三种反馈方式：发送邮件到 zhengyi@yzwlab.cn、跳转 GitHub 提交 issue、登录后填写内联表单提交到服务端。",
+        "功能建议表单（标题、内容、分类）仅在成功登录 QA 评测平台后可用；未登录时显示'表单反馈需先登录'提示，邮箱和 GitHub issue 在未登录时依然可用。",
+        "本轮所有服务端联动遵循弱依赖设计：概览统计、模型变更、消息列表、密码修改、反馈表单都只在服务器可连接时增强功能，不阻塞本地 QA 生成、快审和上传主流程。"
+      ]
+    }
+  ]
+}

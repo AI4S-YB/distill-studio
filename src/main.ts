@@ -278,7 +278,7 @@ type TrialSendMessageResponse = {
   sessionId: number;
 };
 
-type UiTab = "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial";
+type UiTab = "recent-updates" | "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial" | "feedback";
 type BrowseView = "batches" | "questions" | "detail" | "review";
 
 type ProviderPresetId =
@@ -1141,6 +1141,8 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_browse: "浏览QA",
     tab_qa_evaluate: "QA评测",
     tab_model_trial: "模型试用",
+    tab_recent_updates: "最近更新",
+    tab_feedback: "功能建议",
     tab_internal_badge: "内测",
     tab_topic_copy: "研究主题与领域标签",
     tab_settings_copy: "模型、输出与批处理参数",
@@ -1588,7 +1590,47 @@ const translations: Record<Lang, Record<string, string>> = {
     tag_stress_biology: "逆境生物学",
     tag_gene_regulation: "基因调控",
     tag_phenotyping: "表型组",
-    tag_literature_mining: "文献挖掘"
+    tag_literature_mining: "文献挖掘",
+    recent_updates_title: "最近更新",
+    recent_updates_disconnected: "此页面需要连接 QA 评测平台。请在设置中填写平台地址、用户名和密码。",
+    recent_updates_today_qa: "今日新增 QA",
+    recent_updates_week_qa: "本周新增 QA",
+    recent_updates_last_refresh: "最近刷新",
+    recent_updates_model_changes: "模型更新提醒",
+    recent_updates_no_model_changes: "本周暂无模型更新",
+    recent_updates_messages: "平台消息",
+    recent_updates_no_messages: "暂无平台消息",
+    feedback_title: "功能建议",
+    feedback_email: "发送邮件至 zhengyi@yzwlab.cn",
+    feedback_email_hint: "直接发送邮件描述你的建议或问题。",
+    feedback_github: "提交 GitHub Issue",
+    feedback_github_hint: "在本项目 GitHub 仓库创建 issue。",
+    feedback_form: "提交反馈表单",
+    feedback_form_hint: "登录后填写表单，你的反馈会提交到平台。",
+    feedback_form_login_required: "表单反馈需先登录 QA 评测平台",
+    feedback_title_label: "主题",
+    feedback_title_placeholder: "简要描述你的建议",
+    feedback_content_label: "详细说明",
+    feedback_content_placeholder: "请详细描述...",
+    feedback_category_label: "分类",
+    feedback_category_bug: "Bug 反馈",
+    feedback_category_feature: "功能建议",
+    feedback_category_other: "其他",
+    feedback_submit: "提交反馈",
+    feedback_submitting: "提交中...",
+    feedback_success: "感谢你的反馈！",
+    platform_account_card_title: "平台账号",
+    platform_role: "角色",
+    platform_action_change_password: "修改密码",
+    platform_action_logout: "退出登录",
+    platform_change_password_title: "修改密码",
+    platform_current_password: "当前密码",
+    platform_new_password: "新密码",
+    platform_confirm_password: "确认新密码",
+    platform_password_submit: "确认修改",
+    platform_password_submitting: "修改中...",
+    platform_password_success: "密码修改成功",
+    platform_password_mismatch: "两次输入的新密码不一致",
   },
   en: {
     eyebrow: "Distill Studio",
@@ -1622,6 +1664,8 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_browse: "Browse QA",
     tab_qa_evaluate: "QA Evaluate",
     tab_model_trial: "Model Trial",
+    tab_recent_updates: "Recent Updates",
+    tab_feedback: "Feedback",
     tab_internal_badge: "Beta",
     tab_topic_copy: "Research topic and domain tags",
     tab_settings_copy: "Model, output, and batch parameters",
@@ -2070,7 +2114,47 @@ const translations: Record<Lang, Record<string, string>> = {
     tag_stress_biology: "Stress Biology",
     tag_gene_regulation: "Gene Regulation",
     tag_phenotyping: "Phenotyping",
-    tag_literature_mining: "Literature Mining"
+    tag_literature_mining: "Literature Mining",
+    recent_updates_title: "Recent Updates",
+    recent_updates_disconnected: "This page needs the QA evaluation platform. Fill in the platform URL, username, and password in Settings.",
+    recent_updates_today_qa: "Today's New QA",
+    recent_updates_week_qa: "This Week's New QA",
+    recent_updates_last_refresh: "Last Refreshed",
+    recent_updates_model_changes: "Model Updates",
+    recent_updates_no_model_changes: "No model updates this week",
+    recent_updates_messages: "Platform Messages",
+    recent_updates_no_messages: "No messages",
+    feedback_title: "Feedback",
+    feedback_email: "Send email to zhengyi@yzwlab.cn",
+    feedback_email_hint: "Describe your suggestion or issue via email.",
+    feedback_github: "Submit GitHub Issue",
+    feedback_github_hint: "Create an issue on the GitHub repository.",
+    feedback_form: "Submit Feedback Form",
+    feedback_form_hint: "Log in to fill in the feedback form and submit to the platform.",
+    feedback_form_login_required: "Feedback form requires QA platform login",
+    feedback_title_label: "Title",
+    feedback_title_placeholder: "Briefly describe your suggestion",
+    feedback_content_label: "Description",
+    feedback_content_placeholder: "Describe in detail...",
+    feedback_category_label: "Category",
+    feedback_category_bug: "Bug Report",
+    feedback_category_feature: "Feature Request",
+    feedback_category_other: "Other",
+    feedback_submit: "Submit",
+    feedback_submitting: "Submitting...",
+    feedback_success: "Thank you for your feedback!",
+    platform_account_card_title: "Platform Account",
+    platform_role: "Role",
+    platform_action_change_password: "Change Password",
+    platform_action_logout: "Log Out",
+    platform_change_password_title: "Change Password",
+    platform_current_password: "Current Password",
+    platform_new_password: "New Password",
+    platform_confirm_password: "Confirm New Password",
+    platform_password_submit: "Confirm",
+    platform_password_submitting: "Changing...",
+    platform_password_success: "Password changed successfully",
+    platform_password_mismatch: "New passwords do not match",
   }
 };
 
@@ -2147,6 +2231,56 @@ let modelTrialSelectedQuestionId: string | null = null;
 let modelTrialLocalQuestionDetail: QaRecordDetail | null = null;
 let modelTrialLocalQuestionsLoading = false;
 let runStatsTimer: number | null = null;
+
+// ---- v0.1.8: Recent updates & feedback state ----
+
+type PlatformNews = {
+  id: number;
+  title: string;
+  content: string;
+  isPublished: boolean;
+  createdAt: string;
+  createdByName: string | null;
+};
+
+type DashboardOverview = {
+  totalQas: number;
+  reviewedQas: number;
+  ongoingTasks: number;
+  pendingQas: number;
+  importedBatches: number;
+};
+
+type ChangePasswordResponse = {
+  success: boolean;
+};
+
+let platformNewsState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; items: PlatformNews[] }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let dashboardOverviewState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; data: DashboardOverview }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let feedbackFormState:
+  | { kind: "idle" }
+  | { kind: "submitting" }
+  | { kind: "success" }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let passwordChangeState:
+  | { kind: "idle" }
+  | { kind: "submitting" }
+  | { kind: "success" }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let recentUpdatesLastRefreshTime: number | null = null;
+let recentUpdatesRefreshTimer: number | null = null;
 let runStats: RunStatsSnapshot = {
   startedAtMs: null,
   lastUpdatedAtMs: null,
@@ -2196,6 +2330,9 @@ app.innerHTML = `
     <section class="workspace">
       <aside class="sidebar panel">
         <div class="tabs" id="tabs">
+          <button class="tab-button" type="button" data-tab="recent-updates" id="tab-recent-updates">
+            <span class="tab-button-title" id="tab-recent-updates-label">Recent Updates</span>
+          </button>
           <button class="tab-button" type="button" data-tab="topic" id="tab-topic">
             <span class="tab-button-title" id="tab-topic-label">Topic</span>
           </button>
@@ -2215,6 +2352,9 @@ app.innerHTML = `
           </button>
           <button class="tab-button tab-button-plain" type="button" id="check-update">
             <span class="tab-button-title" id="check-update-label">Check Update</span>
+          </button>
+          <button class="tab-button tab-button-plain" type="button" data-tab="feedback" id="tab-feedback">
+            <span class="tab-button-title" id="tab-feedback-label">Feedback</span>
           </button>
         </div>
       </aside>
@@ -2360,6 +2500,12 @@ app.innerHTML = `
             <pre id="logs">No run yet.</pre>
           </section>
         </section>
+      </section>
+      <section class="tab-panel" data-tab-panel="recent-updates" hidden>
+        <div class="tab-copy-block">
+          <p class="panel-title" id="recent-updates-title">Recent Updates</p>
+        </div>
+        <section class="recent-updates-panel" id="recent-updates-panel"></section>
       </section>
       <section class="tab-panel" data-tab-panel="settings" hidden>
         <div class="tab-copy-block">
@@ -2526,6 +2672,11 @@ app.innerHTML = `
             </label>
           </div>
           <div class="section-block">
+            <p class="section-title" id="platform-account-title">Platform Account</p>
+            <div id="platform-account-card"></div>
+            <div id="password-change-form-container"></div>
+          </div>
+          <div class="section-block">
             <p class="section-title" id="runtime-section-title">Runtime Parameters</p>
             <p class="field-hint runtime-constraint-hint" id="runtime-constraint-hint"></p>
           </div>
@@ -2619,6 +2770,12 @@ app.innerHTML = `
           </div>
           <div id="browse-content"></div>
         </section>
+      </section>
+      <section class="tab-panel" data-tab-panel="feedback" hidden>
+        <div class="tab-copy-block">
+          <p class="panel-title" id="feedback-title">Feedback</p>
+        </div>
+        <section class="feedback-panel" id="feedback-panel"></section>
       </section>
       <aside class="inspector" hidden>
         <section class="panel result-panel">
@@ -2733,6 +2890,8 @@ const literatureApiUrlInput = document.querySelector<HTMLInputElement>("#literat
 const literatureApiAuthInput = document.querySelector<HTMLInputElement>("#literature-api-auth");
 const qaEvaluatePanel = document.querySelector<HTMLElement>("#qa-evaluate-panel");
 const modelTrialPanel = document.querySelector<HTMLElement>("#model-trial-panel");
+const recentUpdatesPanel = document.querySelector<HTMLElement>("#recent-updates-panel");
+const feedbackPanel = document.querySelector<HTMLElement>("#feedback-panel");
 const toggleApiKeyVisibilityButton = document.querySelector<HTMLButtonElement>("#toggle-api-key-visibility");
 const runtimeConstraintHint = document.querySelector<HTMLElement>("#runtime-constraint-hint");
 const targetCountInput = document.querySelector<HTMLInputElement>("#target-count");
@@ -3081,6 +3240,13 @@ function setCurrentTab(tab: UiTab) {
     !modelTrialSessions.length
   ) {
     void loadModelTrialWorkspace();
+  }
+  if (tab === "recent-updates") {
+    renderRecentUpdatesPanel();
+    void loadRecentUpdatesData();
+  }
+  if (tab === "feedback") {
+    renderFeedbackPanel();
   }
 }
 
@@ -4565,6 +4731,346 @@ function renderModelTrialPanel() {
 function renderPlatformPanels() {
   renderQaEvaluatePanel();
   renderModelTrialPanel();
+  renderPlatformAccountCard();
+}
+
+function renderPlatformAccountCard() {
+  const card = document.querySelector<HTMLElement>("#platform-account-card");
+  if (!card) return;
+
+  const isConnected = platformLoginState.kind === "success";
+
+  if (!isConnected) {
+    card.innerHTML = `
+      <div class="platform-account-card disconnected">
+        <p class="platform-account-status">${escapeHtml(t("platform_login_idle"))}</p>
+      </div>`;
+    return;
+  }
+
+  const user = platformLoginState.response.user;
+  card.innerHTML = `
+    <div class="platform-account-card connected">
+      <div class="platform-account-row">
+        <span class="platform-account-label">${escapeHtml(t("platform_current_user"))}</span>
+        <span class="platform-account-value">${escapeHtml(user.username)}</span>
+      </div>
+      <div class="platform-account-row">
+        <span class="platform-account-label">${escapeHtml(t("platform_role"))}</span>
+        <span class="platform-account-value">${escapeHtml(user.role)}</span>
+      </div>
+      <div class="platform-account-actions">
+        <button type="button" class="secondary" id="password-change-toggle">${escapeHtml(t("platform_action_change_password"))}</button>
+        <button type="button" class="secondary" id="platform-logout-button">${escapeHtml(t("platform_action_logout"))}</button>
+      </div>
+    </div>`;
+
+  card.querySelector("#password-change-toggle")?.addEventListener("click", () => {
+    const container = document.querySelector<HTMLElement>("#password-change-form-container");
+    if (container) {
+      container.hidden = !container.hidden;
+      if (!container.hidden) {
+        passwordChangeState = { kind: "idle" };
+        renderPasswordChangeForm();
+      }
+    }
+  });
+
+  card.querySelector("#platform-logout-button")?.addEventListener("click", async () => {
+    const auth = currentPlatformAuthPayload();
+    if (!auth) return;
+    try {
+      await invoke("logout_platform", auth);
+    } catch { /* ignore */ }
+    platformLoginState = { kind: "idle" };
+    renderPlatformPanels();
+  });
+}
+
+// ---- v0.1.8: Recent updates & feedback ----
+
+function renderRecentUpdatesPanel() {
+  if (!recentUpdatesPanel) return;
+
+  const isConnected = platformLoginState.kind === "success";
+
+  if (!isConnected) {
+    recentUpdatesPanel.innerHTML = `
+      <div class="recent-updates-disconnected">
+        <p>${escapeHtml(t("recent_updates_disconnected"))}</p>
+      </div>`;
+    return;
+  }
+
+  const overview = dashboardOverviewState;
+  const news = platformNewsState;
+
+  const overviewHtml = overview.kind === "loading" ? `
+    <div class="recent-updates-card">
+      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+    </div>` : overview.kind === "error" ? `
+    <div class="recent-updates-card error">
+      <p>${escapeHtml(overview.message)}</p>
+    </div>` : overview.kind === "success" ? `
+    <div class="recent-updates-card">
+      <div class="recent-updates-stats">
+        <div class="stat-item">
+          <span class="stat-value">${overview.data.totalQas}</span>
+          <span class="stat-label">${escapeHtml(t("recent_updates_today_qa"))}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">${overview.data.reviewedQas}</span>
+          <span class="stat-label">${escapeHtml(t("recent_updates_week_qa"))}</span>
+        </div>
+      </div>
+      <div class="recent-updates-refresh">
+        <span class="stat-label">${escapeHtml(t("recent_updates_last_refresh"))}: ${escapeHtml(formatTimestamp(recentUpdatesLastRefreshTime))}</span>
+      </div>
+    </div>` : "";
+
+  const newsHtml = news.kind === "loading" ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
+      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+    </div>` : news.kind === "error" ? `
+    <div class="recent-updates-card error">
+      <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
+      <p>${escapeHtml(news.message)}</p>
+    </div>` : news.kind === "success" && news.items.length === 0 ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
+      <p class="recent-updates-empty">${escapeHtml(t("recent_updates_no_messages"))}</p>
+    </div>` : news.kind === "success" ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
+      <div class="recent-updates-news-list">
+        ${news.items.map(item => `
+          <div class="news-item">
+            <div class="news-item-header">
+              <span class="news-item-title">${escapeHtml(item.title)}</span>
+              <span class="news-item-date">${escapeHtml(formatDateString(item.createdAt))}</span>
+            </div>
+            <div class="news-item-content">${escapeHtml(item.content)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>` : "";
+
+  recentUpdatesPanel.innerHTML = `
+    <div class="recent-updates-layout">
+      ${overviewHtml}
+      ${newsHtml}
+    </div>`;
+}
+
+function renderFeedbackPanel() {
+  if (!feedbackPanel) return;
+
+  const isLoggedIn = platformLoginState.kind === "success";
+  const formState = feedbackFormState;
+
+  const feedbackEmailUrl = "mailto:zhengyi@yzwlab.cn";
+  const feedbackGithubUrl = "https://github.com/AI4S-YB/distill-studio/issues/new";
+
+  feedbackPanel.innerHTML = `
+    <div class="feedback-layout">
+      <div class="feedback-section">
+        <h3>${escapeHtml(t("feedback_email"))}</h3>
+        <p class="feedback-hint">${escapeHtml(t("feedback_email_hint"))}</p>
+        <a href="${escapeHtml(feedbackEmailUrl)}" class="feedback-button" target="_blank">${escapeHtml(t("feedback_email"))}</a>
+      </div>
+      <div class="feedback-section">
+        <h3>${escapeHtml(t("feedback_github"))}</h3>
+        <p class="feedback-hint">${escapeHtml(t("feedback_github_hint"))}</p>
+        <button class="feedback-button" data-feedback-action="github">${escapeHtml(t("feedback_github"))}</button>
+      </div>
+      <div class="feedback-section">
+        <h3>${escapeHtml(t("feedback_form"))}</h3>
+        <p class="feedback-hint">${escapeHtml(t("feedback_form_hint"))}</p>
+        ${isLoggedIn ? `
+          <form class="feedback-form" id="feedback-form">
+            <label>
+              <span>${escapeHtml(t("feedback_title_label"))}</span>
+              <input id="feedback-title" placeholder="${escapeHtml(t("feedback_title_placeholder"))}" required />
+            </label>
+            <label>
+              <span>${escapeHtml(t("feedback_content_label"))}</span>
+              <textarea id="feedback-content" rows="4" placeholder="${escapeHtml(t("feedback_content_placeholder"))}" required></textarea>
+            </label>
+            <label>
+              <span>${escapeHtml(t("feedback_category_label"))}</span>
+              <select id="feedback-category">
+                <option value="feature">${escapeHtml(t("feedback_category_feature"))}</option>
+                <option value="bug">${escapeHtml(t("feedback_category_bug"))}</option>
+                <option value="other">${escapeHtml(t("feedback_category_other"))}</option>
+              </select>
+            </label>
+            <button type="submit" class="feedback-submit-button" ${formState.kind === "submitting" ? "disabled" : ""}>
+              ${formState.kind === "submitting" ? escapeHtml(t("feedback_submitting")) : escapeHtml(t("feedback_submit"))}
+            </button>
+            ${formState.kind === "success" ? `<p class="feedback-success">${escapeHtml(t("feedback_success"))}</p>` : ""}
+            ${formState.kind === "error" ? `<p class="feedback-error">${escapeHtml(formState.message)}</p>` : ""}
+          </form>
+        ` : `
+          <p class="feedback-login-required">${escapeHtml(t("feedback_form_login_required"))}</p>
+        `}
+      </div>
+    </div>`;
+}
+
+async function loadRecentUpdatesData() {
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    dashboardOverviewState = { kind: "idle" };
+    platformNewsState = { kind: "idle" };
+    renderRecentUpdatesPanel();
+    return;
+  }
+
+  dashboardOverviewState = { kind: "loading" };
+  platformNewsState = { kind: "loading" };
+  renderRecentUpdatesPanel();
+
+  try {
+    const [overview, news] = await Promise.all([
+      invoke<DashboardOverview>("get_dashboard_overview", auth),
+      invoke<PlatformNews[]>("get_platform_news", auth)
+    ]);
+    dashboardOverviewState = { kind: "success", data: overview };
+    platformNewsState = { kind: "success", items: news };
+    recentUpdatesLastRefreshTime = Date.now();
+  } catch (error) {
+    dashboardOverviewState = { kind: "error", message: String(error) };
+    platformNewsState = { kind: "error", message: String(error) };
+  }
+  renderRecentUpdatesPanel();
+}
+
+function formatDateString(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(d);
+  } catch { return dateStr; }
+}
+
+function formatTimestamp(ts: number | null): string {
+  if (!ts) return t("empty_value");
+  return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(ts));
+}
+
+async function handleFeedbackFormSubmit(event: SubmitEvent) {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const titleInput = form.querySelector<HTMLInputElement>("#feedback-title");
+  const contentInput = form.querySelector<HTMLTextAreaElement>("#feedback-content");
+  const categorySelect = form.querySelector<HTMLSelectElement>("#feedback-category");
+  if (!titleInput || !contentInput || !categorySelect) return;
+
+  const title = titleInput.value.trim();
+  const content = contentInput.value.trim();
+  if (!title || !content) return;
+
+  const auth = currentPlatformAuthPayload();
+  if (!auth) return;
+
+  feedbackFormState = { kind: "submitting" };
+  renderFeedbackPanel();
+  try {
+    await invoke("submit_feedback", {
+      ...auth,
+      title,
+      content,
+      category: categorySelect.value
+    });
+    feedbackFormState = { kind: "success" };
+    titleInput.value = "";
+    contentInput.value = "";
+  } catch (error) {
+    feedbackFormState = { kind: "error", message: String(error) };
+  }
+  renderFeedbackPanel();
+}
+
+async function handlePasswordChange(event: SubmitEvent) {
+  event.preventDefault();
+  const form = event.currentTarget as HTMLFormElement;
+  const currentInput = form.querySelector<HTMLInputElement>("#password-change-current");
+  const newInput = form.querySelector<HTMLInputElement>("#password-change-new");
+  const confirmInput = form.querySelector<HTMLInputElement>("#password-change-confirm");
+  if (!currentInput || !newInput || !confirmInput) return;
+
+  const currentPassword = currentInput.value;
+  const newPassword = newInput.value;
+  const confirmPassword = confirmInput.value;
+
+  if (newPassword !== confirmPassword) {
+    passwordChangeState = { kind: "error", message: t("platform_password_mismatch") };
+    renderPasswordChangeForm();
+    return;
+  }
+
+  const auth = currentPlatformAuthPayload();
+  if (!auth) return;
+
+  passwordChangeState = { kind: "submitting" };
+  renderPasswordChangeForm();
+  try {
+    await invoke<ChangePasswordResponse>("change_platform_password", {
+      ...auth,
+      currentPassword,
+      newPassword
+    });
+    passwordChangeState = { kind: "success" };
+    currentInput.value = "";
+    newInput.value = "";
+    confirmInput.value = "";
+  } catch (error) {
+    passwordChangeState = { kind: "error", message: String(error) };
+  }
+  renderPasswordChangeForm();
+}
+
+function renderPasswordChangeForm() {
+  const container = document.querySelector<HTMLElement>("#password-change-form-container");
+  if (!container) return;
+
+  const state = passwordChangeState;
+  container.innerHTML = `
+    <form class="password-change-form" id="password-change-form">
+      <p class="password-change-title">${escapeHtml(t("platform_change_password_title"))}</p>
+      <label>
+        <span>${escapeHtml(t("platform_current_password"))}</span>
+        <input id="password-change-current" type="password" required />
+      </label>
+      <label>
+        <span>${escapeHtml(t("platform_new_password"))}</span>
+        <input id="password-change-new" type="password" minlength="6" required />
+      </label>
+      <label>
+        <span>${escapeHtml(t("platform_confirm_password"))}</span>
+        <input id="password-change-confirm" type="password" minlength="6" required />
+      </label>
+      <button type="submit" class="feedback-submit-button" ${state.kind === "submitting" ? "disabled" : ""}>
+        ${state.kind === "submitting" ? escapeHtml(t("platform_password_submitting")) : escapeHtml(t("platform_password_submit"))}
+      </button>
+      ${state.kind === "success" ? `<p class="feedback-success">${escapeHtml(t("platform_password_success"))}</p>` : ""}
+      ${state.kind === "error" ? `<p class="feedback-error">${escapeHtml(state.message)}</p>` : ""}
+    </form>
+  `;
+
+  const form = container.querySelector<HTMLFormElement>("#password-change-form");
+  if (form) {
+    form.addEventListener("submit", handlePasswordChange);
+  }
 }
 
 function formatBrowsePageLabel(page: number, totalPages: number): string {
@@ -5831,6 +6337,8 @@ function applyTranslations() {
   setText("tab-model-trial-label", t("tab_model_trial"));
   setText("tab-qa-evaluate-badge", t("tab_internal_badge"));
   setText("tab-model-trial-badge", t("tab_internal_badge"));
+  setText("tab-recent-updates-label", t("tab_recent_updates"));
+  setText("tab-feedback-label", t("tab_feedback"));
   updateCheckButtonUi();
   setText("topic-tab-title", t("topic_tab_title"));
   setText("settings-tab-title", t("settings_tab_title"));
@@ -5847,6 +6355,8 @@ function applyTranslations() {
   setText("qa-evaluate-tab-copy", t("qa_evaluate_tab_copy"));
   setText("model-trial-tab-title", t("model_trial_tab_title"));
   setText("model-trial-tab-copy", t("model_trial_tab_copy"));
+  setText("recent-updates-title", t("recent_updates_title"));
+  setText("feedback-title", t("feedback_title"));
   setText("model-section-title", t("model_section_title"));
   setText("output-section-title", t("output_root"));
   setText("output-root-label", t("output_root"));
@@ -5855,6 +6365,7 @@ function applyTranslations() {
   setText("open-output-root", t("action_open_output_dir"));
   setText("reset-output-root", t("action_restore_default"));
   setText("integration-section-title", t("integration_section_title"));
+  setText("platform-account-title", t("platform_account_card_title"));
   setText("runtime-section-title", t("runtime_section_title"));
   setText("advanced-settings-summary", t("advanced_settings_summary"));
   setText("advanced-settings-copy", t("advanced_settings_copy"));
@@ -7844,3 +8355,29 @@ async function initializeApp() {
 }
 
 void initializeApp();
+
+// ---- v0.1.8: Feedback & recent updates event handlers ----
+
+feedbackPanel?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const button = target.closest<HTMLButtonElement>("[data-feedback-action]");
+  const action = button?.dataset.feedbackAction;
+  if (!action || button.disabled) return;
+
+  if (action === "github") {
+    const url = "https://github.com/AI4S-YB/distill-studio/issues/new";
+    invoke("open_external_url", { url });
+  }
+});
+
+feedbackPanel?.addEventListener("submit", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLFormElement)) return;
+  if (target.id === "feedback-form") {
+    event.preventDefault();
+    void handleFeedbackFormSubmit(event);
+  }
+});
+
