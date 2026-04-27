@@ -2244,15 +2244,47 @@ type PlatformNews = {
 };
 
 type DashboardOverview = {
-  totalQas: number;
-  reviewedQas: number;
-  ongoingTasks: number;
-  pendingQas: number;
-  importedBatches: number;
+  todayQas: number;
+  weekQas: number;
+  todayReviews?: number;
+  weekReviews?: number;
+  availableModels?: number;
 };
 
 type ChangePasswordResponse = {
   success: boolean;
+};
+
+type ModelChangelogEntry = {
+  id: number;
+  modelName: string;
+  changeType: string;
+  description: string;
+  createdAt: string;
+};
+
+type FeedbackResponse = {
+  id: number;
+  createdAt: string;
+};
+
+type ExportsStatsDaily = {
+  period: string;
+  importCount: number;
+  reviewCount?: number;
+};
+
+type ExportsStatsWeekly = {
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  importCount: number;
+  reviewCount?: number;
+};
+
+type ExportsStatsData = {
+  daily: ExportsStatsDaily[];
+  weekly: ExportsStatsWeekly[];
 };
 
 let platformNewsState:
@@ -2265,6 +2297,18 @@ let dashboardOverviewState:
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "success"; data: DashboardOverview }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let modelChangelogState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; items: ModelChangelogEntry[] }
+  | { kind: "error"; message: string } = { kind: "idle" };
+
+let exportsStatsState:
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "success"; data: ExportsStatsData }
   | { kind: "error"; message: string } = { kind: "idle" };
 
 let feedbackFormState:
@@ -2318,6 +2362,7 @@ app.innerHTML = `
         <div class="version-badge" id="app-version-badge">v0.1.6</div>
         <div class="version-badge" id="app-author-badge">开发 kentnf</div>
         <div class="status-badge" id="status">Idle</div>
+        <div class="platform-status-badge" id="platform-status-badge" title="QA Platform"></div>
         <label class="lang-switch">
           <span id="lang-label">Language</span>
           <select id="lang-select">
@@ -2845,6 +2890,7 @@ const appVersionBadge = document.querySelector<HTMLElement>("#app-version-badge"
 const appAuthorBadge = document.querySelector<HTMLElement>("#app-author-badge");
 const settingsVersion = document.querySelector<HTMLElement>("#settings-version");
 const status = document.querySelector<HTMLElement>("#status");
+const platformStatusBadge = document.querySelector<HTMLElement>("#platform-status-badge");
 const selectedTopicTags = document.querySelector<HTMLElement>("#selected-topic-tags");
 const qaModeNormalInput = document.querySelector<HTMLInputElement>("#qa-mode-normal");
 const qaModeCotInput = document.querySelector<HTMLInputElement>("#qa-mode-cot");
@@ -4732,6 +4778,24 @@ function renderPlatformPanels() {
   renderQaEvaluatePanel();
   renderModelTrialPanel();
   renderPlatformAccountCard();
+  updatePlatformStatusBadge();
+}
+
+function updatePlatformStatusBadge() {
+  if (!platformStatusBadge) return;
+  if (platformLoginState.kind === "success") {
+    platformStatusBadge.className = "platform-status-badge connected";
+    platformStatusBadge.textContent = platformLoginState.response.user.username;
+  } else if (platformLoginState.kind === "loading") {
+    platformStatusBadge.className = "platform-status-badge checking";
+    platformStatusBadge.textContent = "...";
+  } else if (platformLoginState.kind === "error") {
+    platformStatusBadge.className = "platform-status-badge error";
+    platformStatusBadge.textContent = "✕";
+  } else {
+    platformStatusBadge.className = "platform-status-badge";
+    platformStatusBadge.textContent = "○";
+  }
 }
 
 function renderPlatformAccountCard() {
@@ -4803,6 +4867,8 @@ function renderRecentUpdatesPanel() {
   }
 
   const overview = dashboardOverviewState;
+  const exportsStats = exportsStatsState;
+  const changelog = modelChangelogState;
   const news = platformNewsState;
 
   const overviewHtml = overview.kind === "loading" ? `
@@ -4815,16 +4881,52 @@ function renderRecentUpdatesPanel() {
     <div class="recent-updates-card">
       <div class="recent-updates-stats">
         <div class="stat-item">
-          <span class="stat-value">${overview.data.totalQas}</span>
+          <span class="stat-value">${overview.data.todayQas}</span>
           <span class="stat-label">${escapeHtml(t("recent_updates_today_qa"))}</span>
         </div>
         <div class="stat-item">
-          <span class="stat-value">${overview.data.reviewedQas}</span>
+          <span class="stat-value">${overview.data.weekQas}</span>
           <span class="stat-label">${escapeHtml(t("recent_updates_week_qa"))}</span>
         </div>
       </div>
       <div class="recent-updates-refresh">
         <span class="stat-label">${escapeHtml(t("recent_updates_last_refresh"))}: ${escapeHtml(formatTimestamp(recentUpdatesLastRefreshTime))}</span>
+      </div>
+    </div>` : "";
+
+  const weeklyHtml = exportsStats.kind === "loading" ? `
+    <div class="recent-updates-card">
+      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+    </div>` : exportsStats.kind === "error" ? `
+    <div class="recent-updates-card error">
+      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      <p>${escapeHtml(exportsStats.message)}</p>
+    </div>` : exportsStats.kind === "success" ? renderWeeklyStats(exportsStats.data) : "";
+
+  const changelogHtml = changelog.kind === "loading" ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
+      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+    </div>` : changelog.kind === "error" ? `
+    <div class="recent-updates-card error">
+      <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
+      <p>${escapeHtml(changelog.message)}</p>
+    </div>` : changelog.kind === "success" && changelog.items.length === 0 ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
+      <p class="recent-updates-empty">${escapeHtml(t("recent_updates_no_model_changes"))}</p>
+    </div>` : changelog.kind === "success" ? `
+    <div class="recent-updates-card">
+      <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
+      <div class="recent-updates-changelog-list">
+        ${changelog.items.map(item => `
+          <div class="changelog-item">
+            <span class="changelog-type-badge type-${escapeHtml(item.changeType)}">${escapeHtml(changeTypeLabel(item.changeType))}</span>
+            <span class="changelog-description">${escapeHtml(item.description)}</span>
+            <span class="changelog-date">${escapeHtml(formatDateString(item.createdAt))}</span>
+          </div>
+        `).join("")}
       </div>
     </div>` : "";
 
@@ -4859,8 +4961,91 @@ function renderRecentUpdatesPanel() {
   recentUpdatesPanel.innerHTML = `
     <div class="recent-updates-layout">
       ${overviewHtml}
+      ${weeklyHtml}
+      ${changelogHtml}
       ${newsHtml}
     </div>`;
+}
+
+function renderWeeklyStats(data: ExportsStatsData): string {
+  const weeks = data.weekly;
+  const daily = data.daily;
+
+  const thisWeek = weeks.length > 0 ? weeks[weeks.length - 1] : null;
+  const lastWeek = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+
+  // Build a lookup map: "2026-04-25" -> importCount
+  const dailyMap = new Map<string, number>();
+  for (const d of daily) {
+    dailyMap.set(d.period, d.importCount);
+  }
+
+  // Generate last 14 calendar days, fill missing with 0
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const recentDays: Array<{ date: string; count: number; isToday: boolean }> = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    recentDays.push({
+      date: dateStr,
+      count: dailyMap.get(dateStr) ?? 0,
+      isToday: i === 0
+    });
+  }
+
+  const maxVal = Math.max(...recentDays.map(d => d.count), 1);
+
+  function barHeight(count: number): number {
+    return Math.max(3, Math.round((count / maxVal) * 60));
+  }
+
+  function dayLabel(dateStr: string): string {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      return currentLang === "zh"
+        ? ["日", "一", "二", "三", "四", "五", "六"][d.getDay()]
+        : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+    } catch { return dateStr.slice(-5); }
+  }
+
+  return `
+    <div class="recent-updates-card">
+      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      ${thisWeek || lastWeek ? `
+      <div class="weekly-summary">
+        ${lastWeek ? `
+        <div class="weekly-summary-item">
+          <span class="weekly-summary-period">${currentLang === "zh" ? "上周" : "Last Week"}</span>
+          <span class="weekly-summary-count">${lastWeek.importCount.toLocaleString()}</span>
+        </div>` : ""}
+        ${thisWeek ? `
+        <div class="weekly-summary-item">
+          <span class="weekly-summary-period">${currentLang === "zh" ? "本周" : "This Week"}</span>
+          <span class="weekly-summary-count">${thisWeek.importCount.toLocaleString()}</span>
+        </div>` : ""}
+      </div>` : ""}
+      <div class="daily-trend">
+        <div class="daily-trend-bars">
+          ${recentDays.map(d => `
+            <div class="daily-bar-item" title="${d.date}: ${d.count.toLocaleString()}">
+              <span class="daily-bar-count">${d.count > 0 ? d.count.toLocaleString() : ""}</span>
+              <div class="daily-bar" style="height: ${barHeight(d.count)}px"></div>
+              ${d.isToday ? '<span class="daily-bar-today">' + (currentLang === "zh" ? "今天" : "Today") + '</span>' : `<span class="daily-bar-label">${dayLabel(d.date)}</span>`}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function changeTypeLabel(type: string): string {
+  if (type === "added") return currentLang === "zh" ? "新增" : "Added";
+  if (type === "updated") return currentLang === "zh" ? "更新" : "Updated";
+  if (type === "deprecated") return currentLang === "zh" ? "弃用" : "Deprecated";
+  if (type === "status_changed") return currentLang === "zh" ? "状态变更" : "Changed";
+  return type;
 }
 
 function renderFeedbackPanel() {
@@ -4923,25 +5108,35 @@ async function loadRecentUpdatesData() {
   if (!auth) {
     dashboardOverviewState = { kind: "idle" };
     platformNewsState = { kind: "idle" };
+    modelChangelogState = { kind: "idle" };
+    exportsStatsState = { kind: "idle" };
     renderRecentUpdatesPanel();
     return;
   }
 
   dashboardOverviewState = { kind: "loading" };
   platformNewsState = { kind: "loading" };
+  modelChangelogState = { kind: "loading" };
+  exportsStatsState = { kind: "loading" };
   renderRecentUpdatesPanel();
 
   try {
-    const [overview, news] = await Promise.all([
-      invoke<DashboardOverview>("get_dashboard_overview", auth),
-      invoke<PlatformNews[]>("get_platform_news", auth)
+    const [overview, news, changelog, exportsStats] = await Promise.all([
+      invoke<DashboardOverview>("get_platform_stats", auth),
+      invoke<PlatformNews[]>("get_platform_news", auth),
+      invoke<ModelChangelogEntry[]>("get_model_changelog", { ...auth, days: 7 }),
+      invoke<ExportsStatsData>("get_exports_stats", auth)
     ]);
     dashboardOverviewState = { kind: "success", data: overview };
     platformNewsState = { kind: "success", items: news };
+    modelChangelogState = { kind: "success", items: changelog };
+    exportsStatsState = { kind: "success", data: exportsStats };
     recentUpdatesLastRefreshTime = Date.now();
   } catch (error) {
     dashboardOverviewState = { kind: "error", message: String(error) };
     platformNewsState = { kind: "error", message: String(error) };
+    modelChangelogState = { kind: "error", message: String(error) };
+    exportsStatsState = { kind: "error", message: String(error) };
   }
   renderRecentUpdatesPanel();
 }
@@ -8352,6 +8547,30 @@ async function initializeApp() {
   renderPlatformPanels();
   void loadBrowseBatches();
   maybeShowFirstLaunchModal();
+  // Auto-login if platform credentials are saved
+  if (currentQaPlatformUrl() && hasQaPlatformCredentials()) {
+    platformLoginState = { kind: "loading" };
+    renderPlatformPanels();
+    try {
+      const response = await invoke<PlatformLoginResponse>("login_platform", {
+        platformUrl: currentQaPlatformUrl(),
+        username: qaPlatformUsernameInput.value.trim(),
+        password: qaPlatformPasswordInput.value.trim()
+      });
+      platformLoginState = { kind: "success", response };
+      platformHealthState = {
+        kind: "success",
+        response: {
+          reachable: true,
+          message: "ok",
+          endpoints: response.endpoints
+        }
+      };
+    } catch {
+      platformLoginState = { kind: "idle" };
+    }
+    renderPlatformPanels();
+  }
 }
 
 void initializeApp();

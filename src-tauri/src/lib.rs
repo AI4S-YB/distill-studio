@@ -743,6 +743,73 @@ struct DashboardApiMetrics {
     imported_batches: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformStats {
+    #[serde(alias = "today_qa_count")]
+    today_qas: u32,
+    #[serde(alias = "week_qa_count")]
+    week_qas: u32,
+    #[serde(default, alias = "today_review_count")]
+    today_reviews: Option<u32>,
+    #[serde(default, alias = "week_review_count")]
+    week_reviews: Option<u32>,
+    #[serde(default, alias = "available_model_count")]
+    available_models: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportsStatsDaily {
+    period: String,
+    #[serde(alias = "import_count")]
+    import_count: u32,
+    #[serde(default, alias = "review_count")]
+    review_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportsStatsWeekly {
+    period: String,
+    #[serde(alias = "period_start")]
+    period_start: String,
+    #[serde(alias = "period_end")]
+    period_end: String,
+    #[serde(alias = "import_count")]
+    import_count: u32,
+    #[serde(default, alias = "review_count")]
+    review_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportsStatsData {
+    daily: Vec<ExportsStatsDaily>,
+    weekly: Vec<ExportsStatsWeekly>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelChangelogEntry {
+    id: i64,
+    #[serde(alias = "model_name")]
+    model_name: String,
+    #[serde(alias = "change_type")]
+    change_type: String,
+    description: String,
+    #[serde(alias = "created_at")]
+    created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FeedbackResponse {
+    id: i64,
+    #[serde(alias = "created_at")]
+    created_at: String,
+}
+
 #[derive(Default)]
 struct ActivePipelineState {
     cancel_flag: Mutex<Option<Arc<AtomicBool>>>,
@@ -1492,6 +1559,93 @@ async fn logout_platform(
     )
     .await?;
     Ok(())
+}
+
+// ---- v0.1.8: Model changelog & feedback ----
+
+#[tauri::command]
+async fn get_model_changelog(
+    platform_url: String,
+    username: String,
+    password: String,
+    days: Option<u32>,
+) -> Result<Vec<ModelChangelogEntry>, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let query = days.map(|d| format!("?days={}", d)).unwrap_or_default();
+    let entries = platform_api_get::<Vec<ModelChangelogEntry>>(
+        &client,
+        &token,
+        format!(
+            "{}/api/models/changelog{}",
+            endpoints.platform_api_base_url, query
+        ),
+    )
+    .await?;
+    Ok(entries)
+}
+
+#[tauri::command]
+async fn submit_feedback(
+    platform_url: String,
+    username: String,
+    password: String,
+    title: String,
+    content: String,
+    category: String,
+) -> Result<FeedbackResponse, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let response = platform_api_post::<_, FeedbackResponse>(
+        &client,
+        &token,
+        format!("{}/api/feedback", endpoints.platform_api_base_url),
+        &serde_json::json!({
+            "title": title,
+            "content": content,
+            "category": category,
+        }),
+    )
+    .await?;
+    Ok(response)
+}
+
+#[tauri::command]
+async fn get_platform_stats(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<PlatformStats, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let stats = platform_api_get::<PlatformStats>(
+        &client,
+        &token,
+        format!("{}/api/stats", endpoints.platform_api_base_url),
+    )
+    .await?;
+    Ok(stats)
+}
+
+#[tauri::command]
+async fn get_exports_stats(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<ExportsStatsData, String> {
+    let (endpoints, token, _user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let client = reqwest::Client::new();
+    let data = platform_api_get::<ExportsStatsData>(
+        &client,
+        &token,
+        format!("{}/api/exports/stats", endpoints.platform_api_base_url),
+    )
+    .await?;
+    Ok(data)
 }
 
 #[tauri::command]
@@ -3702,6 +3856,10 @@ pub fn run() {
             get_dashboard_overview,
             change_platform_password,
             logout_platform,
+            get_model_changelog,
+            submit_feedback,
+            get_platform_stats,
+            get_exports_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -469,6 +469,35 @@ pre {
   color: var(--accent-strong);
 }
 
+.platform-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 12px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-soft);
+}
+
+.platform-status-badge.connected {
+  color: #2e7d32;
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.platform-status-badge.checking {
+  color: var(--text-secondary);
+}
+
+.platform-status-badge.error {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(138, 60, 35, 0.08);
+}
+
 .progress-meta {
   font-weight: 800;
   color: var(--accent);
@@ -2101,6 +2130,86 @@ textarea:disabled {
   color: var(--text-secondary);
 }
 
+/* Weekly stats summary */
+.weekly-summary {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.weekly-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weekly-summary-period {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.weekly-summary-count {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+/* Daily trend bars */
+.daily-trend {
+  margin-top: 8px;
+}
+
+.daily-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 100px;
+}
+
+.daily-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.daily-bar-count {
+  font-size: 9px;
+  color: var(--text-secondary);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.daily-bar {
+  width: 100%;
+  max-width: 32px;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.daily-bar:hover {
+  opacity: 1;
+}
+
+.daily-bar-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.daily-bar-today {
+  font-size: 9px;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .recent-updates-loading {
   color: var(--text-secondary);
   font-size: 13px;
@@ -2151,6 +2260,68 @@ textarea:disabled {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.4;
+}
+
+/* Changelog list */
+
+.recent-updates-changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.changelog-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+}
+
+.changelog-item:last-child {
+  border-bottom: none;
+}
+
+.changelog-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.changelog-type-badge.type-added {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.changelog-type-badge.type-updated {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.changelog-type-badge.type-deprecated {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.changelog-type-badge.type-status_changed {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.changelog-description {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.changelog-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* Feedback panel */
