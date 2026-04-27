@@ -2580,7 +2580,6 @@ app.innerHTML = `
           </div>
           <p class="panel-copy" id="settings-basic-copy">Most users only need to choose a provider, model, and API key.</p>
         </div>
-        <section class="setup-checklist" id="setup-checklist"></section>
 
         <!-- Platform Integrations -->
         <div class="section-block">
@@ -2960,7 +2959,6 @@ const providerInput = document.querySelector<HTMLSelectElement>("#provider");
 const modelInput = document.querySelector<HTMLSelectElement>("#model");
 const customModelField = document.querySelector<HTMLLabelElement>("#custom-model-field");
 const customModelInput = document.querySelector<HTMLInputElement>("#custom-model");
-const setupChecklist = document.querySelector<HTMLElement>("#setup-checklist");
 const outputRootInput = document.querySelector<HTMLInputElement>("#output-root");
 const selectOutputRootButton = document.querySelector<HTMLButtonElement>("#select-output-root");
 const openOutputRootButton = document.querySelector<HTMLButtonElement>("#open-output-root");
@@ -3050,7 +3048,6 @@ if (
   !modelInput ||
   !customModelField ||
   !customModelInput ||
-  !setupChecklist ||
   !outputRootInput ||
   !selectOutputRootButton ||
   !openOutputRootButton ||
@@ -4132,31 +4129,7 @@ function renderSetupSummary() {
     }
   ];
 
-  setupChecklist.innerHTML = `
-    <div class="setup-checklist-header">
-      <div>
-        <p class="setup-checklist-title">${escapeHtml(t("settings_checklist_title"))}</p>
-        <p class="setup-checklist-copy">${escapeHtml(t("settings_checklist_copy"))}</p>
-      </div>
-    </div>
-    <div class="setup-checklist-grid">
-      ${items
-        .map(
-          ({ label, status, detail }) => `
-            <article class="setup-checklist-item" data-ready="${status ? "true" : "false"}">
-              <div class="setup-checklist-item-header">
-                <p class="setup-checklist-item-label">${escapeHtml(label)}</p>
-                <span class="setup-checklist-status" data-ready="${status ? "true" : "false"}">${escapeHtml(
-                  t(status ? "settings_checklist_done" : "settings_checklist_pending")
-                )}</span>
-              </div>
-              <p class="setup-checklist-item-detail">${escapeHtml(detail)}</p>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
+  return; /* setup checklist removed */
   renderTopicQuickstart();
   renderRunReadinessBanner();
   updateRunButtonUi();
