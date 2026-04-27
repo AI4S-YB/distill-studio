@@ -182,6 +182,33 @@ npm run tauri:build
 - [自动更新](./docs/自动更新.md)
 - [测试问题收口](./docs/测试问题收口.md)
 
+## macOS 常见问题
+
+### "已损坏，无法打开" 错误
+
+在 M1/M2/M3/M4/M5 Mac 上下载安装包后，首次打开可能提示：
+
+> "DistillStudio.app"已损坏，无法打开。你应该将它移到废纸篓。
+
+**原因**：macOS Gatekeeper 对未经过 Apple Developer 签名的应用会标记隔离状态。这不是软件真的损坏，而是安全策略拦截。
+
+**解决方法（任选其一）：**
+
+1. **右键 → 打开**：在访达中右键点击 `DistillStudio.app`，选择"打开"，在弹出的对话框中点"打开"即可。之后可以正常双击启动。
+
+2. **终端命令**：打开终端（Terminal），执行：
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/DistillStudio.app
+   ```
+   然后正常双击启动。
+
+3. **如果仍无法打开**，执行 ad-hoc 代码签名：
+   ```bash
+   codesign --deep --force -s - /Applications/DistillStudio.app
+   ```
+
+上述操作只需执行一次，后续正常双击即可打开。所有 M 系列芯片（M1～M5）均适用，最低要求 macOS 11.0 (Big Sur)。
+
 ## 自动更新与发布工作流
 
 项目已经提供自动更新基础接入和 GitHub Actions 发布脚手架：
