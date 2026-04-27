@@ -337,9 +337,13 @@ struct PlatformImportBatchSummary {
     external_batch_id: Option<String>,
     #[serde(default, alias = "import_status")]
     import_status: Option<String>,
+    #[serde(default)]
     total_count: usize,
+    #[serde(default)]
     success_count: usize,
+    #[serde(default)]
     fail_count: usize,
+    #[serde(default)]
     created_at: String,
     #[serde(default, alias = "application_name")]
     application_name: Option<String>,
@@ -515,6 +519,28 @@ struct PlatformImportPushResponseData {
     existing_batch: Option<bool>,
     #[serde(default)]
     self_review_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlatformChatMessagePayload {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlatformChatRowPayload {
+    id: String,
+    messages: Vec<PlatformChatMessagePayload>,
+    metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ChatUploadResponse {
+    batch_id: Option<i64>,
+    external_batch_id: String,
+    existing_batch: Option<bool>,
+    import_status: Option<String>,
+    parse_queued: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2030,6 +2056,76 @@ async fn upload_qa_batch(
         self_review_status: response_payload.data.self_review_status,
         technical_type_code,
         application_id: application.id,
+    })
+}
+
+#[tauri::command]
+async fn push_chat_conversations(
+    platform_url: String,
+    username: String,
+    password: String,
+    session_name: String,
+    external_batch_id: String,
+    messages: Vec<PlatformChatMessagePayload>,
+) -> Result<ChatUploadResponse, String> {
+    let (endpoints, token, user) =
+        platform_login_with_token(&platform_url, &username, &password).await?;
+    let application = user
+        .applications
+        .first()
+        .ok_or_else(|| "current platform account has no assigned application".to_string())?;
+
+    let rows = vec![PlatformChatRowPayload {
+        id: external_batch_id.clone(),
+        messages,
+        metadata: serde_json::json!({ "session_name": &session_name }),
+    }];
+
+    let payload = serde_json::json!({
+        "name": session_name,
+        "source": QA_PLATFORM_BATCH_SOURCE,
+        "external_batch_id": external_batch_id,
+        "application_id": application.id,
+        "technical_type_code": "multi_turn_conversation",
+        "business_tag_codes": [],
+        "rows": rows,
+        "auto_parse": true,
+        "create_self_review": false,
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!(
+            "{}/api/expert/imports/push",
+            endpoints.platform_api_base_url
+        ))
+        .bearer_auth(&token)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(error_to_string)?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let body = body.trim();
+        let detail = if body.is_empty() {
+            format!("upload failed with status {}", status.as_u16())
+        } else {
+            format!("upload failed with status {}: {}", status.as_u16(), body)
+        };
+        return Err(detail);
+    }
+    let response_payload = response
+        .json::<ApiEnvelope<PlatformImportPushResponseData>>()
+        .await
+        .map_err(error_to_string)?;
+
+    Ok(ChatUploadResponse {
+        batch_id: response_payload.data.batch_id,
+        external_batch_id,
+        existing_batch: response_payload.data.existing_batch,
+        import_status: None,
+        parse_queued: None,
     })
 }
 
@@ -3842,6 +3938,117 @@ fn emit_app_update_event(window: &Window, stage: &str, status: &str, message: &s
     );
 }
 
+// ---- Chat QA: send_chat_message ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatSendRequest {
+    #[serde(default)]
+    platform_url: Option<String>,
+    #[serde(default)]
+    token: Option<String>,
+    provider: String,
+    base_url: String,
+    api_key: String,
+    model: String,
+    messages: Vec<ChatMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatSendResponse {
+    message: ChatMessage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenAiChatChoice {
+    message: ChatMessage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenAiChatCompletion {
+    choices: Vec<OpenAiChatChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformChatData {
+    message: ChatMessage,
+}
+
+#[tauri::command]
+async fn send_chat_message(request: ChatSendRequest) -> Result<ChatSendResponse, String> {
+    if request.provider == "platform" {
+        let platform_url = request
+            .platform_url
+            .as_ref()
+            .ok_or("platform_url is required for platform provider")?;
+        let token = request
+            .token
+            .as_ref()
+            .ok_or("token is required for platform provider")?;
+        let client = reqwest::Client::new();
+        let data = platform_api_post::<_, PlatformChatData>(
+            &client,
+            token,
+            format!("{}/api/generate/chat/completions", platform_url),
+            &serde_json::json!({
+                "model": request.model,
+                "messages": request.messages.iter().map(|m| {
+                    serde_json::json!({ "role": m.role, "content": m.content })
+                }).collect::<Vec<_>>()
+            }),
+        )
+        .await?;
+        Ok(ChatSendResponse { message: data.message })
+    } else {
+        // OpenAI-compatible chat completions
+        let client = reqwest::Client::new();
+        let url = format!("{}/chat/completions", request.base_url.trim_end_matches('/'));
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", request.api_key))
+            .json(&serde_json::json!({
+                "model": request.model,
+                "messages": request.messages.iter().map(|m| {
+                    serde_json::json!({ "role": m.role, "content": m.content })
+                }).collect::<Vec<_>>()
+            }))
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .map_err(|e| format!("chat request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("chat API error {}: {}", status, body));
+        }
+
+        let completion: OpenAiChatCompletion = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse chat response: {}", e))?;
+
+        let choice = completion
+            .choices
+            .into_iter()
+            .next()
+            .ok_or("no response from model")?;
+
+        Ok(ChatSendResponse { message: choice.message })
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -3893,6 +4100,8 @@ pub fn run() {
             get_platform_stats,
             get_exports_stats,
             get_generate_models,
+            send_chat_message,
+            push_chat_conversations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import "./styles.css";
 
+declare const __APP_VERSION__: string;
+
 type Lang = "zh" | "en";
 const DEFAULT_MANUAL_UPDATE_URL = "https://github.com/AI4S-YB/distill-studio/releases/latest";
 
@@ -278,7 +280,7 @@ type TrialSendMessageResponse = {
   sessionId: number;
 };
 
-type UiTab = "recent-updates" | "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial" | "feedback";
+type UiTab = "recent-updates" | "chat-qa" | "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial" | "feedback2";
 type BrowseView = "batches" | "questions" | "detail" | "review";
 
 type ProviderPresetId =
@@ -1143,7 +1145,26 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_qa_evaluate: "QA评测",
     tab_model_trial: "模型试用",
     tab_recent_updates: "最近更新",
+    tab_chat_qa: "对话QA",
     tab_feedback: "功能建议",
+    tab_feedback2: "功能建议",
+    chat_qa_tab_copy: "与配置好的大模型进行对话，支持本地模型和平台模型。",
+    chat_qa_model: "当前模型",
+    chat_qa_no_model: "请先在设置页面配置模型和 API Key",
+    chat_qa_empty: "输入消息开始对话",
+    chat_qa_user: "你",
+    chat_qa_assistant: "助手",
+    chat_qa_send_failed: "消息发送失败",
+    chat_qa_placeholder: "输入你的消息...",
+    chat_qa_send: "发送",
+    chat_qa_new_session: "新建会话",
+    chat_qa_session_untitled: "新会话",
+    chat_qa_upload: "上传至平台",
+    chat_qa_uploading: "上传中...",
+    chat_qa_upload_success: "上传成功",
+    chat_qa_upload_failed: "上传失败",
+    chat_qa_upload_no_auth: "请先在设置中登录平台",
+    chat_qa_upload_empty: "当前会话无消息可上传",
     tab_internal_badge: "内测",
     tab_topic_copy: "研究主题与领域标签",
     tab_settings_copy: "模型、输出与批处理参数",
@@ -1311,6 +1332,9 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_no_kept_items: "这个批次还没有本地保留的问题可上传。",
     qa_platform_url: "QA评测平台地址",
     qa_platform_url_hint: "实验室内部使用。普通用户只需要填写这一个地址，程序会自动派生页面地址和接口地址。",
+    qa_platform_dev: "127.0.0.1（开发）",
+    qa_platform_prod: "182.92.166.143（生产）",
+    qa_platform_env_label: "QA 平台",
     qa_platform_username: "QA评测用户名",
     qa_platform_password: "QA评测密码",
     platform_internal_hint: "实验室内部使用。生产环境通常直接填写 182.92.166.143；本机联调可填写 127.0.0.1。",
@@ -1668,7 +1692,25 @@ const translations: Record<Lang, Record<string, string>> = {
     tab_qa_evaluate: "QA Evaluate",
     tab_model_trial: "Model Trial",
     tab_recent_updates: "Recent Updates",
+    tab_chat_qa: "Chat QA",
     tab_feedback: "Feedback",
+    chat_qa_tab_copy: "Chat with the configured LLM model. Supports local models and platform models.",
+    chat_qa_model: "Current Model",
+    chat_qa_no_model: "Please configure a model and API Key in Settings first",
+    chat_qa_empty: "Send a message to start a conversation",
+    chat_qa_user: "You",
+    chat_qa_assistant: "Assistant",
+    chat_qa_send_failed: "Message send failed",
+    chat_qa_placeholder: "Type your message...",
+    chat_qa_send: "Send",
+    chat_qa_new_session: "New Session",
+    chat_qa_session_untitled: "New Session",
+    chat_qa_upload: "Upload to Platform",
+    chat_qa_uploading: "Uploading...",
+    chat_qa_upload_success: "Uploaded",
+    chat_qa_upload_failed: "Upload failed",
+    chat_qa_upload_no_auth: "Please login to platform in Settings first",
+    chat_qa_upload_empty: "No messages to upload",
     tab_internal_badge: "Beta",
     tab_topic_copy: "Research topic and domain tags",
     tab_settings_copy: "Model, output, and batch parameters",
@@ -1836,6 +1878,9 @@ const translations: Record<Lang, Record<string, string>> = {
     browse_upload_no_kept_items: "This batch has no locally kept QA items to upload.",
     qa_platform_url: "QA Platform URL",
     qa_platform_url_hint: "Internal laboratory use. Ordinary users only need this one address, and the app derives the web/API bases automatically.",
+    qa_platform_dev: "127.0.0.1 (Dev)",
+    qa_platform_prod: "182.92.166.143 (Prod)",
+    qa_platform_env_label: "QA Platform",
     qa_platform_username: "QA Platform Username",
     qa_platform_password: "QA Platform Password",
     platform_internal_hint: "Internal laboratory use. Production usually points to 182.92.166.143, while local joint debugging can use 127.0.0.1.",
@@ -2148,6 +2193,7 @@ const translations: Record<Lang, Record<string, string>> = {
     feedback_submit: "Submit",
     feedback_submitting: "Submitting...",
     feedback_success: "Thank you for your feedback!",
+    tab_feedback2: "Feedback",
     platform_account_card_title: "Platform Account",
     platform_role: "Role",
     platform_action_change_password: "Change Password",
@@ -2202,7 +2248,7 @@ let browseReviewIndex = 0;
 let browseReviewDrafts = new Map<string, string>();
 let managedResumeBatchId: string | null = null;
 let managedResumeBatchLabel: string | null = null;
-let appVersion = "0.1.6";
+let appVersion = __APP_VERSION__;
 let pendingAppUpdate: AppUpdateCheckResponse | null = null;
 let appUpdateLastError: string | null = null;
 let appUpdateManualDownloadUrl: string | null = DEFAULT_MANUAL_UPDATE_URL;
@@ -2331,7 +2377,7 @@ let exportsStatsState:
 let platformGenerateModels: PlatformGenerateModel[] = [];
 let selectedPlatformModelId: number | null = null;
 
-let feedbackFormState:
+let feedback2FormState:
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "success" }
@@ -2342,6 +2388,34 @@ let passwordChangeState:
   | { kind: "submitting" }
   | { kind: "success" }
   | { kind: "error"; message: string } = { kind: "idle" };
+
+type ChatSession = {
+  id: string;
+  name: string;
+  messages: { role: "user" | "assistant"; content: string }[];
+  createdAt: number;
+};
+
+let chatSessions: ChatSession[] = [];
+let currentChatSessionId: string | null = null;
+let sessionCounter = 0;
+let chatSending = false;
+let chatError: string | null = null;
+
+type ChatUploadResponse = {
+  batch_id: number | null;
+  external_batch_id: string;
+  existing_batch: boolean | null;
+  import_status: string | null;
+  parse_queued: boolean | null;
+};
+
+let sessionUploadStates: Record<string,
+  | { kind: "idle" }
+  | { kind: "uploading" }
+  | { kind: "success"; batchId: number }
+  | { kind: "error"; message: string }
+> = {};
 
 let recentUpdatesLastRefreshTime: number | null = null;
 let recentUpdatesRefreshTimer: number | null = null;
@@ -2380,9 +2454,22 @@ app.innerHTML = `
       </div>
       <div class="topbar-meta">
         <div class="version-badge" id="app-version-badge">v0.1.6</div>
-        <div class="version-badge" id="app-author-badge">开发 kentnf</div>
+        <button class="topbar-check-update" type="button" id="check-update">Check Update</button>
         <div class="status-badge" id="status">Idle</div>
         <div class="platform-status-badge" id="platform-status-badge" title="QA Platform"></div>
+        <label class="workspace-switch">
+          <span id="workspace-switch-label">Workspace</span>
+          <select id="topbar-tab-select">
+            <option value="recent-updates" id="topbar-tab-option-recent-updates">Recent Updates</option>
+            <option value="chat-qa" id="topbar-tab-option-chat-qa">Chat QA</option>
+            <option value="topic" id="topbar-tab-option-topic">QA Generation</option>
+            <option value="browse" id="topbar-tab-option-browse">Browse QA</option>
+            <option value="qa-evaluate" id="topbar-tab-option-qa-evaluate">QA Evaluate</option>
+            <option value="model-trial" id="topbar-tab-option-model-trial">Model Trial</option>
+            <option value="settings" id="topbar-tab-option-settings">Settings</option>
+            <option value="feedback2" id="topbar-tab-option-feedback2">Feedback 2</option>
+          </select>
+        </label>
         <label class="lang-switch">
           <span id="lang-label">Language</span>
           <select id="lang-select">
@@ -2397,6 +2484,9 @@ app.innerHTML = `
         <div class="tabs" id="tabs">
           <button class="tab-button" type="button" data-tab="recent-updates" id="tab-recent-updates">
             <span class="tab-button-title" id="tab-recent-updates-label">Recent Updates</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="chat-qa" id="tab-chat-qa">
+            <span class="tab-button-title" id="tab-chat-qa-label">Chat QA</span>
           </button>
           <button class="tab-button" type="button" data-tab="topic" id="tab-topic">
             <span class="tab-button-title" id="tab-topic-label">Topic</span>
@@ -2415,16 +2505,31 @@ app.innerHTML = `
           <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
             <span class="tab-button-title" id="tab-settings-label">Settings</span>
           </button>
-          <button class="tab-button tab-button-plain" type="button" id="check-update">
-            <span class="tab-button-title" id="check-update-label">Check Update</span>
-          </button>
-          <button class="tab-button tab-button-plain" type="button" data-tab="feedback" id="tab-feedback">
-            <span class="tab-button-title" id="tab-feedback-label">Feedback</span>
+          <button class="tab-button tab-button-plain" type="button" data-tab="feedback2" id="tab-feedback2">
+            <span class="tab-button-title" id="tab-feedback2-label">Feedback 2</span>
           </button>
         </div>
       </aside>
       <section class="stage panel">
         <div class="run-lock-banner" id="run-lock-banner" hidden>Run parameters are locked while the pipeline is active. Stop the run before changing them.</div>
+        <section class="tab-panel" data-tab-panel="chat-qa" hidden>
+          <div class="tab-copy-block">
+            <p class="panel-title" id="chat-qa-tab-title">Chat QA</p>
+            <p class="panel-copy" id="chat-qa-tab-copy">Send messages to the configured LLM model and get responses.</p>
+          </div>
+          <section class="chat-qa-panel" id="chat-qa-panel">
+            <div class="chat-qa-sessions-bar" id="chat-qa-sessions-bar"></div>
+            <div class="chat-qa-model-info" id="chat-qa-model-info"></div>
+            <div class="chat-qa-messages" id="chat-qa-messages">
+              <div class="chat-qa-empty" id="chat-qa-empty">Send a message to start a conversation.</div>
+            </div>
+            <div class="chat-qa-input-area">
+              <textarea id="chat-qa-input" rows="2" placeholder="Type your message..."></textarea>
+              <button class="chat-qa-send-button" type="button" id="chat-qa-send">Send</button>
+            </div>
+            <div class="chat-qa-error" id="chat-qa-error" hidden></div>
+          </section>
+        </section>
         <section class="tab-panel" data-tab-panel="topic">
         <div class="tab-copy-block">
           <p class="panel-title" id="topic-tab-title">Research Topic</p>
@@ -2581,40 +2686,38 @@ app.innerHTML = `
           <p class="panel-copy" id="settings-basic-copy">Most users only need to choose a provider, model, and API key.</p>
         </div>
 
-        <!-- Platform Integrations -->
+        <!-- Platform -->
         <div class="section-block">
-          <p class="section-title" id="integration-section-title">Platform Integrations</p>
+          <p class="section-title" id="integration-section-title">Platform</p>
         </div>
-        <div class="grid three">
-          <label>
-            <div class="field-label-row">
-              <span id="qa-platform-url-label">QA Platform URL</span>
-              <button class="field-help-button" data-help-key="qa_platform_url" type="button">?</button>
+        <div class="platform-settings-card">
+          <div class="platform-env-row">
+            <span class="platform-env-label" id="qa-platform-env-label">QA Platform</span>
+            <div class="platform-env-options">
+              <label class="radio-card platform-env-radio">
+                <input id="qa-platform-dev" type="radio" name="qa-platform-env" value="dev" />
+                <span id="qa-platform-dev-label">127.0.0.1 (Dev)</span>
+              </label>
+              <label class="radio-card platform-env-radio">
+                <input id="qa-platform-prod" type="radio" name="qa-platform-env" value="prod" checked />
+                <span id="qa-platform-prod-label">182.92.166.143 (Prod)</span>
+              </label>
             </div>
-            <input id="qa-platform-url" placeholder="http://182.92.166.143" />
-            <small class="field-hint" id="qa-platform-url-hint">
-              Internal laboratory use. The app derives web and API addresses from this one field.
-            </small>
-          </label>
-          <label>
-            <div class="field-label-row">
-              <span id="qa-platform-username-label">QA Platform Username</span>
-              <button class="field-help-button" data-help-key="qa_platform_username" type="button">?</button>
-            </div>
-            <input id="qa-platform-username" placeholder="your-account" />
-          </label>
-          <label>
-            <div class="field-label-row">
-              <span id="qa-platform-password-label">QA Platform Password</span>
-              <button class="field-help-button" data-help-key="qa_platform_password" type="button">?</button>
-            </div>
-            <input id="qa-platform-password" type="password" />
-          </label>
-        </div>
-
-        <!-- Platform Account -->
-        <div class="section-block">
-          <p class="section-title" id="platform-account-title">Platform Account</p>
+          </div>
+          <div class="platform-credentials-row">
+            <label class="platform-cred-field">
+              <span id="qa-platform-username-label">Username</span>
+              <input id="qa-platform-username" placeholder="your-account" />
+            </label>
+            <label class="platform-cred-field">
+              <span id="qa-platform-password-label">Password</span>
+              <input id="qa-platform-password" type="password" />
+            </label>
+          </div>
+          <div class="platform-actions-row">
+            <button type="button" class="platform-login-button" id="platform-login-button">Login</button>
+            <div class="platform-login-status" id="platform-login-status">○ Not logged in</div>
+          </div>
           <div id="platform-account-card"></div>
           <div id="password-change-form-container" hidden></div>
         </div>
@@ -2641,9 +2744,6 @@ app.innerHTML = `
               <option id="provider-preset-option-stub" value="stub_local" hidden>Stub Local Test</option>
               <option id="provider-preset-option-platform" value="platform" hidden>Platform Model</option>
             </select>
-            <small class="field-hint" id="provider-preset-hint">
-              Selecting a provider fills the adapter type, model list, and base URL. Switch to Custom if you need a private gateway or manual values.
-            </small>
           </label>
           <label id="provider-field" hidden>
             <div class="field-label-row">
@@ -2685,9 +2785,6 @@ app.innerHTML = `
               <input id="api-key" type="password" />
               <button id="toggle-api-key-visibility" type="button">Show</button>
             </div>
-            <small class="field-hint" id="api-key-hint">
-              The key is stored in the local config profile and hidden by default in the UI.
-            </small>
           </label>
         </div>
 
@@ -2825,6 +2922,7 @@ app.innerHTML = `
             </label>
           </div>
         </details>
+      </section>
       <section class="tab-panel" data-tab-panel="qa-evaluate" hidden>
         <div class="tab-copy-block">
           <p class="panel-title" id="qa-evaluate-tab-title">QA Evaluate</p>
@@ -2854,11 +2952,49 @@ app.innerHTML = `
           <div id="browse-content"></div>
         </section>
       </section>
-      <section class="tab-panel" data-tab-panel="feedback" hidden>
+      <section class="tab-panel" data-tab-panel="feedback2" hidden>
         <div class="tab-copy-block">
-          <p class="panel-title" id="feedback-title">Feedback</p>
+          <p class="panel-title" id="feedback2-panel-title">Feedback 2</p>
         </div>
-        <section class="feedback-panel" id="feedback-panel"></section>
+        <div class="feedback2-panel" id="feedback2-panel">
+          <div class="feedback2-section">
+            <h3 id="feedback2-email-title">Email</h3>
+            <p class="feedback2-hint" id="feedback2-email-hint">Send email directly to describe your suggestions or issues.</p>
+            <a href="mailto:zhengyi@yzwlab.cn" class="feedback2-button" target="_blank" id="feedback2-email-link">Send Email</a>
+          </div>
+          <div class="feedback2-section">
+            <h3 id="feedback2-github-title">GitHub Issue</h3>
+            <p class="feedback2-hint" id="feedback2-github-hint">Create an issue in the project GitHub repository.</p>
+            <button class="feedback2-button" data-feedback2-action="github" id="feedback2-github-button">Submit GitHub Issue</button>
+          </div>
+          <div class="feedback2-section">
+            <h3 id="feedback2-form-title">Feedback Form</h3>
+            <p class="feedback2-hint" id="feedback2-form-hint">Login to submit feedback to the platform.</p>
+            <p class="feedback2-login-required" id="feedback2-login-required">Login to QA platform first to submit feedback via form.</p>
+            <form class="feedback2-form" id="feedback2-form" hidden>
+              <label>
+                <span id="feedback2-title-label">Title</span>
+                <input id="feedback2-title" placeholder="Brief description" required />
+              </label>
+              <label>
+                <span id="feedback2-content-label">Details</span>
+                <textarea id="feedback2-content" rows="4" placeholder="Describe in detail..." required></textarea>
+              </label>
+              <label>
+                <span id="feedback2-category-label">Category</span>
+                <select id="feedback2-category">
+                  <option value="feature" id="feedback2-cat-feature">Feature Request</option>
+                  <option value="bug" id="feedback2-cat-bug">Bug Report</option>
+                  <option value="other" id="feedback2-cat-other">Other</option>
+                </select>
+              </label>
+              <button type="submit" class="feedback2-submit-button" id="feedback2-submit-button">Submit</button>
+              <p class="feedback2-success" id="feedback2-success" hidden>Feedback submitted successfully!</p>
+              <p class="feedback2-error" id="feedback2-form-error" hidden></p>
+            </form>
+          </div>
+        </div>
+      </section>
       </section>
       <aside class="inspector" hidden>
         <section class="panel result-panel">
@@ -2901,6 +3037,10 @@ app.innerHTML = `
 `;
 
 const promptInput = document.querySelector<HTMLTextAreaElement>("#prompt");
+const appShell = document.querySelector<HTMLElement>(".app-shell");
+const topbar = document.querySelector<HTMLElement>(".topbar");
+const tabsContainer = document.querySelector<HTMLElement>("#tabs");
+const topbarTabSelect = document.querySelector<HTMLSelectElement>("#topbar-tab-select");
 const langSelect = document.querySelector<HTMLSelectElement>("#lang-select");
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-tab]"));
 const tabPanels = Array.from(document.querySelectorAll<HTMLElement>("[data-tab-panel]"));
@@ -2925,7 +3065,6 @@ const resultCards = document.querySelector<HTMLElement>("#result-cards");
 const resultActions = document.querySelector<HTMLElement>("#result-actions");
 const outputDetails = document.querySelector<HTMLDetailsElement>("#output-details");
 const appVersionBadge = document.querySelector<HTMLElement>("#app-version-badge");
-const appAuthorBadge = document.querySelector<HTMLElement>("#app-author-badge");
 const settingsVersion = document.querySelector<HTMLElement>("#settings-version");
 const status = document.querySelector<HTMLElement>("#status");
 const platformStatusBadge = document.querySelector<HTMLElement>("#platform-status-badge");
@@ -2966,15 +3105,26 @@ const resetOutputRootButton = document.querySelector<HTMLButtonElement>("#reset-
 const cotSectionHeadersInput = document.querySelector<HTMLTextAreaElement>("#cot-section-headers");
 const baseUrlInput = document.querySelector<HTMLInputElement>("#base-url");
 const apiKeyInput = document.querySelector<HTMLInputElement>("#api-key");
-const qaPlatformUrlInput = document.querySelector<HTMLInputElement>("#qa-platform-url");
+const qaPlatformDevInput = document.querySelector<HTMLInputElement>("#qa-platform-dev");
+const qaPlatformProdInput = document.querySelector<HTMLInputElement>("#qa-platform-prod");
 const qaPlatformUsernameInput = document.querySelector<HTMLInputElement>("#qa-platform-username");
 const qaPlatformPasswordInput = document.querySelector<HTMLInputElement>("#qa-platform-password");
+const platformLoginButton = document.querySelector<HTMLButtonElement>("#platform-login-button");
+const platformLoginStatus = document.querySelector<HTMLElement>("#platform-login-status");
 const literatureApiUrlInput = document.querySelector<HTMLInputElement>("#literature-api-url");
 const literatureApiAuthInput = document.querySelector<HTMLInputElement>("#literature-api-auth");
 const qaEvaluatePanel = document.querySelector<HTMLElement>("#qa-evaluate-panel");
 const modelTrialPanel = document.querySelector<HTMLElement>("#model-trial-panel");
 const recentUpdatesPanel = document.querySelector<HTMLElement>("#recent-updates-panel");
-const feedbackPanel = document.querySelector<HTMLElement>("#feedback-panel");
+const feedback2Panel = document.querySelector<HTMLElement>("#feedback2-panel");
+const chatQaPanel = document.querySelector<HTMLElement>("#chat-qa-panel");
+const chatQaSessionsBar = document.querySelector<HTMLElement>("#chat-qa-sessions-bar");
+const chatQaModelInfo = document.querySelector<HTMLElement>("#chat-qa-model-info");
+const chatQaMessages = document.querySelector<HTMLElement>("#chat-qa-messages");
+const chatQaEmpty = document.querySelector<HTMLElement>("#chat-qa-empty");
+const chatQaInput = document.querySelector<HTMLTextAreaElement>("#chat-qa-input");
+const chatQaSendButton = document.querySelector<HTMLButtonElement>("#chat-qa-send");
+const chatQaError = document.querySelector<HTMLElement>("#chat-qa-error");
 const toggleApiKeyVisibilityButton = document.querySelector<HTMLButtonElement>("#toggle-api-key-visibility");
 const runtimeConstraintHint = document.querySelector<HTMLElement>("#runtime-constraint-hint");
 const targetCountInput = document.querySelector<HTMLInputElement>("#target-count");
@@ -2999,6 +3149,8 @@ const fieldHelpButtons = Array.from(
 if (
   !promptInput ||
   !langSelect ||
+  !tabsContainer ||
+  !topbarTabSelect ||
   !runLockBanner ||
   !checkUpdateButton ||
   !runButton ||
@@ -3015,7 +3167,6 @@ if (
   !resultActions ||
   !outputDetails ||
   !appVersionBadge ||
-  !appAuthorBadge ||
   !settingsVersion ||
   !status ||
   !selectedTopicTags ||
@@ -3055,7 +3206,8 @@ if (
   !cotSectionHeadersInput ||
   !baseUrlInput ||
   !apiKeyInput ||
-  !qaPlatformUrlInput ||
+  !qaPlatformDevInput ||
+  !qaPlatformProdInput ||
   !qaPlatformUsernameInput ||
   !qaPlatformPasswordInput ||
   !literatureApiUrlInput ||
@@ -3111,7 +3263,8 @@ const lockableControls: Array<
   cotSectionHeadersInput,
   baseUrlInput,
   apiKeyInput,
-  qaPlatformUrlInput,
+  qaPlatformDevInput,
+  qaPlatformProdInput,
   qaPlatformUsernameInput,
   qaPlatformPasswordInput,
   literatureApiUrlInput,
@@ -3291,21 +3444,46 @@ function updateApiKeyVisibilityUi() {
   toggleApiKeyVisibilityButton.textContent = t(apiKeyVisible ? "hide_secret" : "show_secret");
 }
 
+function syncStickyOffsets() {
+  if (!topbar) {
+    return;
+  }
+  const rootStyle = getComputedStyle(document.documentElement);
+  const stickyTop = Number.parseFloat(rootStyle.getPropertyValue("--sticky-top")) || 14;
+  const shellGap = appShell ? Number.parseFloat(getComputedStyle(appShell).gap) || 16 : 16;
+  const topbarOffset = Math.ceil(stickyTop + topbar.getBoundingClientRect().height + shellGap);
+  document.documentElement.style.setProperty("--topbar-offset", `${topbarOffset}px`);
+}
+
 function normalizeTopicTag(tag: string): string {
   return tag.trim().replace(/\s+/g, " ");
 }
 
 function setCurrentTab(tab: UiTab) {
   currentTab = tab;
+  topbarTabSelect.value = tab;
   for (const button of tabs) {
     button.dataset.active = button.dataset.tab === tab ? "true" : "false";
   }
   for (const panel of tabPanels) {
-    panel.hidden = panel.dataset.tabPanel !== tab;
+    const isActive = panel.dataset.tabPanel === tab;
+    panel.hidden = !isActive;
+    panel.style.display = isActive ? "grid" : "none";
+    panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+  }
+  const activePanel = tabPanels.find((panel) => panel.dataset.tabPanel === tab) ?? null;
+
+  if (activePanel) {
+    window.requestAnimationFrame(() => {
+      activePanel.scrollIntoView({ block: "start", inline: "nearest" });
+    });
   }
 
   if (tab === "browse" && !browseLoading) {
     void loadBrowseBatches();
+  }
+  if (tab === "qa-evaluate") {
+    try { renderQaEvaluatePanel(); } catch (e) { appendLog(`renderQaEvaluatePanel: ${String(e)}`); }
   }
   if (
     tab === "model-trial" &&
@@ -3323,12 +3501,15 @@ function setCurrentTab(tab: UiTab) {
   ) {
     void loadModelTrialWorkspace();
   }
+  if (tab === "chat-qa") {
+    try { renderChatQaPanel(); } catch (e) { appendLog(`renderChatQaPanel: ${String(e)}`); }
+  }
   if (tab === "recent-updates") {
-    renderRecentUpdatesPanel();
+    try { renderRecentUpdatesPanel(); } catch (e) { appendLog(`renderRecentUpdatesPanel: ${String(e)}`); }
     void loadRecentUpdatesData();
   }
-  if (tab === "feedback") {
-    renderFeedbackPanel();
+  if (tab === "feedback2") {
+    try { renderFeedback2Panel(); } catch (e) { appendLog(`renderFeedback2Panel: ${String(e)}`); }
   }
 }
 
@@ -4002,6 +4183,7 @@ function formatRate(itemsPerMinute: number | null): string {
 }
 
 function escapeHtml(value: string): string {
+  if (value == null || typeof value !== "string") return "";
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -4129,8 +4311,7 @@ function renderSetupSummary() {
     }
   ];
 
-  return; /* setup checklist removed */
-  renderTopicQuickstart();
+    renderTopicQuickstart();
   renderRunReadinessBanner();
   updateRunButtonUi();
 }
@@ -4413,7 +4594,8 @@ function clearBrowseRemoteVirtualBatch() {
 }
 
 function currentQaPlatformUrl(): string {
-  return qaPlatformUrlInput.value.trim();
+  const host = qaPlatformDevInput?.checked ? "127.0.0.1" : "182.92.166.143";
+  return `http://${host}:8100`;
 }
 
 function currentManagedOutputRoot(): string {
@@ -4844,15 +5026,17 @@ function renderModelTrialPanel() {
 }
 
 function renderPlatformPanels() {
-  renderQaEvaluatePanel();
-  renderModelTrialPanel();
-  renderPlatformAccountCard();
-  updatePlatformStatusBadge();
+  try { renderQaEvaluatePanel(); } catch (e) { appendLog(`renderQaEvaluatePanel: ${String(e)}`); }
+  try { renderModelTrialPanel(); } catch (e) { appendLog(`renderModelTrialPanel: ${String(e)}`); }
+  try { renderPlatformAccountCard(); } catch (e) { appendLog(`renderPlatformAccountCard: ${String(e)}`); }
+  try { updatePlatformStatusBadge(); } catch (e) { appendLog(`updatePlatformStatusBadge: ${String(e)}`); }
   // Load platform models after login state change
   void loadPlatformGenerateModels().then(() => {
-    updatePlatformPresetOption();
-    syncProviderPresetInput();
-    renderSetupSummary();
+    try {
+      updatePlatformPresetOption();
+      syncProviderPresetInput();
+      renderSetupSummary();
+    } catch (e) { appendLog(`loadPlatformGenerateModels.then: ${String(e)}`); }
   });
 }
 
@@ -4870,6 +5054,22 @@ function updatePlatformStatusBadge() {
   } else {
     platformStatusBadge.className = "platform-status-badge";
     platformStatusBadge.textContent = "○";
+  }
+  // Also sync the in-settings login status
+  if (platformLoginStatus) {
+    if (platformLoginState.kind === "success") {
+      platformLoginStatus.className = "platform-login-status connected";
+      platformLoginStatus.textContent = `${t("platform_login_ok")} ${platformLoginState.response.user.username}`;
+    } else if (platformLoginState.kind === "loading") {
+      platformLoginStatus.className = "platform-login-status checking";
+      platformLoginStatus.textContent = t("platform_login_checking");
+    } else if (platformLoginState.kind === "error") {
+      platformLoginStatus.className = "platform-login-status error";
+      platformLoginStatus.textContent = `${t("platform_login_failed")}: ${platformLoginState.message}`;
+    } else {
+      platformLoginStatus.className = "platform-login-status";
+      platformLoginStatus.textContent = t("platform_login_idle");
+    }
   }
 }
 
@@ -4893,10 +5093,6 @@ function renderPlatformAccountCard() {
       <div class="platform-account-row">
         <span class="platform-account-label">${escapeHtml(t("platform_current_user"))}</span>
         <span class="platform-account-value">${escapeHtml(user.username)}</span>
-      </div>
-      <div class="platform-account-row">
-        <span class="platform-account-label">${escapeHtml(t("platform_role"))}</span>
-        <span class="platform-account-value">${escapeHtml(user.role)}</span>
       </div>
       <div class="platform-account-actions">
         <button type="button" class="secondary" id="password-change-toggle">${escapeHtml(t("platform_action_change_password"))}</button>
@@ -5123,59 +5319,232 @@ function changeTypeLabel(type: string): string {
   return type;
 }
 
-function renderFeedbackPanel() {
-  if (!feedbackPanel) return;
+function getCurrentSession(): ChatSession | undefined {
+  return chatSessions.find(s => s.id === currentChatSessionId);
+}
 
+function createChatSession() {
+  sessionCounter++;
+  const session: ChatSession = {
+    id: crypto.randomUUID(),
+    name: `${t("chat_qa_session_untitled")} ${sessionCounter}`,
+    messages: [],
+    createdAt: Date.now()
+  };
+  chatSessions.push(session);
+  currentChatSessionId = session.id;
+  renderChatQaPanel();
+}
+
+function switchChatSession(id: string) {
+  if (chatSessions.some(s => s.id === id)) {
+    currentChatSessionId = id;
+    renderChatQaPanel();
+  }
+}
+
+function deleteChatSession(id: string) {
+  const idx = chatSessions.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  chatSessions.splice(idx, 1);
+  if (currentChatSessionId === id) {
+    if (chatSessions.length > 0) {
+      currentChatSessionId = chatSessions[chatSessions.length - 1].id;
+    } else {
+      currentChatSessionId = null;
+    }
+  }
+  if (chatSessions.length === 0) {
+    createChatSession();
+  } else {
+    renderChatQaPanel();
+  }
+}
+
+function renderChatSessionsBar() {
+  if (!chatQaSessionsBar) return;
+
+  const auth = currentPlatformAuthPayload();
+  const currentSession = getCurrentSession();
+  const hasMessages = (currentSession?.messages.length ?? 0) > 0;
+  const canUpload = Boolean(auth) && hasMessages;
+
+  const tabs = chatSessions.map(s => {
+    const activeClass = s.id === currentChatSessionId ? " active" : "";
+    const uploadState = sessionUploadStates[s.id];
+    let statusIcon = "";
+    if (uploadState) {
+      if (uploadState.kind === "uploading") {
+        statusIcon = `<span class="chat-qa-session-upload-status uploading" title="${escapeHtml(t("chat_qa_uploading"))}">&#8987;</span>`;
+      } else if (uploadState.kind === "success") {
+        statusIcon = `<span class="chat-qa-session-upload-status success" title="${escapeHtml(t("chat_qa_upload_success"))}">&#10003;</span>`;
+      } else if (uploadState.kind === "error") {
+        statusIcon = `<span class="chat-qa-session-upload-status error" title="${escapeHtml(uploadState.message)}">&#10007;</span>`;
+      }
+    }
+    return `<span class="chat-qa-session-tab${activeClass}" data-session-id="${s.id}">
+      <span class="chat-qa-session-tab-name">${escapeHtml(s.name)}</span>${statusIcon}
+      <button type="button" class="chat-qa-session-tab-close" data-delete-session="${s.id}" title="Close session">&times;</button>
+    </span>`;
+  }).join("");
+
+  const uploadTitle = canUpload ? escapeHtml(t("chat_qa_upload")) : (auth ? escapeHtml(t("chat_qa_upload_empty")) : escapeHtml(t("chat_qa_upload_no_auth")));
+  const uploadDisabled = !canUpload ? " disabled" : "";
+
+  chatQaSessionsBar.innerHTML = tabs
+    + `<button type="button" class="chat-qa-new-session-button" id="chat-qa-new-session-button" title="${escapeHtml(t("chat_qa_new_session"))}">+</button>`
+    + `<button type="button" class="chat-qa-upload-button${uploadDisabled}" id="chat-qa-upload-button" title="${uploadTitle}"${uploadDisabled} data-upload-session="${currentChatSessionId ?? ""}">${escapeHtml(t("chat_qa_upload"))}</button>`;
+}
+
+function renderChatQaPanel() {
+  if (!chatQaPanel) return;
+
+  renderChatSessionsBar();
+
+  const session = getCurrentSession();
+  const messages = session?.messages ?? [];
+
+  const providerReady = providerPresetInput.value.trim().length > 0;
+  const modelReady = currentModelValue().length > 0;
+  const hasConfig = providerReady && modelReady;
+  const modelLabel = hasConfig
+    ? (currentPresetLabel(providerPresetInput.value as ProviderPresetId) || providerInput.value) + " / " + currentModelValue()
+    : "";
+
+  chatQaModelInfo.innerHTML = hasConfig
+    ? `<span class="chat-qa-model-label">${escapeHtml(t("chat_qa_model"))}</span><span class="chat-qa-model-value">${escapeHtml(modelLabel)}</span>`
+    : `<span class="chat-qa-model-warning">${escapeHtml(t("chat_qa_no_model"))}</span>`;
+
+  if (messages.length === 0) {
+    chatQaMessages.innerHTML = `<div class="chat-qa-empty" id="chat-qa-empty">${escapeHtml(t("chat_qa_empty"))}</div>`;
+  } else {
+    chatQaMessages.innerHTML = messages
+      .map(
+        (msg, i) => `
+          <div class="chat-qa-message ${msg.role}">
+            <span class="chat-qa-message-role">${escapeHtml(msg.role === "user" ? t("chat_qa_user") : t("chat_qa_assistant"))}</span>
+            <div class="chat-qa-message-content">${escapeHtml(msg.content)}</div>
+          </div>`
+      )
+      .join("");
+    chatQaMessages.scrollTop = chatQaMessages.scrollHeight;
+  }
+
+  chatQaSendButton.disabled = !hasConfig || chatSending;
+  chatQaInput.disabled = !hasConfig || chatSending;
+
+  if (chatError) {
+    chatQaError.hidden = false;
+    chatQaError.textContent = chatError;
+  } else {
+    chatQaError.hidden = true;
+  }
+}
+
+async function handleChatSend() {
+  if (chatSending) return;
+
+  const session = getCurrentSession();
+  if (!session) return;
+
+  const text = chatQaInput.value.trim();
+  if (!text) return;
+
+  const providerReady = providerPresetInput.value.trim().length > 0;
+  const modelReady = currentModelValue().length > 0;
+  if (!providerReady || !modelReady) {
+    chatError = t("chat_qa_no_model");
+    renderChatQaPanel();
+    return;
+  }
+
+  session.messages.push({ role: "user", content: text });
+  chatQaInput.value = "";
+  chatSending = true;
+  chatError = null;
+  renderChatQaPanel();
+
+  try {
+    const isPlatform = providerPresetInput.value === "platform";
+    const auth = isPlatform ? currentPlatformAuthPayload() : null;
+
+    const response = await invoke<{ message: { role: string; content: string } }>(
+      "send_chat_message",
+      {
+        request: {
+          platformUrl: auth?.platformUrl ?? null,
+          token: auth?.token ?? null,
+          provider: providerInput.value,
+          baseUrl: baseUrlInput.value.trim(),
+          apiKey: apiKeyInput.value.trim(),
+          model: currentModelValue(),
+          messages: session.messages.map((m) => ({ role: m.role, content: m.content }))
+        }
+      }
+    );
+
+    session.messages.push(response.message);
+  } catch (error) {
+    chatError = `${t("chat_qa_send_failed")}: ${String(error)}`;
+  } finally {
+    chatSending = false;
+    renderChatQaPanel();
+  }
+}
+
+async function uploadChatSession(sessionId: string) {
+  const session = chatSessions.find(s => s.id === sessionId);
+  if (!session || session.messages.length === 0) return;
+
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    sessionUploadStates[sessionId] = { kind: "error", message: t("chat_qa_upload_no_auth") };
+    renderChatQaPanel();
+    return;
+  }
+
+  sessionUploadStates[sessionId] = { kind: "uploading" };
+  renderChatQaPanel();
+
+  try {
+    const response = await invoke<ChatUploadResponse>("push_chat_conversations", {
+      platformUrl: auth.platformUrl,
+      username: auth.username,
+      password: auth.password,
+      sessionName: session.name,
+      externalBatchId: session.id,
+      messages: session.messages.map(m => ({ role: m.role, content: m.content }))
+    });
+    sessionUploadStates[sessionId] = { kind: "success", batchId: response.batch_id ?? 0 };
+  } catch (error) {
+    sessionUploadStates[sessionId] = { kind: "error", message: String(error) };
+  }
+  renderChatQaPanel();
+}
+
+function renderFeedback2Panel() {
   const isLoggedIn = platformLoginState.kind === "success";
-  const formState = feedbackFormState;
+  const formState = feedback2FormState;
 
-  const feedbackEmailUrl = "mailto:zhengyi@yzwlab.cn";
-  const feedbackGithubUrl = "https://github.com/AI4S-YB/distill-studio/issues/new";
+  const loginRequired = document.querySelector<HTMLElement>("#feedback2-login-required");
+  const form = document.querySelector<HTMLFormElement>("#feedback2-form");
+  const submitBtn = document.querySelector<HTMLButtonElement>("#feedback2-submit-button");
+  const successMsg = document.querySelector<HTMLElement>("#feedback2-success");
+  const errorMsg = document.querySelector<HTMLElement>("#feedback2-form-error");
 
-  feedbackPanel.innerHTML = `
-    <div class="feedback-layout">
-      <div class="feedback-section">
-        <h3>${escapeHtml(t("feedback_email"))}</h3>
-        <p class="feedback-hint">${escapeHtml(t("feedback_email_hint"))}</p>
-        <a href="${escapeHtml(feedbackEmailUrl)}" class="feedback-button" target="_blank">${escapeHtml(t("feedback_email"))}</a>
-      </div>
-      <div class="feedback-section">
-        <h3>${escapeHtml(t("feedback_github"))}</h3>
-        <p class="feedback-hint">${escapeHtml(t("feedback_github_hint"))}</p>
-        <button class="feedback-button" data-feedback-action="github">${escapeHtml(t("feedback_github"))}</button>
-      </div>
-      <div class="feedback-section">
-        <h3>${escapeHtml(t("feedback_form"))}</h3>
-        <p class="feedback-hint">${escapeHtml(t("feedback_form_hint"))}</p>
-        ${isLoggedIn ? `
-          <form class="feedback-form" id="feedback-form">
-            <label>
-              <span>${escapeHtml(t("feedback_title_label"))}</span>
-              <input id="feedback-title" placeholder="${escapeHtml(t("feedback_title_placeholder"))}" required />
-            </label>
-            <label>
-              <span>${escapeHtml(t("feedback_content_label"))}</span>
-              <textarea id="feedback-content" rows="4" placeholder="${escapeHtml(t("feedback_content_placeholder"))}" required></textarea>
-            </label>
-            <label>
-              <span>${escapeHtml(t("feedback_category_label"))}</span>
-              <select id="feedback-category">
-                <option value="feature">${escapeHtml(t("feedback_category_feature"))}</option>
-                <option value="bug">${escapeHtml(t("feedback_category_bug"))}</option>
-                <option value="other">${escapeHtml(t("feedback_category_other"))}</option>
-              </select>
-            </label>
-            <button type="submit" class="feedback-submit-button" ${formState.kind === "submitting" ? "disabled" : ""}>
-              ${formState.kind === "submitting" ? escapeHtml(t("feedback_submitting")) : escapeHtml(t("feedback_submit"))}
-            </button>
-            ${formState.kind === "success" ? `<p class="feedback-success">${escapeHtml(t("feedback_success"))}</p>` : ""}
-            ${formState.kind === "error" ? `<p class="feedback-error">${escapeHtml(formState.message)}</p>` : ""}
-          </form>
-        ` : `
-          <p class="feedback-login-required">${escapeHtml(t("feedback_form_login_required"))}</p>
-        `}
-      </div>
-    </div>`;
+  if (loginRequired) loginRequired.hidden = isLoggedIn;
+  if (form) form.hidden = !isLoggedIn;
+
+  if (submitBtn) {
+    submitBtn.disabled = formState.kind === "submitting";
+    submitBtn.textContent = formState.kind === "submitting" ? t("feedback_submitting") : t("feedback_submit");
+  }
+
+  if (successMsg) successMsg.hidden = formState.kind !== "success";
+  if (errorMsg) {
+    errorMsg.hidden = formState.kind !== "error";
+    if (formState.kind === "error") errorMsg.textContent = formState.message;
+  }
 }
 
 async function loadRecentUpdatesData() {
@@ -5237,12 +5606,12 @@ function formatTimestamp(ts: number | null): string {
   }).format(new Date(ts));
 }
 
-async function handleFeedbackFormSubmit(event: SubmitEvent) {
+async function handleFeedback2FormSubmit(event: SubmitEvent) {
   event.preventDefault();
   const form = event.currentTarget as HTMLFormElement;
-  const titleInput = form.querySelector<HTMLInputElement>("#feedback-title");
-  const contentInput = form.querySelector<HTMLTextAreaElement>("#feedback-content");
-  const categorySelect = form.querySelector<HTMLSelectElement>("#feedback-category");
+  const titleInput = form.querySelector<HTMLInputElement>("#feedback2-title");
+  const contentInput = form.querySelector<HTMLTextAreaElement>("#feedback2-content");
+  const categorySelect = form.querySelector<HTMLSelectElement>("#feedback2-category");
   if (!titleInput || !contentInput || !categorySelect) return;
 
   const title = titleInput.value.trim();
@@ -5252,8 +5621,8 @@ async function handleFeedbackFormSubmit(event: SubmitEvent) {
   const auth = currentPlatformAuthPayload();
   if (!auth) return;
 
-  feedbackFormState = { kind: "submitting" };
-  renderFeedbackPanel();
+  feedback2FormState = { kind: "submitting" };
+  renderFeedback2Panel();
   try {
     await invoke("submit_feedback", {
       ...auth,
@@ -5261,13 +5630,13 @@ async function handleFeedbackFormSubmit(event: SubmitEvent) {
       content,
       category: categorySelect.value
     });
-    feedbackFormState = { kind: "success" };
+    feedback2FormState = { kind: "success" };
     titleInput.value = "";
     contentInput.value = "";
   } catch (error) {
-    feedbackFormState = { kind: "error", message: String(error) };
+    feedback2FormState = { kind: "error", message: String(error) };
   }
-  renderFeedbackPanel();
+  renderFeedback2Panel();
 }
 
 async function handlePasswordChange(event: SubmitEvent) {
@@ -5743,13 +6112,6 @@ async function uploadBrowseBatch(batchId: string) {
   if (browseUploadingBatchId) {
     return;
   }
-  const platformUrl = currentQaPlatformUrl();
-  if (!platformUrl) {
-    window.alert(t("browse_platform_url_missing"));
-    setCurrentTab("settings");
-    qaPlatformUrlInput.focus();
-    return;
-  }
   if (!hasQaPlatformCredentials()) {
     window.alert(t("browse_platform_credentials_missing"));
     setCurrentTab("settings");
@@ -5800,17 +6162,10 @@ async function uploadBrowseBatch(batchId: string) {
 }
 
 async function refreshPlatformHealth() {
-  const platformUrl = currentQaPlatformUrl();
-  if (!platformUrl) {
-    window.alert(t("browse_platform_url_missing"));
-    setCurrentTab("settings");
-    qaPlatformUrlInput.focus();
-    return;
-  }
-
   platformHealthState = { kind: "loading" };
   renderPlatformPanels();
   try {
+    const platformUrl = currentQaPlatformUrl();
     const response = await invoke<PlatformHealthResponse>("check_platform_health", {
       platformUrl
     });
@@ -5824,13 +6179,6 @@ async function refreshPlatformHealth() {
 }
 
 async function refreshPlatformLogin() {
-  const platformUrl = currentQaPlatformUrl();
-  if (!platformUrl) {
-    window.alert(t("browse_platform_url_missing"));
-    setCurrentTab("settings");
-    qaPlatformUrlInput.focus();
-    return;
-  }
   if (!hasQaPlatformCredentials()) {
     window.alert(t("browse_platform_credentials_missing"));
     setCurrentTab("settings");
@@ -5841,6 +6189,7 @@ async function refreshPlatformLogin() {
   platformLoginState = { kind: "loading" };
   renderPlatformPanels();
   try {
+    const platformUrl = currentQaPlatformUrl();
     const response = await invoke<PlatformLoginResponse>("login_platform", {
       platformUrl,
       username: qaPlatformUsernameInput.value.trim(),
@@ -6595,11 +6944,12 @@ function setText(id: string, value: string) {
 function applyTranslations() {
   document.documentElement.lang = currentLang;
   langSelect.value = currentLang;
+  topbarTabSelect.value = currentTab;
   setText("eyebrow", t("eyebrow"));
+  setText("workspace-switch-label", t("nav_title"));
   setText("lang-label", t("lang_label"));
   setText("hero-title", t("hero_title"));
   setText("hero-lede", t("hero_lede"));
-  setText("app-author-badge", t("app_author_badge"));
   setText("tab-topic-label", t("tab_topic"));
   setText("tab-settings-label", t("tab_settings"));
   setText("tab-browse-label", t("tab_browse"));
@@ -6608,7 +6958,16 @@ function applyTranslations() {
   setText("tab-qa-evaluate-badge", t("tab_internal_badge"));
   setText("tab-model-trial-badge", t("tab_internal_badge"));
   setText("tab-recent-updates-label", t("tab_recent_updates"));
-  setText("tab-feedback-label", t("tab_feedback"));
+  setText("tab-chat-qa-label", t("tab_chat_qa"));
+  setText("tab-feedback2-label", t("tab_feedback2"));
+  setText("topbar-tab-option-recent-updates", t("tab_recent_updates"));
+  setText("topbar-tab-option-chat-qa", t("tab_chat_qa"));
+  setText("topbar-tab-option-topic", t("tab_topic"));
+  setText("topbar-tab-option-browse", t("tab_browse"));
+  setText("topbar-tab-option-qa-evaluate", t("tab_qa_evaluate"));
+  setText("topbar-tab-option-model-trial", t("tab_model_trial"));
+  setText("topbar-tab-option-settings", t("tab_settings"));
+  setText("topbar-tab-option-feedback2", t("tab_feedback2"));
   updateCheckButtonUi();
   setText("topic-tab-title", t("topic_tab_title"));
   setText("settings-tab-title", t("settings_tab_title"));
@@ -6623,11 +6982,33 @@ function applyTranslations() {
   );
   setText("browse-tab-title", t("browse_tab_title"));
   setText("qa-evaluate-tab-title", t("qa_evaluate_tab_title"));
+  setText("chat-qa-tab-title", t("tab_chat_qa"));
+  setText("chat-qa-tab-copy", t("chat_qa_tab_copy"));
+  setText("chat-qa-send", t("chat_qa_send"));
+  chatQaInput?.setAttribute("placeholder", t("chat_qa_placeholder"));
   setText("qa-evaluate-tab-copy", t("qa_evaluate_tab_copy"));
   setText("model-trial-tab-title", t("model_trial_tab_title"));
   setText("model-trial-tab-copy", t("model_trial_tab_copy"));
   setText("recent-updates-title", t("recent_updates_title"));
-  setText("feedback-title", t("feedback_title"));
+  setText("feedback2-panel-title", t("tab_feedback2"));
+  setText("feedback2-email-title", t("feedback_email"));
+  setText("feedback2-email-hint", t("feedback_email_hint"));
+  setText("feedback2-email-link", t("feedback_email"));
+  setText("feedback2-github-title", t("feedback_github"));
+  setText("feedback2-github-hint", t("feedback_github_hint"));
+  setText("feedback2-github-button", t("feedback_github"));
+  setText("feedback2-form-title", t("feedback_form"));
+  setText("feedback2-form-hint", t("feedback_form_hint"));
+  setText("feedback2-login-required", t("feedback_form_login_required"));
+  setText("feedback2-title-label", t("feedback_title_label"));
+  document.querySelector<HTMLInputElement>("#feedback2-title")?.setAttribute("placeholder", t("feedback_title_placeholder"));
+  setText("feedback2-content-label", t("feedback_content_label"));
+  document.querySelector<HTMLTextAreaElement>("#feedback2-content")?.setAttribute("placeholder", t("feedback_content_placeholder"));
+  setText("feedback2-category-label", t("feedback_category_label"));
+  setText("feedback2-cat-feature", t("feedback_category_feature"));
+  setText("feedback2-cat-bug", t("feedback_category_bug"));
+  setText("feedback2-cat-other", t("feedback_category_other"));
+  setText("feedback2-submit-button", t("feedback_submit"));
   setText("model-section-title", t("model_section_title"));
   setText("output-section-title", t("output_root"));
   setText("output-root-label", t("output_root"));
@@ -6636,7 +7017,6 @@ function applyTranslations() {
   setText("open-output-root", t("action_open_output_dir"));
   setText("reset-output-root", t("action_restore_default"));
   setText("integration-section-title", t("integration_section_title"));
-  setText("platform-account-title", t("platform_account_card_title"));
   setText("runtime-section-title", t("runtime_section_title"));
   setText("advanced-settings-summary", t("advanced_settings_summary"));
   setText("advanced-settings-copy", t("advanced_settings_copy"));
@@ -6668,15 +7048,12 @@ function applyTranslations() {
   setText("cancel-topic-field-selection", t("topic_field_cancel"));
   setText("close-topic-field-modal", t("topic_field_close"));
   setText("provider-preset-label", t("provider_preset"));
-  setText("provider-preset-hint", t("provider_preset_hint"));
   setText("provider-label", t("provider"));
   setText("model-label", t("model"));
   setText("custom-model-label", t("custom_model"));
   setText("base-url-label", t("base_url"));
   setText("api-key-label", t("api_key"));
-  setText("api-key-hint", t("api_key_hint"));
-  setText("qa-platform-url-label", t("qa_platform_url"));
-  setText("qa-platform-url-hint", t("qa_platform_url_hint"));
+  setText("qa-platform-env-label", t("qa_platform_env_label"));
   setText("qa-platform-username-label", t("qa_platform_username"));
   setText("qa-platform-password-label", t("qa_platform_password"));
   setText("literature-api-url-label", t("literature_api_url"));
@@ -6716,7 +7093,9 @@ function applyTranslations() {
   updateRunButtonUi();
   addTopicTagButton.textContent = t("add_tag");
   topicTagInput.placeholder = t("custom_tag_placeholder");
-  qaPlatformUrlInput.placeholder = DEFAULT_QA_PLATFORM_URL;
+  setText("qa-platform-dev-label", t("qa_platform_dev"));
+  setText("qa-platform-prod-label", t("qa_platform_prod"));
+  platformLoginButton.textContent = t("platform_action_login");
   qaPlatformUsernameInput.placeholder = currentLang === "zh" ? "你的平台账号" : "your account";
   literatureApiUrlInput.placeholder = "https://example.com/literature/api";
   updateApiKeyVisibilityUi();
@@ -6739,6 +7118,7 @@ function applyTranslations() {
   renderFirstLaunchModal();
   renderOutput();
   renderBrowseView();
+  syncStickyOffsets();
 }
 
 function readNumber(input: HTMLInputElement): number {
@@ -6993,7 +7373,7 @@ function hasModelSettingsReady() {
 }
 
 function shouldShowFirstLaunchModal() {
-  return window.localStorage.getItem(FIRST_LAUNCH_COMPLETED_KEY) !== "true";
+  return false;
 }
 
 function closeFirstLaunchModal() {
@@ -7557,7 +7937,9 @@ function applyRequest(request: PipelineFormRequest) {
   providerInput.value = request.provider;
   baseUrlInput.value = request.baseUrl ?? "";
   apiKeyInput.value = request.apiKey ?? "";
-  qaPlatformUrlInput.value = request.qaPlatformUrl ?? DEFAULT_QA_PLATFORM_URL;
+  const savedUrl = request.qaPlatformUrl ?? "";
+  if (qaPlatformDevInput) qaPlatformDevInput.checked = savedUrl.includes("127.0.0.1");
+  if (qaPlatformProdInput) qaPlatformProdInput.checked = !savedUrl.includes("127.0.0.1");
   qaPlatformUsernameInput.value = request.qaPlatformUsername ?? "";
   qaPlatformPasswordInput.value = request.qaPlatformPassword ?? "";
   literatureApiUrlInput.value = request.literatureApiUrl ?? "";
@@ -7687,6 +8069,23 @@ for (const tab of tabs) {
   });
 }
 
+tabsContainer.addEventListener("pointerup", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const tab = target.closest<HTMLButtonElement>("[data-tab]");
+  const nextTab = tab?.dataset.tab as UiTab | undefined;
+  if (nextTab) {
+    setCurrentTab(nextTab);
+  }
+});
+
+topbarTabSelect.addEventListener("change", () => {
+  const nextTab = topbarTabSelect.value as UiTab;
+  setCurrentTab(nextTab);
+});
+
 selectedTopicTags.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -7799,6 +8198,14 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+window.addEventListener("resize", syncStickyOffsets);
+
+if (topbar && typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    syncStickyOffsets();
+  }).observe(topbar);
+}
+
 qaModeNormalInput.addEventListener("change", () => {
   clearManagedResumeBatchOnUserEdit();
   normalizeRuntimeParameterInputs(true);
@@ -7902,11 +8309,20 @@ apiKeyInput.addEventListener("input", () => {
   renderSetupSummary();
   scheduleAutoSave();
 });
-qaPlatformUrlInput.addEventListener("input", () => {
+qaPlatformDevInput?.addEventListener("change", () => {
   resetPlatformIntegrationState();
   renderBrowseView();
   renderPlatformPanels();
   scheduleAutoSave();
+});
+qaPlatformProdInput?.addEventListener("change", () => {
+  resetPlatformIntegrationState();
+  renderBrowseView();
+  renderPlatformPanels();
+  scheduleAutoSave();
+});
+platformLoginButton?.addEventListener("click", () => {
+  void refreshPlatformLogin();
 });
 qaPlatformUsernameInput.addEventListener("input", () => {
   resetPlatformIntegrationState();
@@ -8045,17 +8461,12 @@ function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
 }
 
 function updateCheckButtonUi() {
-  const label = document.querySelector<HTMLElement>("#check-update-label");
-  if (!label) {
-    return;
-  }
-
   if (pendingAppUpdate?.updateAvailable) {
-    label.textContent = appUpdateLastError ? t("action_retry_update") : t("action_install_update");
+    checkUpdateButton.textContent = appUpdateLastError ? t("action_retry_update") : t("action_install_update");
     return;
   }
 
-  label.textContent = t("action_check_update");
+  checkUpdateButton.textContent = t("action_check_update");
 }
 
 function classifyUpdateErrorMessage(errorText: string): string {
@@ -8628,9 +9039,7 @@ async function initializeApp() {
     runModeBlock.hidden = true;
   }
   openRunOutputDirButton.hidden = true;
-  if (!qaPlatformUrlInput.value.trim()) {
-    qaPlatformUrlInput.value = DEFAULT_QA_PLATFORM_URL;
-  }
+  syncStickyOffsets();
   applyTranslations();
   syncProviderPresetInput();
   normalizeRuntimeParameterInputs(true);
@@ -8638,13 +9047,13 @@ async function initializeApp() {
   normalizeRuntimeParameterInputs(true);
   autoSaveEnabled = true;
   renderRunStats();
-  renderPlatformPanels();
+  try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels: ${String(e)}`); }
   void loadBrowseBatches();
   maybeShowFirstLaunchModal();
   // Auto-login if platform credentials are saved
   if (currentQaPlatformUrl() && hasQaPlatformCredentials()) {
     platformLoginState = { kind: "loading" };
-    renderPlatformPanels();
+    try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels(auth): ${String(e)}`); }
     try {
       const response = await invoke<PlatformLoginResponse>("login_platform", {
         platformUrl: currentQaPlatformUrl(),
@@ -8663,20 +9072,25 @@ async function initializeApp() {
     } catch {
       platformLoginState = { kind: "idle" };
     }
-    renderPlatformPanels();
+    try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels(auth): ${String(e)}`); }
   }
+  // Pre-render all lazy panels so they are populated before the user clicks them
+  if (chatSessions.length === 0) createChatSession();
+  try { renderChatQaPanel(); } catch (e) { appendLog(`renderChatQaPanel(init): ${String(e)}`); }
+  try { renderFeedback2Panel(); } catch (e) { appendLog(`renderFeedback2Panel(init): ${String(e)}`); }
+  try { renderRecentUpdatesPanel(); } catch (e) { appendLog(`renderRecentUpdatesPanel(init): ${String(e)}`); }
 }
 
 void initializeApp();
 
-// ---- v0.1.8: Feedback & recent updates event handlers ----
+// ---- Feedback event handlers ----
 
-feedbackPanel?.addEventListener("click", (event) => {
+feedback2Panel?.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
-  const button = target.closest<HTMLButtonElement>("[data-feedback-action]");
-  const action = button?.dataset.feedbackAction;
+  const button = target.closest<HTMLButtonElement>("[data-feedback2-action]");
+  const action = button?.dataset.feedback2Action;
   if (!action || button.disabled) return;
 
   if (action === "github") {
@@ -8685,12 +9099,55 @@ feedbackPanel?.addEventListener("click", (event) => {
   }
 });
 
-feedbackPanel?.addEventListener("submit", (event) => {
+feedback2Panel?.addEventListener("submit", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLFormElement)) return;
-  if (target.id === "feedback-form") {
+  if (target.id === "feedback2-form") {
     event.preventDefault();
-    void handleFeedbackFormSubmit(event);
+    void handleFeedback2FormSubmit(event);
   }
 });
 
+// ---- Chat QA event handlers ----
+
+chatQaSessionsBar?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const deleteBtn = target.closest<HTMLElement>("[data-delete-session]");
+  if (deleteBtn) {
+    event.stopPropagation();
+    deleteChatSession(deleteBtn.dataset.deleteSession!);
+    return;
+  }
+
+  const newBtn = target.closest<HTMLElement>("#chat-qa-new-session-button");
+  if (newBtn) {
+    createChatSession();
+    return;
+  }
+
+  const uploadBtn = target.closest<HTMLElement>("#chat-qa-upload-button");
+  if (uploadBtn && !(uploadBtn as HTMLButtonElement).disabled) {
+    const sessionId = uploadBtn.dataset.uploadSession;
+    if (sessionId) void uploadChatSession(sessionId);
+    return;
+  }
+
+  const tab = target.closest<HTMLElement>(".chat-qa-session-tab");
+  if (tab) {
+    switchChatSession(tab.dataset.sessionId!);
+    return;
+  }
+});
+
+chatQaSendButton?.addEventListener("click", () => {
+  void handleChatSend();
+});
+
+chatQaInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void handleChatSend();
+  }
+});
