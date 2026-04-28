@@ -3605,6 +3605,50 @@ function renderPaperQaPanel() {
   if (tabCopy) tabCopy.textContent = t("paper_qa_empty");
 }
 
+function addPaperFiles(files: FileList | File[]) {
+  const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".pdf"));
+  if (pdfFiles.length === 0) return;
+
+  const remaining = 20 - paperFiles.length;
+  if (remaining <= 0) {
+    paperQaErrorMessage = t("paper_qa_max_files");
+    renderPaperQaPanel();
+    return;
+  }
+
+  const toAdd = pdfFiles.slice(0, remaining);
+  if (pdfFiles.length > remaining) {
+    paperQaErrorMessage = t("paper_qa_max_files");
+  } else {
+    paperQaErrorMessage = null;
+  }
+
+  for (const file of toAdd) {
+    const path = (file as any).path as string | undefined;
+    const paperFile: PaperFile = {
+      id: crypto.randomUUID(),
+      name: file.name,
+      path: path ?? "",
+      status: "pending",
+      mdText: null,
+      chunks: null,
+      error: null,
+    };
+    paperFiles.push(paperFile);
+  }
+
+  renderPaperQaPanel();
+}
+
+function removePaperFile(id: string) {
+  paperFiles = paperFiles.filter(f => f.id !== id);
+  if (paperFiles.length === 0) {
+    paperQaResult = null;
+  }
+  paperQaErrorMessage = null;
+  renderPaperQaPanel();
+}
+
 function setCurrentTab(tab: UiTab) {
   currentTab = tab;
   topbarTabSelect.value = tab;
@@ -9091,6 +9135,37 @@ chatQaSessionsBar?.addEventListener("click", (event) => {
     return;
   }
 
+  // Paper QA: Add PDF
+  if (target.closest("#paper-qa-add-btn")) {
+    document.querySelector<HTMLInputElement>("#paper-qa-file-input")?.click();
+    return;
+  }
+  // Paper QA: Convert
+  const paperConvBtn = target.closest<HTMLElement>("#paper-qa-convert-btn");
+  if (paperConvBtn && !(paperConvBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaConvert();
+    return;
+  }
+  // Paper QA: Generate
+  const paperGenBtn = target.closest<HTMLElement>("#paper-qa-generate-btn");
+  if (paperGenBtn && !(paperGenBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaGenerate();
+    return;
+  }
+  // Paper QA: Upload
+  const paperUpBtn = target.closest<HTMLElement>("#paper-qa-upload-btn");
+  if (paperUpBtn && !(paperUpBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaUpload();
+    return;
+  }
+  // Paper QA: Remove file
+  const paperRmBtn = target.closest<HTMLElement>("[data-remove-file]");
+  if (paperRmBtn) {
+    const fileId = paperRmBtn.dataset.removeFile;
+    if (fileId) removePaperFile(fileId);
+    return;
+  }
+
   const tab = target.closest<HTMLElement>(".chat-qa-session-tab");
   if (tab) {
     switchChatSession(tab.dataset.sessionId!);
@@ -9107,4 +9182,35 @@ chatQaInput?.addEventListener("keydown", (event) => {
     event.preventDefault();
     void handleChatSend();
   }
+});
+
+// Paper QA: file input
+document.querySelector("#paper-qa-file-input")?.addEventListener("change", (event) => {
+  const input = event.target as HTMLInputElement;
+  if (input.files?.length) {
+    addPaperFiles(input.files);
+    input.value = "";
+  }
+});
+
+// Paper QA: drag & drop
+const paperQaPanelEl = document.querySelector("#paper-qa-panel");
+paperQaPanelEl?.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+paperQaPanelEl?.addEventListener("drop", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer?.files?.length) {
+    addPaperFiles(e.dataTransfer.files);
+  }
+});
+
+// Paper QA: CoT ratio slider
+document.querySelector("#paper-qa-cot-ratio")?.addEventListener("input", (event) => {
+  const slider = event.target as HTMLInputElement;
+  paperQaCotRatio = parseFloat(slider.value);
+  const valEl = document.querySelector("#paper-qa-cot-ratio-value");
+  if (valEl) valEl.textContent = String(paperQaCotRatio);
 });
