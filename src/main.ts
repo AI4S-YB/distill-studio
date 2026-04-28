@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import "./styles.css";
 
@@ -3032,7 +3033,6 @@ app.innerHTML = `
           <div class="platform-inline-banner error" id="paper-qa-error-banner" hidden></div>
           <div class="platform-inline-banner success" id="paper-qa-success-banner" hidden></div>
           <div class="paper-qa-toolbar">
-            <input type="file" id="paper-qa-file-input" accept=".pdf" multiple hidden>
             <button class="paper-qa-toolbar-button" type="button" id="paper-qa-add-btn">${t("paper_qa_add")}</button>
             <button class="paper-qa-toolbar-button paper-qa-toolbar-button-primary" type="button" id="paper-qa-convert-btn">${t("paper_qa_convert")}</button>
             <button class="paper-qa-toolbar-button paper-qa-toolbar-button-primary" type="button" id="paper-qa-generate-btn">${t("paper_qa_generate")}</button>
@@ -3632,9 +3632,21 @@ function renderPaperQaPanel() {
   if (tabCopy) tabCopy.textContent = t("paper_qa_empty");
 }
 
-function addPaperFiles(files: FileList | File[]) {
-  const pdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".pdf"));
-  if (pdfFiles.length === 0) return;
+function addPaperFiles(filesOrPaths: FileList | File[] | string[]) {
+  let paths: string[];
+  if (typeof filesOrPaths[0] === "string") {
+    // Tauri open() dialog returns string paths
+    paths = filesOrPaths as string[];
+  } else {
+    // HTML5 drag-drop / file input
+    const fileObjs = Array.from(filesOrPaths as FileList | File[]);
+    paths = fileObjs
+      .filter(f => f.name.toLowerCase().endsWith(".pdf"))
+      .map(f => (f as any).path as string)
+      .filter(Boolean);
+  }
+
+  if (paths.length === 0) return;
 
   const remaining = 20 - paperFiles.length;
   if (remaining <= 0) {
@@ -3643,19 +3655,19 @@ function addPaperFiles(files: FileList | File[]) {
     return;
   }
 
-  const toAdd = pdfFiles.slice(0, remaining);
-  if (pdfFiles.length > remaining) {
+  const toAdd = paths.slice(0, remaining);
+  if (paths.length > remaining) {
     paperQaErrorMessage = t("paper_qa_max_files");
   } else {
     paperQaErrorMessage = null;
   }
 
-  for (const file of toAdd) {
-    const path = (file as any).path as string | undefined;
+  for (const p of toAdd) {
+    const name = p.split(/[/\\]/).pop() ?? p;
     const paperFile: PaperFile = {
       id: crypto.randomUUID(),
-      name: file.name,
-      path: path ?? "",
+      name,
+      path: p,
       status: "pending",
       mdText: null,
       chunks: null,
@@ -9322,9 +9334,17 @@ paperQaPanelEl?.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
-  // Add PDF
+  // Add PDF — use Tauri native dialog for real file paths
   if (target.closest("#paper-qa-add-btn")) {
-    document.querySelector<HTMLInputElement>("#paper-qa-file-input")?.click();
+    void (async () => {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+      if (selected) {
+        addPaperFiles(Array.isArray(selected) ? selected : [selected]);
+      }
+    })();
     return;
   }
   // Convert
@@ -9354,25 +9374,13 @@ paperQaPanelEl?.addEventListener("click", (event) => {
   }
 });
 
-// Paper QA: file input
-document.querySelector("#paper-qa-file-input")?.addEventListener("change", (event) => {
-  const input = event.target as HTMLInputElement;
-  if (input.files?.length) {
-    addPaperFiles(input.files);
-    input.value = "";
-  }
-});
-
-// Paper QA: drag & drop
-paperQaPanelEl?.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-});
-paperQaPanelEl?.addEventListener("drop", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (e.dataTransfer?.files?.length) {
-    addPaperFiles(e.dataTransfer.files);
+// Paper QA: Tauri native drag & drop (provides real file paths)
+void listen("tauri://drag-drop", (event: { payload: { type: string; paths: string[] } }) => {
+  if (event.payload.type !== "drop") return;
+  if (currentTab !== "paper-qa") return;
+  const pdfs = (event.payload.paths ?? []).filter((p: string) => p.toLowerCase().endsWith(".pdf"));
+  if (pdfs.length > 0) {
+    addPaperFiles(pdfs);
   }
 });
 
