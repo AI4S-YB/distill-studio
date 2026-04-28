@@ -9298,37 +9298,6 @@ chatQaSessionsBar?.addEventListener("click", (event) => {
     return;
   }
 
-  // Paper QA: Add PDF
-  if (target.closest("#paper-qa-add-btn")) {
-    document.querySelector<HTMLInputElement>("#paper-qa-file-input")?.click();
-    return;
-  }
-  // Paper QA: Convert
-  const paperConvBtn = target.closest<HTMLElement>("#paper-qa-convert-btn");
-  if (paperConvBtn && !(paperConvBtn as HTMLButtonElement).disabled) {
-    void handlePaperQaConvert();
-    return;
-  }
-  // Paper QA: Generate
-  const paperGenBtn = target.closest<HTMLElement>("#paper-qa-generate-btn");
-  if (paperGenBtn && !(paperGenBtn as HTMLButtonElement).disabled) {
-    void handlePaperQaGenerate();
-    return;
-  }
-  // Paper QA: Upload
-  const paperUpBtn = target.closest<HTMLElement>("#paper-qa-upload-btn");
-  if (paperUpBtn && !(paperUpBtn as HTMLButtonElement).disabled) {
-    void handlePaperQaUpload();
-    return;
-  }
-  // Paper QA: Remove file
-  const paperRmBtn = target.closest<HTMLElement>("[data-remove-file]");
-  if (paperRmBtn) {
-    const fileId = paperRmBtn.dataset.removeFile;
-    if (fileId) removePaperFile(fileId);
-    return;
-  }
-
   const tab = target.closest<HTMLElement>(".chat-qa-session-tab");
   if (tab) {
     switchChatSession(tab.dataset.sessionId!);
@@ -9347,6 +9316,44 @@ chatQaInput?.addEventListener("keydown", (event) => {
   }
 });
 
+// Paper QA: toolbar button clicks
+const paperQaPanelEl = document.querySelector("#paper-qa-panel");
+paperQaPanelEl?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  // Add PDF
+  if (target.closest("#paper-qa-add-btn")) {
+    document.querySelector<HTMLInputElement>("#paper-qa-file-input")?.click();
+    return;
+  }
+  // Convert
+  const convBtn = target.closest<HTMLElement>("#paper-qa-convert-btn");
+  if (convBtn && !(convBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaConvert();
+    return;
+  }
+  // Generate
+  const genBtn = target.closest<HTMLElement>("#paper-qa-generate-btn");
+  if (genBtn && !(genBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaGenerate();
+    return;
+  }
+  // Upload
+  const upBtn = target.closest<HTMLElement>("#paper-qa-upload-btn");
+  if (upBtn && !(upBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaUpload();
+    return;
+  }
+  // Remove file
+  const rmBtn = target.closest<HTMLElement>("[data-remove-file]");
+  if (rmBtn) {
+    const fileId = rmBtn.dataset.removeFile;
+    if (fileId) removePaperFile(fileId);
+    return;
+  }
+});
+
 // Paper QA: file input
 document.querySelector("#paper-qa-file-input")?.addEventListener("change", (event) => {
   const input = event.target as HTMLInputElement;
@@ -9357,7 +9364,6 @@ document.querySelector("#paper-qa-file-input")?.addEventListener("change", (even
 });
 
 // Paper QA: drag & drop
-const paperQaPanelEl = document.querySelector("#paper-qa-panel");
 paperQaPanelEl?.addEventListener("dragover", (e) => {
   e.preventDefault();
   e.stopPropagation();
