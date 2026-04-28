@@ -3614,7 +3614,8 @@ function renderPaperQaPanel() {
   }
   if (generateBtn) {
     const hasChunked = paperFiles.some(f => f.status === "chunked");
-    const hasProvider = (baseUrlInput.value.trim() && apiKeyInput.value.trim()) || isUsingPlatformModel();
+    const hasSettingsProvider = baseUrlInput.value.trim() && apiKeyInput.value.trim();
+    const hasProvider = hasSettingsProvider || isUsingPlatformModel() || platformLoginState.kind === "success";
     generateBtn.disabled = paperQaConverting || paperQaGenerating || !hasChunked || !hasProvider;
     generateBtn.title = (!hasProvider && hasChunked) ? t("paper_qa_no_provider") : "";
   }
@@ -3624,7 +3625,8 @@ function renderPaperQaPanel() {
   }
   if (statusEl) {
     const hasChunked = paperFiles.some(f => f.status === "chunked");
-    const hasProvider = (baseUrlInput.value.trim() && apiKeyInput.value.trim()) || isUsingPlatformModel();
+    const hasSettingsProvider = baseUrlInput.value.trim() && apiKeyInput.value.trim();
+    const hasProvider = hasSettingsProvider || isUsingPlatformModel() || platformLoginState.kind === "success";
     if (paperQaConverting) statusEl.textContent = t("paper_qa_converting");
     else if (paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
     else if (paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
@@ -3745,12 +3747,20 @@ async function handlePaperQaGenerate() {
   const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
   if (chunkedFiles.length === 0) return;
 
-  const provider = isUsingPlatformModel() ? "openai-compatible" : providerInput.value;
-  const baseUrl = baseUrlInput.value.trim();
-  const apiKey = apiKeyInput.value.trim();
-  const model = isUsingPlatformModel()
+  // Provider resolution: Settings > platform proxy > error
+  const provider = isUsingPlatformModel() ? "openai-compatible" : (providerInput.value.trim() || "openai-compatible");
+  let baseUrl = baseUrlInput.value.trim();
+  let apiKey = apiKeyInput.value.trim();
+  let model = isUsingPlatformModel()
     ? (currentPlatformGenerateModel()?.model ?? currentModelValue())
     : currentModelValue();
+
+  // Fallback to platform proxy if logged in but Settings not configured
+  if ((!baseUrl || !apiKey) && platformLoginState.kind === "success") {
+    baseUrl = platformLoginState.response.endpoints.platformApiBaseUrl + "/api/generate";
+    apiKey = qaPlatformPasswordInput?.value.trim() ?? "";
+    if (!model) model = currentModelValue();
+  }
 
   if (!baseUrl || !apiKey || !model) {
     paperQaErrorMessage = t("paper_qa_no_provider");
