@@ -3649,6 +3649,88 @@ function removePaperFile(id: string) {
   renderPaperQaPanel();
 }
 
+async function handlePaperQaConvert() {
+  if (paperQaConverting || paperQaGenerating) return;
+  const pending = paperFiles.filter(f => f.status === "pending");
+  if (pending.length === 0) return;
+
+  paperQaConverting = true;
+  paperQaErrorMessage = null;
+  renderPaperQaPanel();
+
+  for (const file of pending) {
+    file.status = "converting";
+    renderPaperQaPanel();
+
+    try {
+      const mdText = await invoke<string>("convert_pdf_via_mineru", { pdfPath: file.path });
+      file.mdText = mdText;
+      file.status = "converted";
+      renderPaperQaPanel();
+
+      const chunks = await invoke<PaperChunk[]>("chunk_paper_md", {
+        mdText,
+        paperTitle: file.name.replace(/\.pdf$/i, ""),
+      });
+      file.chunks = chunks;
+      file.status = "chunked";
+    } catch (err) {
+      file.status = "error";
+      file.error = String(err);
+    }
+    renderPaperQaPanel();
+  }
+
+  paperQaConverting = false;
+  renderPaperQaPanel();
+}
+
+async function handlePaperQaGenerate() {
+  if (paperQaConverting || paperQaGenerating) return;
+  const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
+  if (chunkedFiles.length === 0) return;
+
+  const provider = isUsingPlatformModel() ? "openai-compatible" : providerInput.value;
+  const baseUrl = baseUrlInput.value.trim();
+  const apiKey = apiKeyInput.value.trim();
+  const model = isUsingPlatformModel()
+    ? (currentPlatformGenerateModel()?.modelName ?? currentModelValue())
+    : currentModelValue();
+
+  if (!baseUrl || !apiKey || !model) {
+    paperQaErrorMessage = t("paper_qa_no_provider");
+    renderPaperQaPanel();
+    return;
+  }
+
+  const allChunks = chunkedFiles.flatMap(f => f.chunks!);
+  const paperTitle = chunkedFiles.map(f => f.name).join(", ");
+  const request = {
+    chunks: allChunks,
+    paperTitle,
+    provider,
+    baseUrl,
+    apiKey,
+    model,
+    cotRatio: paperQaCotRatio,
+  };
+
+  paperQaGenerating = true;
+  paperQaErrorMessage = null;
+  paperQaUploadMessage = null;
+  renderPaperQaPanel();
+
+  try {
+    const result = await invoke<PaperQaGenerateResponse>("generate_paper_qa", { request });
+    paperQaResult = result;
+  } catch (err) {
+    paperQaErrorMessage = t("paper_qa_generate_error") + ": " + String(err);
+  }
+
+  paperQaGenerating = false;
+  renderPaperQaPanel();
+}
+
 function setCurrentTab(tab: UiTab) {
   currentTab = tab;
   topbarTabSelect.value = tab;
