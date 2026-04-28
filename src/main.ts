@@ -3731,6 +3731,60 @@ async function handlePaperQaGenerate() {
   renderPaperQaPanel();
 }
 
+async function handlePaperQaUpload() {
+  if (paperQaUploading || !paperQaResult?.items.length) return;
+
+  const auth = currentPlatformAuthPayload();
+  if (!auth) {
+    paperQaErrorMessage = t("paper_qa_no_provider");
+    renderPaperQaPanel();
+    return;
+  }
+
+  paperQaUploading = true;
+  paperQaErrorMessage = null;
+  paperQaUploadMessage = null;
+  renderPaperQaPanel();
+
+  try {
+    const rows = paperQaResult.items.map((item) => ({
+      id: item.id,
+      question: item.instruction,
+      answer: item.output,
+      context: item.reasoning ?? "",
+      difficulty: "medium",
+      source: "paper_qa",
+      model: item.qaType === "cot" ? "cot" : "direct",
+      metadata: {
+        paperTitle: item.paperTitle,
+        chunkId: item.chunkId,
+        sectionType: item.sectionType,
+        qaType: item.qaType,
+      },
+      candidateAnswers: [],
+    }));
+
+    const batchName = `Paper QA ${new Date().toISOString().slice(0, 19)}`;
+    const externalBatchId = crypto.randomUUID();
+
+    await invoke("push_paper_qa", {
+      platformUrl: auth.platformUrl,
+      username: auth.username,
+      password: auth.password,
+      batchName,
+      externalBatchId,
+      rows,
+    });
+
+    paperQaUploadMessage = t("paper_qa_upload_done");
+  } catch (err) {
+    paperQaErrorMessage = t("paper_qa_upload_error") + ": " + String(err);
+  }
+
+  paperQaUploading = false;
+  renderPaperQaPanel();
+}
+
 function setCurrentTab(tab: UiTab) {
   currentTab = tab;
   topbarTabSelect.value = tab;
