@@ -2359,6 +2359,33 @@ let selectedPlatformModelId: number | null = null;
 
 // Paper QA state
 type PaperFileStatus = "pending" | "converting" | "converted" | "chunked" | "error";
+type PaperChunk = {
+  id: string;
+  text: string;
+  sectionType: string;
+  charCount: number;
+};
+type PaperQaItem = {
+  id: string;
+  qaType: string;
+  instruction: string;
+  reasoning?: string | null;
+  output: string;
+  paperTitle: string;
+  chunkId: string;
+  sectionType: string;
+};
+type PaperQaStats = {
+  total: number;
+  cotCount: number;
+  qaCount: number;
+  cotRatio: number;
+  qaRatio: number;
+};
+type PaperQaGenerateResponse = {
+  items: PaperQaItem[];
+  stats: PaperQaStats;
+};
 type PaperFile = {
   id: string;
   name: string;
@@ -3694,7 +3721,7 @@ async function handlePaperQaGenerate() {
   const baseUrl = baseUrlInput.value.trim();
   const apiKey = apiKeyInput.value.trim();
   const model = isUsingPlatformModel()
-    ? (currentPlatformGenerateModel()?.modelName ?? currentModelValue())
+    ? (currentPlatformGenerateModel()?.model ?? currentModelValue())
     : currentModelValue();
 
   if (!baseUrl || !apiKey || !model) {
