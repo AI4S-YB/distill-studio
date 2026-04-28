@@ -478,7 +478,6 @@ function isDefaultCotSectionHeaderText(value: string): boolean {
 }
 
 const LANG_STORAGE_KEY = "distill-studio.lang";
-const FIRST_LAUNCH_COMPLETED_KEY = "distill-studio.first-launch-complete";
 const DEFAULT_PROFILE_NAME = "default";
 const AUTO_SAVE_DELAY_MS = 600;
 const MANAGED_OUTPUT_DIR = "__managed__";
@@ -1165,6 +1164,27 @@ const translations: Record<Lang, Record<string, string>> = {
     chat_qa_upload_failed: "上传失败",
     chat_qa_upload_no_auth: "请先在设置中登录平台",
     chat_qa_upload_empty: "当前会话无消息可上传",
+    paper_qa_tab: "文献问答",
+    paper_qa_add: "添加 PDF",
+    paper_qa_convert: "转换",
+    paper_qa_generate: "生成问答",
+    paper_qa_upload: "上传到平台",
+    paper_qa_cot_ratio: "思维链比例",
+    paper_qa_pending: "等待中",
+    paper_qa_converting: "转换中…",
+    paper_qa_converted: "已转换",
+    paper_qa_chunked: "{n} 个分块",
+    paper_qa_error: "出错",
+    paper_qa_empty: "添加 PDF 文献开始使用",
+    paper_qa_no_provider: "请先在设置中配置模型",
+    paper_qa_max_files: "最多 20 篇 PDF",
+    paper_qa_drag_hint: "拖拽 PDF 文件到此处",
+    paper_qa_stats: "共 {total} 条 · {cot} 思维链 + {qa} 问答",
+    paper_qa_uploading: "上传中…",
+    paper_qa_upload_done: "上传完成",
+    paper_qa_upload_error: "上传失败",
+    paper_qa_generating: "生成中…",
+    paper_qa_generate_error: "生成失败",
     tab_internal_badge: "内测",
     tab_topic_copy: "研究主题与领域标签",
     tab_settings_copy: "模型、输出与批处理参数",
@@ -1199,37 +1219,6 @@ const translations: Record<Lang, Record<string, string>> = {
     settings_checklist_missing_model: "模型",
     settings_checklist_missing_base_url: "Base URL",
     settings_checklist_missing_api_key: "API 密钥",
-    run_readiness_title: "运行前检查",
-    run_readiness_ready: "已就绪",
-    run_readiness_pending: "待补充",
-    run_readiness_ready_copy: "主题和基础配置已齐备，可以直接开始生成。",
-    run_readiness_pending_copy: "当前还不能直接运行，请先补齐：{value}",
-    run_readiness_open_settings: "去设置",
-    run_readiness_missing_prompt: "研究主题",
-    first_launch_title: "欢迎使用 QA小灶",
-    first_launch_copy: "这是你第一次打开程序。当前版本只需要做一次最小配置，后续即可像普通桌面软件一样直接使用。",
-    first_launch_step_settings_title: "1. 先完成一次模型设置",
-    first_launch_step_settings_copy: "到“设置”页选择模型厂商、模型，并填写对应的 API 密钥。配置会自动保存在本机。",
-    first_launch_step_topic_title: "2. 再填写研究主题并运行",
-    first_launch_step_topic_copy: "回到“QA生成”，输入研究主题，按需补充领域标签，然后点击“运行”。",
-    first_launch_step_browse_title: "3. 最后到浏览QA查看结果",
-    first_launch_step_browse_copy: "生成完成后，可在“浏览QA”里查看历史任务、问题列表和单条 QA 详情。",
-    first_launch_note_title: "补充说明",
-    first_launch_note_copy: "当前第一档方案仍是客户端直连模型服务，所以首次使用需要你自己提供 API 密钥；但不需要安装 Rust、Node 或开发环境。",
-    first_launch_open_settings: "去设置",
-    first_launch_start_now: "我知道了",
-    topic_quickstart_title: "快速开始",
-    topic_quickstart_copy: "第一次使用时，只需要按下面三步完成最小配置。",
-    topic_quickstart_step_topic: "填写研究主题",
-    topic_quickstart_step_topic_ready: "主题已填写，可以继续补充标签或直接运行。",
-    topic_quickstart_step_topic_pending: "先写一句清晰的研究主题，后续会自动转成 QA 任务。",
-    topic_quickstart_step_settings: "完成模型设置",
-    topic_quickstart_step_settings_ready: "模型与接口已就绪，程序会自动保存在本机。",
-    topic_quickstart_step_settings_pending: "第一次使用请到设置页填写模型厂商、模型和 API 密钥。",
-    topic_quickstart_step_run: "点击运行开始生成",
-    topic_quickstart_step_run_ready: "现在可以直接点击“运行”，下方会实时显示日志与进度。",
-    topic_quickstart_step_run_pending: "补齐前两步后，这里会变成可直接运行。",
-    topic_quickstart_open_settings: "打开设置",
     browse_tab_title: "浏览QA",
     qa_evaluate_tab_title: "QA评测",
     qa_evaluate_tab_copy: "检查平台连通性、确认登录状态，并打开平台评测工作区。",
@@ -1711,6 +1700,27 @@ const translations: Record<Lang, Record<string, string>> = {
     chat_qa_upload_failed: "Upload failed",
     chat_qa_upload_no_auth: "Please login to platform in Settings first",
     chat_qa_upload_empty: "No messages to upload",
+    paper_qa_tab: "Paper QA",
+    paper_qa_add: "Add PDF",
+    paper_qa_convert: "Convert",
+    paper_qa_generate: "Generate QA",
+    paper_qa_upload: "Upload to Platform",
+    paper_qa_cot_ratio: "CoT Ratio",
+    paper_qa_pending: "Pending",
+    paper_qa_converting: "Converting...",
+    paper_qa_converted: "Converted",
+    paper_qa_chunked: "{n} chunks",
+    paper_qa_error: "Error",
+    paper_qa_empty: "Add PDF files to get started.",
+    paper_qa_no_provider: "Configure a provider in Settings first.",
+    paper_qa_max_files: "Maximum 20 PDF files.",
+    paper_qa_drag_hint: "Drop PDF files here",
+    paper_qa_stats: "{total} total · {cot} CoT + {qa} QA",
+    paper_qa_uploading: "Uploading...",
+    paper_qa_upload_done: "Upload complete",
+    paper_qa_upload_error: "Upload failed",
+    paper_qa_generating: "Generating...",
+    paper_qa_generate_error: "Generation failed",
     tab_internal_badge: "Beta",
     tab_topic_copy: "Research topic and domain tags",
     tab_settings_copy: "Model, output, and batch parameters",
@@ -1745,37 +1755,7 @@ const translations: Record<Lang, Record<string, string>> = {
     settings_checklist_missing_model: "model",
     settings_checklist_missing_base_url: "Base URL",
     settings_checklist_missing_api_key: "API key",
-    run_readiness_title: "Pre-Run Check",
-    run_readiness_ready: "Ready",
-    run_readiness_pending: "Pending",
-    run_readiness_ready_copy: "The topic and the basic configuration are ready. You can start generation now.",
-    run_readiness_pending_copy: "The app is not ready to run yet. Please complete: {value}",
-    run_readiness_open_settings: "Open Settings",
     run_readiness_missing_prompt: "topic",
-    first_launch_title: "Welcome to QA小灶",
-    first_launch_copy: "This is your first time opening the app. In the current version, you only need one minimal setup, then you can use it like a normal desktop app.",
-    first_launch_step_settings_title: "1. Finish model setup once",
-    first_launch_step_settings_copy: "Open Settings, choose a provider and model, and fill in the API key. The app will save it locally automatically.",
-    first_launch_step_topic_title: "2. Enter a research topic and run",
-    first_launch_step_topic_copy: "Return to QA Generation, enter the topic, add domain tags if needed, and click Run.",
-    first_launch_step_browse_title: "3. Browse the generated QA",
-    first_launch_step_browse_copy: "After generation finishes, open Browse QA to review run history, question lists, and single QA details.",
-    first_launch_note_title: "Note",
-    first_launch_note_copy: "The current first-tier design still connects directly to the model provider, so first-time use requires your own API key, but no Rust, Node, or developer tools are needed.",
-    first_launch_open_settings: "Open Settings",
-    first_launch_start_now: "Got It",
-    topic_quickstart_title: "Quick Start",
-    topic_quickstart_copy: "For first-time use, you only need these three steps to get started.",
-    topic_quickstart_step_topic: "Enter a research topic",
-    topic_quickstart_step_topic_ready: "The topic is ready. You can add tags or run directly.",
-    topic_quickstart_step_topic_pending: "Start with one clear research topic. The app will turn it into a QA task.",
-    topic_quickstart_step_settings: "Finish model setup",
-    topic_quickstart_step_settings_ready: "The model endpoint is ready, and the app saves it locally automatically.",
-    topic_quickstart_step_settings_pending: "For first-time use, open Settings and fill in the provider, model, and API key.",
-    topic_quickstart_step_run: "Click Run to start generation",
-    topic_quickstart_step_run_ready: "You can click Run now. Logs and progress will appear below in real time.",
-    topic_quickstart_step_run_pending: "Once the first two steps are done, this will become ready to run.",
-    topic_quickstart_open_settings: "Open Settings",
     browse_tab_title: "Browse QA",
     qa_evaluate_tab_title: "QA Evaluate",
     qa_evaluate_tab_copy: "Check platform reachability, verify sign-in, and open the QA evaluation workspace.",
@@ -2496,11 +2476,11 @@ app.innerHTML = `
           </button>
           <button class="tab-button" type="button" data-tab="qa-evaluate" id="tab-qa-evaluate">
             <span class="tab-button-title" id="tab-qa-evaluate-label">QA Evaluate</span>
-            <span class="tab-button-badge" id="tab-qa-evaluate-badge">Internal</span>
+
           </button>
           <button class="tab-button" type="button" data-tab="model-trial" id="tab-model-trial">
             <span class="tab-button-title" id="tab-model-trial-label">Model Trial</span>
-            <span class="tab-button-badge" id="tab-model-trial-badge">Internal</span>
+
           </button>
           <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
             <span class="tab-button-title" id="tab-settings-label">Settings</span>
@@ -2534,7 +2514,6 @@ app.innerHTML = `
         <div class="tab-copy-block">
           <p class="panel-title" id="topic-tab-title">Research Topic</p>
         </div>
-        <section class="topic-quickstart" id="topic-quickstart"></section>
         <label for="prompt" id="topic-prompt-label">Topic prompt</label>
         <textarea id="prompt" rows="7">大豆籽粒油分与蛋白协同改良、种植密度响应、育种策略优化</textarea>
         <div class="mode-panel">
@@ -2619,7 +2598,6 @@ app.innerHTML = `
           </div>
         </div>
         <section class="topic-run-panel">
-          <section class="run-readiness-banner" id="run-readiness-banner"></section>
           <div class="topic-run-actions">
             <button id="run" class="secondary run-primary" type="button">Run pipeline</button>
             <button id="open-run-output-dir" type="button" disabled>Open Output Folder</button>
@@ -3075,11 +3053,6 @@ const topicTagSuggestions = document.querySelector<HTMLElement>("#topic-tag-sugg
 const topicTagInput = document.querySelector<HTMLInputElement>("#topic-tag-input");
 const addTopicTagButton = document.querySelector<HTMLButtonElement>("#add-topic-tag");
 const openTopicFieldSelectorButton = document.querySelector<HTMLButtonElement>("#open-topic-field-selector");
-const topicQuickstart = document.querySelector<HTMLElement>("#topic-quickstart");
-const firstLaunchModal = document.querySelector<HTMLElement>("#first-launch-modal");
-const firstLaunchGrid = document.querySelector<HTMLElement>("#first-launch-grid");
-const firstLaunchConfirmButton = document.querySelector<HTMLButtonElement>("#first-launch-confirm");
-const firstLaunchOpenSettingsButton = document.querySelector<HTMLButtonElement>("#first-launch-open-settings");
 const topicFieldModal = document.querySelector<HTMLElement>("#topic-field-modal");
 const closeTopicFieldModalButton = document.querySelector<HTMLButtonElement>("#close-topic-field-modal");
 const cancelTopicFieldSelectionButton = document.querySelector<HTMLButtonElement>("#cancel-topic-field-selection");
@@ -3139,7 +3112,6 @@ const progressFill = document.querySelector<HTMLElement>("#progress-fill");
 const progressMeta = document.querySelector<HTMLElement>("#progress-meta");
 const progressDetail = document.querySelector<HTMLElement>("#progress-detail");
 const runStatsGrid = document.querySelector<HTMLElement>("#run-stats-grid");
-const runReadinessBanner = document.querySelector<HTMLElement>("#run-readiness-banner");
 const exportLogsButton = document.querySelector<HTMLButtonElement>("#export-logs");
 const logs = document.querySelector<HTMLElement>("#logs");
 const fieldHelpButtons = Array.from(
@@ -3176,11 +3148,6 @@ if (
   !topicTagInput ||
   !addTopicTagButton ||
   !openTopicFieldSelectorButton ||
-  !topicQuickstart ||
-  !firstLaunchModal ||
-  !firstLaunchGrid ||
-  !firstLaunchConfirmButton ||
-  !firstLaunchOpenSettingsButton ||
   !topicFieldModal ||
   !closeTopicFieldModalButton ||
   !cancelTopicFieldSelectionButton ||
@@ -3228,7 +3195,6 @@ if (
   !progressMeta ||
   !progressDetail ||
   !runStatsGrid ||
-  !runReadinessBanner ||
   !exportLogsButton ||
   !logs
 ) {
@@ -4311,8 +4277,6 @@ function renderSetupSummary() {
     }
   ];
 
-    renderTopicQuickstart();
-  renderRunReadinessBanner();
   updateRunButtonUi();
 }
 
@@ -5077,9 +5041,7 @@ function renderPlatformAccountCard() {
   const card = document.querySelector<HTMLElement>("#platform-account-card");
   if (!card) return;
 
-  const isConnected = platformLoginState.kind === "success";
-
-  if (!isConnected) {
+  if (platformLoginState.kind !== "success") {
     card.innerHTML = `
       <div class="platform-account-card disconnected">
         <p class="platform-account-status">${escapeHtml(t("platform_login_idle"))}</p>
@@ -5473,7 +5435,8 @@ async function handleChatSend() {
       {
         request: {
           platformUrl: auth?.platformUrl ?? null,
-          token: auth?.token ?? null,
+          username: auth?.username ?? null,
+          password: auth?.password ?? null,
           provider: providerInput.value,
           baseUrl: baseUrlInput.value.trim(),
           apiKey: apiKeyInput.value.trim(),
@@ -6124,7 +6087,7 @@ async function uploadBrowseBatch(batchId: string) {
   try {
     const response = await invoke<QaBatchUploadResponse>("upload_qa_batch", {
       batchId,
-      platformUrl,
+      platformUrl: currentQaPlatformUrl(),
       username: qaPlatformUsernameInput.value.trim(),
       password: qaPlatformPasswordInput.value.trim()
     });
@@ -6140,7 +6103,7 @@ async function uploadBrowseBatch(batchId: string) {
         reachable: true,
         message: "ok",
         endpoints: {
-          normalizedPlatformUrl: platformUrl,
+          normalizedPlatformUrl: currentQaPlatformUrl(),
           platformWebBaseUrl: response.platformWebBaseUrl,
           platformApiBaseUrl: response.platformApiBaseUrl
         }
@@ -6955,8 +6918,6 @@ function applyTranslations() {
   setText("tab-browse-label", t("tab_browse"));
   setText("tab-qa-evaluate-label", t("tab_qa_evaluate"));
   setText("tab-model-trial-label", t("tab_model_trial"));
-  setText("tab-qa-evaluate-badge", t("tab_internal_badge"));
-  setText("tab-model-trial-badge", t("tab_internal_badge"));
   setText("tab-recent-updates-label", t("tab_recent_updates"));
   setText("tab-chat-qa-label", t("tab_chat_qa"));
   setText("tab-feedback2-label", t("tab_feedback2"));
@@ -7115,7 +7076,6 @@ function applyTranslations() {
   renderTopicTags();
   renderTopicFieldModal();
   renderSetupSummary();
-  renderFirstLaunchModal();
   renderOutput();
   renderBrowseView();
   syncStickyOffsets();
@@ -7372,147 +7332,8 @@ function hasModelSettingsReady() {
   );
 }
 
-function shouldShowFirstLaunchModal() {
-  return false;
-}
-
-function closeFirstLaunchModal() {
-  firstLaunchModal.hidden = true;
-  window.localStorage.setItem(FIRST_LAUNCH_COMPLETED_KEY, "true");
-}
-
-function renderFirstLaunchModal() {
-  const cards = [
-    {
-      title: t("first_launch_step_settings_title"),
-      copy: t("first_launch_step_settings_copy")
-    },
-    {
-      title: t("first_launch_step_topic_title"),
-      copy: t("first_launch_step_topic_copy")
-    },
-    {
-      title: t("first_launch_step_browse_title"),
-      copy: t("first_launch_step_browse_copy")
-    }
-  ];
-
-  setText("first-launch-title", t("first_launch_title"));
-  setText("first-launch-copy", t("first_launch_copy"));
-  setText("first-launch-note-title", t("first_launch_note_title"));
-  setText("first-launch-note-copy", t("first_launch_note_copy"));
-  setText("first-launch-open-settings", t("first_launch_open_settings"));
-  setText("first-launch-confirm", t("first_launch_start_now"));
-
-  firstLaunchGrid.innerHTML = cards
-    .map(
-      ({ title, copy }) => `
-        <article class="first-launch-card">
-          <p class="first-launch-card-title">${escapeHtml(title)}</p>
-          <p class="first-launch-card-copy">${escapeHtml(copy)}</p>
-        </article>
-      `
-    )
-    .join("");
-}
-
-function maybeShowFirstLaunchModal() {
-  renderFirstLaunchModal();
-  firstLaunchModal.hidden = !shouldShowFirstLaunchModal();
-}
-
 function isRunReady() {
   return runReadinessMissingKeys().length === 0;
-}
-
-function renderTopicQuickstart() {
-  const topicReady = promptInput.value.trim().length > 0;
-  const settingsReady = hasModelSettingsReady();
-  const runReady = isRunReady();
-  const steps = [
-    {
-      title: t("topic_quickstart_step_topic"),
-      ready: topicReady,
-      detail: t(topicReady ? "topic_quickstart_step_topic_ready" : "topic_quickstart_step_topic_pending")
-    },
-    {
-      title: t("topic_quickstart_step_settings"),
-      ready: settingsReady,
-      detail: t(
-        settingsReady ? "topic_quickstart_step_settings_ready" : "topic_quickstart_step_settings_pending"
-      ),
-      action: settingsReady
-        ? ""
-        : `<button class="secondary" type="button" data-open-tab="settings">${escapeHtml(t("topic_quickstart_open_settings"))}</button>`
-    },
-    {
-      title: t("topic_quickstart_step_run"),
-      ready: runReady,
-      detail: t(runReady ? "topic_quickstart_step_run_ready" : "topic_quickstart_step_run_pending")
-    }
-  ];
-
-  topicQuickstart.innerHTML = `
-    <div class="topic-quickstart-header">
-      <div>
-        <p class="topic-quickstart-title">${escapeHtml(t("topic_quickstart_title"))}</p>
-        <p class="topic-quickstart-copy">${escapeHtml(t("topic_quickstart_copy"))}</p>
-      </div>
-    </div>
-    <div class="topic-quickstart-grid">
-      ${steps
-        .map(
-          ({ title, ready, detail, action }) => `
-            <article class="topic-quickstart-step" data-ready="${ready ? "true" : "false"}">
-              <div class="topic-quickstart-step-header">
-                <p class="topic-quickstart-step-title">${escapeHtml(title)}</p>
-                <span class="topic-quickstart-step-status" data-ready="${ready ? "true" : "false"}">${escapeHtml(
-                  t(ready ? "settings_checklist_done" : "settings_checklist_pending")
-                )}</span>
-              </div>
-              <p class="topic-quickstart-step-detail">${escapeHtml(detail)}</p>
-              ${action ?? ""}
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderRunReadinessBanner() {
-  const missingLabels = runReadinessMissingKeys().map((key) => t(key));
-  const ready = missingLabels.length === 0;
-  const needsSettingsShortcut = runReadinessMissingKeys().some((key) =>
-    [
-      "settings_checklist_missing_provider",
-      "settings_checklist_missing_model",
-      "settings_checklist_missing_base_url",
-      "settings_checklist_missing_api_key"
-    ].includes(key)
-  );
-
-  runReadinessBanner.innerHTML = `
-    <div class="run-readiness-copy">
-      <div class="run-readiness-header">
-        <p class="run-readiness-title">${escapeHtml(t("run_readiness_title"))}</p>
-        <span class="run-readiness-status" data-ready="${ready ? "true" : "false"}">${escapeHtml(
-          t(ready ? "run_readiness_ready" : "run_readiness_pending")
-        )}</span>
-      </div>
-      <p class="run-readiness-detail">${escapeHtml(
-        ready
-          ? t("run_readiness_ready_copy")
-          : formatMessage("run_readiness_pending_copy", missingLabels.join(currentLang === "zh" ? "、" : ", "))
-      )}</p>
-    </div>
-    ${
-      ready || !needsSettingsShortcut
-        ? ""
-        : `<button class="secondary" type="button" data-open-tab="settings">${escapeHtml(t("run_readiness_open_settings"))}</button>`
-    }
-  `;
-  runReadinessBanner.dataset.ready = ready ? "true" : "false";
 }
 
 function updateRunButtonUi() {
@@ -8789,52 +8610,6 @@ modelTrialPanel.addEventListener("keydown", (event) => {
   }
 });
 
-runReadinessBanner.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) {
-    return;
-  }
-
-  const button = target.closest<HTMLElement>("[data-open-tab]");
-  const nextTab = button?.dataset.openTab as UiTab | undefined;
-  if (nextTab) {
-    setCurrentTab(nextTab);
-  }
-});
-
-topicQuickstart.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) {
-    return;
-  }
-
-  const button = target.closest<HTMLElement>("[data-open-tab]");
-  const nextTab = button?.dataset.openTab as UiTab | undefined;
-  if (nextTab) {
-    setCurrentTab(nextTab);
-  }
-});
-
-firstLaunchModal.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement)) {
-    return;
-  }
-
-  if (target.dataset.firstLaunchClose === "true") {
-    closeFirstLaunchModal();
-  }
-});
-
-firstLaunchOpenSettingsButton.addEventListener("click", () => {
-  closeFirstLaunchModal();
-  setCurrentTab("settings");
-});
-
-firstLaunchConfirmButton.addEventListener("click", () => {
-  closeFirstLaunchModal();
-});
-
 checkUpdateButton.addEventListener("click", async () => {
   setStatus("updating", true);
 
@@ -9049,7 +8824,6 @@ async function initializeApp() {
   renderRunStats();
   try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels: ${String(e)}`); }
   void loadBrowseBatches();
-  maybeShowFirstLaunchModal();
   // Auto-login if platform credentials are saved
   if (currentQaPlatformUrl() && hasQaPlatformCredentials()) {
     platformLoginState = { kind: "loading" };
