@@ -3486,6 +3486,125 @@ function normalizeTopicTag(tag: string): string {
   return tag.trim().replace(/\s+/g, " ");
 }
 
+function renderPaperQaPanel() {
+  // Error/success banners
+  const errBanner = document.querySelector("#paper-qa-error-banner");
+  const okBanner = document.querySelector("#paper-qa-success-banner");
+  if (errBanner) {
+    errBanner.hidden = !paperQaErrorMessage;
+    if (paperQaErrorMessage) errBanner.textContent = paperQaErrorMessage;
+  }
+  if (okBanner) {
+    okBanner.hidden = !paperQaUploadMessage;
+    if (paperQaUploadMessage) okBanner.textContent = paperQaUploadMessage;
+  }
+
+  // File list
+  const fileList = document.querySelector("#paper-qa-file-list");
+  if (fileList) {
+    if (paperFiles.length === 0) {
+      fileList.innerHTML = `<div class="paper-qa-hint">${t("paper_qa_empty")}</div>`;
+    } else {
+      fileList.innerHTML = paperFiles.map((f) => {
+        const statusCls = f.status === "converting" ? "paper-file-status-converting"
+          : f.status === "error" ? "paper-file-status-error"
+          : f.status === "converted" || f.status === "chunked" ? "paper-file-status-converted"
+          : "";
+        const statusLabel = f.status === "chunked" ? t("paper_qa_chunked").replace("{n}", String(f.chunks?.length ?? 0))
+          : t(`paper_qa_${f.status}`);
+        const chunkInfo = (f.status === "converted" || f.status === "chunked") && f.chunks
+          ? `<div class="paper-qa-chunk-count">${f.chunks.length} chunks</div>`
+          : "";
+        const errorInfo = f.status === "error" && f.error
+          ? `<div class="paper-file-error-msg">${escapeHtml(f.error)}</div>`
+          : "";
+        return `
+          <div class="paper-file-card" data-file-id="${escapeHtml(f.id)}">
+            <span class="paper-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+            <span class="paper-file-status ${statusCls}">${statusLabel}</span>
+            <button class="paper-file-remove" type="button" data-remove-file="${escapeHtml(f.id)}">&times;</button>
+            ${errorInfo}
+            ${chunkInfo}
+          </div>`;
+      }).join("");
+    }
+  }
+
+  // Results
+  const results = document.querySelector("#paper-qa-results");
+  if (results) {
+    if (!paperQaResult || paperQaResult.items.length === 0) {
+      results.innerHTML = `<div class="paper-qa-empty">${t("paper_qa_empty")}</div>`;
+    } else {
+      results.innerHTML = paperQaResult.items.map((item) => `
+        <div class="paper-qa-result-item">
+          <div class="paper-qa-result-header">
+            <span class="paper-qa-result-type ${item.qaType === "cot" ? "paper-qa-type-cot" : "paper-qa-type-qa"}">${item.qaType === "cot" ? "CoT" : "QA"}</span>
+            <span class="paper-qa-result-section">${escapeHtml(item.sectionType)}</span>
+          </div>
+          <div class="paper-qa-result-instruction"><strong>Q:</strong> ${escapeHtml(item.instruction)}</div>
+          ${item.reasoning ? `<div class="paper-qa-result-reasoning"><strong>Reasoning:</strong> ${escapeHtml(item.reasoning)}</div>` : ""}
+          <div class="paper-qa-result-output"><strong>A:</strong> ${escapeHtml(item.output)}</div>
+        </div>
+      `).join("");
+    }
+  }
+
+  // Stats
+  const stats = document.querySelector("#paper-qa-stats");
+  if (stats) {
+    if (paperQaResult && paperQaResult.stats.total > 0) {
+      stats.hidden = false;
+      stats.textContent = t("paper_qa_stats")
+        .replace("{total}", String(paperQaResult.stats.total))
+        .replace("{cot}", String(paperQaResult.stats.cotCount))
+        .replace("{qa}", String(paperQaResult.stats.qaCount));
+    } else {
+      stats.hidden = true;
+    }
+  }
+
+  // Button states
+  const convertBtn = document.querySelector<HTMLButtonElement>("#paper-qa-convert-btn");
+  const generateBtn = document.querySelector<HTMLButtonElement>("#paper-qa-generate-btn");
+  const uploadBtn = document.querySelector<HTMLButtonElement>("#paper-qa-upload-btn");
+  const statusEl = document.querySelector("#paper-qa-generate-status");
+
+  if (convertBtn) {
+    convertBtn.disabled = paperQaConverting || paperQaGenerating || paperFiles.length === 0;
+  }
+  if (generateBtn) {
+    const hasChunked = paperFiles.some(f => f.status === "chunked");
+    const hasProvider = (baseUrlInput.value.trim() && apiKeyInput.value.trim()) || isUsingPlatformModel();
+    generateBtn.disabled = paperQaConverting || paperQaGenerating || !hasChunked || !hasProvider;
+    generateBtn.title = (!hasProvider && hasChunked) ? t("paper_qa_no_provider") : "";
+  }
+  if (uploadBtn) {
+    const auth = currentPlatformAuthPayload();
+    uploadBtn.disabled = paperQaUploading || !paperQaResult || paperQaResult.items.length === 0 || !auth;
+  }
+  if (statusEl) {
+    if (paperQaConverting) statusEl.textContent = t("paper_qa_converting");
+    else if (paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
+    else if (paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
+    else statusEl.textContent = "";
+  }
+
+  // CoT ratio slider
+  const ratioSlider = document.querySelector<HTMLInputElement>("#paper-qa-cot-ratio");
+  const ratioValue = document.querySelector("#paper-qa-cot-ratio-value");
+  if (ratioSlider) ratioSlider.value = String(paperQaCotRatio);
+  if (ratioValue) ratioValue.textContent = String(paperQaCotRatio);
+
+  // Tab labels
+  const tabLabel = document.querySelector("#tab-paper-qa-label");
+  const tabTitle = document.querySelector("#paper-qa-tab-title");
+  const tabCopy = document.querySelector("#paper-qa-tab-copy");
+  if (tabLabel) tabLabel.textContent = t("paper_qa_tab");
+  if (tabTitle) tabTitle.textContent = t("paper_qa_tab");
+  if (tabCopy) tabCopy.textContent = t("paper_qa_empty");
+}
+
 function setCurrentTab(tab: UiTab) {
   currentTab = tab;
   topbarTabSelect.value = tab;
@@ -3537,6 +3656,9 @@ function setCurrentTab(tab: UiTab) {
   }
   if (tab === "feedback2") {
     try { renderFeedback2Panel(); } catch (e) { appendLog(`renderFeedback2Panel: ${String(e)}`); }
+  }
+  if (tab === "paper-qa") {
+    try { renderPaperQaPanel(); } catch (e) { appendLog(`renderPaperQaPanel: ${String(e)}`); }
   }
 }
 
