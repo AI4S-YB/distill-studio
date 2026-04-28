@@ -2404,6 +2404,7 @@ let paperQaGenerating = false;
 let paperQaUploading = false;
 let paperQaErrorMessage: string | null = null;
 let paperQaUploadMessage: string | null = null;
+let paperQaSelectedFileId: string | null = null;
 
 let feedback2FormState:
   | { kind: "idle" }
@@ -3533,25 +3534,36 @@ function renderPaperQaPanel() {
       fileList.innerHTML = `<div class="paper-qa-hint">${t("paper_qa_empty")}</div>`;
     } else {
       fileList.innerHTML = paperFiles.map((f) => {
+        const isSelected = paperQaSelectedFileId === f.id;
         const statusCls = f.status === "converting" ? "paper-file-status-converting"
           : f.status === "error" ? "paper-file-status-error"
           : f.status === "converted" || f.status === "chunked" ? "paper-file-status-converted"
           : "";
         const statusLabel = f.status === "chunked" ? t("paper_qa_chunked").replace("{n}", String(f.chunks?.length ?? 0))
           : t(`paper_qa_${f.status}`);
-        const chunkInfo = (f.status === "converted" || f.status === "chunked") && f.chunks
-          ? `<div class="paper-qa-chunk-count">${f.chunks.length} chunks</div>`
-          : "";
         const errorInfo = f.status === "error" && f.error
           ? `<div class="paper-file-error-msg">${escapeHtml(f.error)}</div>`
           : "";
+        // Chunk preview when selected
+        let chunkPreview = "";
+        if (isSelected && f.chunks && f.chunks.length > 0) {
+          chunkPreview = `<div class="paper-qa-chunk-list">` +
+            f.chunks.map((c, i) => `
+              <div class="paper-chunk-item">
+                <span class="paper-chunk-section">${escapeHtml(c.sectionType)} #${i + 1}</span>
+                <span class="paper-chunk-chars">${c.charCount} chars</span>
+                <p class="paper-chunk-preview">${escapeHtml(c.text.slice(0, 200))}${c.text.length > 200 ? "…" : ""}</p>
+              </div>
+            `).join("") +
+            `</div>`;
+        }
         return `
-          <div class="paper-file-card" data-file-id="${escapeHtml(f.id)}">
+          <div class="paper-file-card${isSelected ? " paper-file-card-selected" : ""}" data-file-id="${escapeHtml(f.id)}">
             <span class="paper-file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
             <span class="paper-file-status ${statusCls}">${statusLabel}</span>
             <button class="paper-file-remove" type="button" data-remove-file="${escapeHtml(f.id)}">&times;</button>
             ${errorInfo}
-            ${chunkInfo}
+            ${chunkPreview}
           </div>`;
       }).join("");
     }
@@ -3611,9 +3623,12 @@ function renderPaperQaPanel() {
     uploadBtn.disabled = paperQaUploading || !paperQaResult || paperQaResult.items.length === 0 || !auth;
   }
   if (statusEl) {
+    const hasChunked = paperFiles.some(f => f.status === "chunked");
+    const hasProvider = (baseUrlInput.value.trim() && apiKeyInput.value.trim()) || isUsingPlatformModel();
     if (paperQaConverting) statusEl.textContent = t("paper_qa_converting");
     else if (paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
     else if (paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
+    else if (!hasProvider && hasChunked) statusEl.textContent = t("paper_qa_no_provider");
     else statusEl.textContent = "";
   }
 
@@ -3685,6 +3700,7 @@ function removePaperFile(id: string) {
     paperQaResult = null;
   }
   paperQaErrorMessage = null;
+  paperQaSelectedFileId = null;
   renderPaperQaPanel();
 }
 
@@ -9370,6 +9386,14 @@ paperQaPanelEl?.addEventListener("click", (event) => {
   if (rmBtn) {
     const fileId = rmBtn.dataset.removeFile;
     if (fileId) removePaperFile(fileId);
+    return;
+  }
+  // Toggle file chunk preview
+  const fileCard = target.closest<HTMLElement>(".paper-file-card");
+  if (fileCard && !(target.closest("[data-remove-file]"))) {
+    const fId = fileCard.dataset.fileId;
+    paperQaSelectedFileId = paperQaSelectedFileId === fId ? null : (fId ?? null);
+    renderPaperQaPanel();
     return;
   }
 });
