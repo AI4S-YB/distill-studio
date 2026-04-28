@@ -280,7 +280,7 @@ type TrialSendMessageResponse = {
   sessionId: number;
 };
 
-type UiTab = "recent-updates" | "chat-qa" | "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial" | "feedback2";
+type UiTab = "recent-updates" | "chat-qa" | "topic" | "settings" | "browse" | "qa-evaluate" | "model-trial" | "feedback2" | "paper-qa";
 type BrowseView = "batches" | "questions" | "detail" | "review";
 
 type ProviderPresetId =
@@ -2356,6 +2356,26 @@ let exportsStatsState:
 
 let platformGenerateModels: PlatformGenerateModel[] = [];
 let selectedPlatformModelId: number | null = null;
+
+// Paper QA state
+type PaperFileStatus = "pending" | "converting" | "converted" | "chunked" | "error";
+type PaperFile = {
+  id: string;
+  name: string;
+  path: string;
+  status: PaperFileStatus;
+  mdText: string | null;
+  chunks: PaperChunk[] | null;
+  error: string | null;
+};
+let paperFiles: PaperFile[] = [];
+let paperQaResult: PaperQaGenerateResponse | null = null;
+let paperQaCotRatio = 0.4;
+let paperQaConverting = false;
+let paperQaGenerating = false;
+let paperQaUploading = false;
+let paperQaErrorMessage: string | null = null;
+let paperQaUploadMessage: string | null = null;
 
 let feedback2FormState:
   | { kind: "idle" }
