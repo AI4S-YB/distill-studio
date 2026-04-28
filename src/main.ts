@@ -2508,6 +2508,9 @@ app.innerHTML = `
           <button class="tab-button tab-button-plain" type="button" data-tab="feedback2" id="tab-feedback2">
             <span class="tab-button-title" id="tab-feedback2-label">Feedback 2</span>
           </button>
+          <button class="tab-button tab-button-plain" type="button" data-tab="paper-qa" id="tab-paper-qa">
+            <span class="tab-button-title" id="tab-paper-qa-label">Paper QA</span>
+          </button>
         </div>
       </aside>
       <section class="stage panel">
@@ -2990,6 +2993,44 @@ app.innerHTML = `
               <p class="feedback2-success" id="feedback2-success" hidden>Feedback submitted successfully!</p>
               <p class="feedback2-error" id="feedback2-form-error" hidden></p>
             </form>
+          </div>
+        </div>
+      </section>
+      <section class="tab-panel" data-tab-panel="paper-qa" hidden>
+        <div class="tab-copy-block">
+          <p class="panel-title" id="paper-qa-tab-title">Paper QA</p>
+          <p class="panel-copy" id="paper-qa-tab-copy">Convert PDF papers to markdown, chunk them, and generate QA pairs.</p>
+        </div>
+        <div class="paper-qa-panel" id="paper-qa-panel">
+          <div class="platform-inline-banner error" id="paper-qa-error-banner" hidden></div>
+          <div class="platform-inline-banner success" id="paper-qa-success-banner" hidden></div>
+          <div class="paper-qa-toolbar">
+            <input type="file" id="paper-qa-file-input" accept=".pdf" multiple hidden>
+            <button class="paper-qa-toolbar-button" type="button" id="paper-qa-add-btn">${t("paper_qa_add")}</button>
+            <button class="paper-qa-toolbar-button paper-qa-toolbar-button-primary" type="button" id="paper-qa-convert-btn">${t("paper_qa_convert")}</button>
+            <button class="paper-qa-toolbar-button paper-qa-toolbar-button-primary" type="button" id="paper-qa-generate-btn">${t("paper_qa_generate")}</button>
+            <div class="paper-qa-cot-ratio">
+              <span>${t("paper_qa_cot_ratio")}</span>
+              <input type="range" id="paper-qa-cot-ratio" min="0" max="1" step="0.05" value="0.4">
+              <span class="paper-qa-cot-ratio-value" id="paper-qa-cot-ratio-value">0.4</span>
+            </div>
+            <button class="paper-qa-toolbar-button paper-qa-toolbar-button-secondary" type="button" id="paper-qa-upload-btn">${t("paper_qa_upload")}</button>
+            <span class="paper-qa-generate-status" id="paper-qa-generate-status"></span>
+          </div>
+          <div class="paper-qa-body">
+            <div class="paper-qa-left" id="paper-qa-left">
+              <h3>Files</h3>
+              <div id="paper-qa-file-list">
+                <div class="paper-qa-hint">${t("paper_qa_empty")}</div>
+              </div>
+            </div>
+            <div class="paper-qa-right" id="paper-qa-right">
+              <h3>Results</h3>
+              <div id="paper-qa-results">
+                <div class="paper-qa-empty">${t("paper_qa_empty")}</div>
+              </div>
+              <div class="paper-qa-stats" id="paper-qa-stats" hidden></div>
+            </div>
           </div>
         </div>
       </section>
