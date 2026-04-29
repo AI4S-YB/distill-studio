@@ -1170,6 +1170,7 @@ const translations: Record<Lang, Record<string, string>> = {
     paper_qa_convert: "转换",
     paper_qa_generate: "生成问答",
     paper_qa_upload: "上传到平台",
+    paper_qa_save_batch: "存为批次",
     paper_qa_cot_ratio: "思维链比例",
     paper_qa_pending: "等待中",
     paper_qa_converting: "转换中…",
@@ -1181,9 +1182,9 @@ const translations: Record<Lang, Record<string, string>> = {
     paper_qa_max_files: "最多 20 篇 PDF",
     paper_qa_drag_hint: "拖拽 PDF 文件到此处",
     paper_qa_stats: "共 {total} 条 · {cot} 思维链 + {qa} 问答",
-    paper_qa_uploading: "上传中…",
-    paper_qa_upload_done: "上传完成",
-    paper_qa_upload_error: "上传失败",
+    paper_qa_uploading: "保存中…",
+    paper_qa_save_batch_done: "已存入浏览 QA",
+    paper_qa_save_batch_error: "存入批次失败",
     paper_qa_generating: "生成中…",
     paper_qa_generate_error: "生成失败",
     tab_internal_badge: "内测",
@@ -1706,6 +1707,7 @@ const translations: Record<Lang, Record<string, string>> = {
     paper_qa_convert: "Convert",
     paper_qa_generate: "Generate QA",
     paper_qa_upload: "Upload to Platform",
+    paper_qa_save_batch: "Save as Batch",
     paper_qa_cot_ratio: "CoT Ratio",
     paper_qa_pending: "Pending",
     paper_qa_converting: "Converting...",
@@ -1717,9 +1719,9 @@ const translations: Record<Lang, Record<string, string>> = {
     paper_qa_max_files: "Maximum 20 PDF files.",
     paper_qa_drag_hint: "Drop PDF files here",
     paper_qa_stats: "{total} total · {cot} CoT + {qa} QA",
-    paper_qa_uploading: "Uploading...",
-    paper_qa_upload_done: "Upload complete",
-    paper_qa_upload_error: "Upload failed",
+    paper_qa_uploading: "Saving...",
+    paper_qa_save_batch_done: "Saved to Browse QA",
+    paper_qa_save_batch_error: "Save batch failed",
     paper_qa_generating: "Generating...",
     paper_qa_generate_error: "Generation failed",
     tab_internal_badge: "Beta",
@@ -2386,6 +2388,7 @@ type PaperQaStats = {
 type PaperQaGenerateResponse = {
   items: PaperQaItem[];
   stats: PaperQaStats;
+  warnings?: string[];
 };
 type PaperFile = {
   id: string;
@@ -2405,6 +2408,9 @@ let paperQaUploading = false;
 let paperQaErrorMessage: string | null = null;
 let paperQaUploadMessage: string | null = null;
 let paperQaSelectedFileId: string | null = null;
+let paperQaProgressMessage = "";
+let paperQaProgressPercent = 0;
+let paperQaLogLines: string[] = [];
 
 let feedback2FormState:
   | { kind: "idle" }
@@ -2514,6 +2520,9 @@ app.innerHTML = `
           <button class="tab-button" type="button" data-tab="recent-updates" id="tab-recent-updates">
             <span class="tab-button-title" id="tab-recent-updates-label">Recent Updates</span>
           </button>
+          <button class="tab-button tab-button-plain" type="button" data-tab="paper-qa" id="tab-paper-qa">
+            <span class="tab-button-title" id="tab-paper-qa-label">Paper QA</span>
+          </button>
           <button class="tab-button" type="button" data-tab="chat-qa" id="tab-chat-qa">
             <span class="tab-button-title" id="tab-chat-qa-label">Chat QA</span>
           </button>
@@ -2536,9 +2545,6 @@ app.innerHTML = `
           </button>
           <button class="tab-button tab-button-plain" type="button" data-tab="feedback2" id="tab-feedback2">
             <span class="tab-button-title" id="tab-feedback2-label">Feedback 2</span>
-          </button>
-          <button class="tab-button tab-button-plain" type="button" data-tab="paper-qa" id="tab-paper-qa">
-            <span class="tab-button-title" id="tab-paper-qa-label">Paper QA</span>
           </button>
         </div>
       </aside>
@@ -3042,7 +3048,7 @@ app.innerHTML = `
               <input type="range" id="paper-qa-cot-ratio" min="0" max="1" step="0.05" value="0.4">
               <span class="paper-qa-cot-ratio-value" id="paper-qa-cot-ratio-value">0.4</span>
             </div>
-            <button class="paper-qa-toolbar-button paper-qa-toolbar-button-secondary" type="button" id="paper-qa-upload-btn">${t("paper_qa_upload")}</button>
+            <button class="paper-qa-toolbar-button paper-qa-toolbar-button-secondary" type="button" id="paper-qa-save-batch-btn">${t("paper_qa_save_batch")}</button>
             <span class="paper-qa-generate-status" id="paper-qa-generate-status"></span>
           </div>
           <div class="paper-qa-body">
@@ -3054,9 +3060,14 @@ app.innerHTML = `
             </div>
             <div class="paper-qa-right" id="paper-qa-right">
               <h3>Results</h3>
+              <div id="paper-qa-progress" class="paper-qa-progress" hidden>
+                <div class="paper-qa-progress-bar" id="paper-qa-progress-bar"></div>
+                <div class="paper-qa-progress-text" id="paper-qa-progress-text"></div>
+              </div>
               <div id="paper-qa-results">
                 <div class="paper-qa-empty">${t("paper_qa_empty")}</div>
               </div>
+              <div class="paper-qa-log" id="paper-qa-log" hidden></div>
               <div class="paper-qa-stats" id="paper-qa-stats" hidden></div>
             </div>
           </div>
@@ -3603,10 +3614,36 @@ function renderPaperQaPanel() {
     }
   }
 
+  // Progress bar
+  const progressEl = document.querySelector("#paper-qa-progress");
+  const progressBar = document.querySelector<HTMLElement>("#paper-qa-progress-bar");
+  const progressText = document.querySelector("#paper-qa-progress-text");
+  if (progressEl && progressBar && progressText) {
+    if (paperQaGenerating) {
+      progressEl.hidden = false;
+      progressBar.style.width = paperQaProgressPercent + "%";
+      progressText.textContent = paperQaProgressMessage || t("paper_qa_generating");
+    } else {
+      progressEl.hidden = true;
+    }
+  }
+
+  // Log area
+  const logEl = document.querySelector("#paper-qa-log");
+  if (logEl) {
+    if (paperQaLogLines.length > 0) {
+      logEl.hidden = false;
+      logEl.innerHTML = paperQaLogLines.map(l => `<div class="paper-qa-log-line">${escapeHtml(l)}</div>`).join("");
+      logEl.scrollTop = logEl.scrollHeight;
+    } else {
+      logEl.hidden = true;
+    }
+  }
+
   // Button states
   const convertBtn = document.querySelector<HTMLButtonElement>("#paper-qa-convert-btn");
   const generateBtn = document.querySelector<HTMLButtonElement>("#paper-qa-generate-btn");
-  const uploadBtn = document.querySelector<HTMLButtonElement>("#paper-qa-upload-btn");
+  const saveBatchBtn = document.querySelector<HTMLButtonElement>("#paper-qa-save-batch-btn");
   const statusEl = document.querySelector("#paper-qa-generate-status");
 
   if (convertBtn) {
@@ -3614,23 +3651,20 @@ function renderPaperQaPanel() {
   }
   if (generateBtn) {
     const hasChunked = paperFiles.some(f => f.status === "chunked");
-    const hasSettingsProvider = baseUrlInput.value.trim() && apiKeyInput.value.trim();
-    const hasProvider = hasSettingsProvider || isUsingPlatformModel() || platformLoginState.kind === "success";
+    const hasProvider = resolveLLMProvider().mode !== "none";
     generateBtn.disabled = paperQaConverting || paperQaGenerating || !hasChunked || !hasProvider;
     generateBtn.title = (!hasProvider && hasChunked) ? t("paper_qa_no_provider") : "";
   }
-  if (uploadBtn) {
-    const auth = currentPlatformAuthPayload();
-    uploadBtn.disabled = paperQaUploading || !paperQaResult || paperQaResult.items.length === 0 || !auth;
+  if (saveBatchBtn) {
+    saveBatchBtn.disabled = paperQaUploading || !paperQaResult || paperQaResult.items.length === 0;
   }
   if (statusEl) {
-    const hasChunked = paperFiles.some(f => f.status === "chunked");
-    const hasSettingsProvider = baseUrlInput.value.trim() && apiKeyInput.value.trim();
-    const hasProvider = hasSettingsProvider || isUsingPlatformModel() || platformLoginState.kind === "success";
+    const hasChunked2 = paperFiles.some(f => f.status === "chunked");
+    const hasProvider2 = resolveLLMProvider().mode !== "none";
     if (paperQaConverting) statusEl.textContent = t("paper_qa_converting");
     else if (paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
     else if (paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
-    else if (!hasProvider && hasChunked) statusEl.textContent = t("paper_qa_no_provider");
+    else if (!hasProvider2 && hasChunked2) statusEl.textContent = t("paper_qa_no_provider");
     else statusEl.textContent = "";
   }
 
@@ -3742,35 +3776,83 @@ async function handlePaperQaConvert() {
   renderPaperQaPanel();
 }
 
+type ResolvedLLMProvider =
+  | { mode: "settings"; provider: string; baseUrl: string; apiKey: string; model: string }
+  | { mode: "platform"; platformUrl: string; username: string; password: string; model: string }
+  | { mode: "none"; model: string };
+
+function resolveLLMProvider(): ResolvedLLMProvider {
+  const settingsBaseUrl = baseUrlInput.value.trim();
+  const settingsApiKey = apiKeyInput.value.trim();
+  if (settingsBaseUrl && settingsApiKey) {
+    return {
+      mode: "settings",
+      provider: providerInput.value.trim() || "openai-compatible",
+      baseUrl: settingsBaseUrl,
+      apiKey: settingsApiKey,
+      model: currentModelValue(),
+    };
+  }
+
+  const platformAuth = currentPlatformAuthPayload();
+  if (platformLoginState.kind === "success" && platformAuth !== null) {
+    const platformModel = currentPlatformGenerateModel();
+    const model = platformModel?.model
+      ?? (platformGenerateModels.length > 0 ? platformGenerateModels[0].model : "");
+    if (model) {
+      return {
+        mode: "platform",
+        platformUrl: platformAuth.platformUrl,
+        username: platformAuth.username,
+        password: platformAuth.password,
+        model,
+      };
+    }
+  }
+
+  return { mode: "none", model: "" };
+}
+
 async function handlePaperQaGenerate() {
   if (paperQaConverting || paperQaGenerating) return;
   const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
+  appendLog(`Paper QA Generate: chunkedFiles=${chunkedFiles.length}, files=${paperFiles.map(f => `${f.name}(${f.status})`).join(", ")}`);
   if (chunkedFiles.length === 0) return;
 
-  // Provider resolution: Settings > platform proxy > error
-  const provider = isUsingPlatformModel() ? "openai-compatible" : (providerInput.value.trim() || "openai-compatible");
-  let baseUrl = baseUrlInput.value.trim();
-  let apiKey = apiKeyInput.value.trim();
-  let model = isUsingPlatformModel()
-    ? (currentPlatformGenerateModel()?.model ?? currentModelValue())
-    : currentModelValue();
+  const resolved = resolveLLMProvider();
+  let platformUrl: string | null = null;
+  let username: string | null = null;
+  let password: string | null = null;
+  let baseUrl = "";
+  let apiKey = "";
+  let model = "";
+  let provider = "openai-compatible";
 
-  // Fallback to platform proxy if logged in but Settings not configured
-  if ((!baseUrl || !apiKey) && platformLoginState.kind === "success") {
-    baseUrl = platformLoginState.response.endpoints.platformApiBaseUrl + "/api/generate";
-    apiKey = qaPlatformPasswordInput?.value.trim() ?? "";
-    if (!model) model = currentModelValue();
+  if (resolved.mode === "platform") {
+    provider = "platform";
+    platformUrl = resolved.platformUrl;
+    username = resolved.username;
+    password = resolved.password;
+    model = resolved.model;
+  } else if (resolved.mode === "settings") {
+    baseUrl = resolved.baseUrl;
+    apiKey = resolved.apiKey;
+    model = resolved.model;
+    provider = resolved.provider;
   }
 
-  if (!baseUrl || !apiKey || !model) {
+  appendLog(`Paper QA Generate: mode=${resolved.mode}, model=${model}, platformUrl=${platformUrl || "(none)"}`);
+
+  if (!model || resolved.mode === "none") {
     paperQaErrorMessage = t("paper_qa_no_provider");
+    appendLog(`Paper QA Generate: ABORT no provider`);
     renderPaperQaPanel();
     return;
   }
 
   const allChunks = chunkedFiles.flatMap(f => f.chunks!);
   const paperTitle = chunkedFiles.map(f => f.name).join(", ");
-  const request = {
+  const request: Record<string, unknown> = {
     chunks: allChunks,
     paperTitle,
     provider,
@@ -3779,6 +3861,13 @@ async function handlePaperQaGenerate() {
     model,
     cotRatio: paperQaCotRatio,
   };
+  if (platformUrl) {
+    request.platformUrl = platformUrl;
+    request.username = username;
+    request.password = password;
+  }
+
+  appendLog(`Paper QA Generate: sending ${allChunks.length} chunks, title="${paperTitle}", cotRatio=${paperQaCotRatio}`);
 
   paperQaGenerating = true;
   paperQaErrorMessage = null;
@@ -3787,8 +3876,15 @@ async function handlePaperQaGenerate() {
 
   try {
     const result = await invoke<PaperQaGenerateResponse>("generate_paper_qa", { request });
+    appendLog(`Paper QA Generate: OK items=${result.items.length}, total=${result.stats.total}, warnings=${result.warnings?.length ?? 0}`);
+    if (result.warnings && result.warnings.length > 0) {
+      for (const w of result.warnings) {
+        appendLog(`Paper QA Warning: ${w}`);
+      }
+    }
     paperQaResult = result;
   } catch (err) {
+    appendLog(`Paper QA Generate: ERROR ${String(err)}`);
     paperQaErrorMessage = t("paper_qa_generate_error") + ": " + String(err);
   }
 
@@ -3796,15 +3892,8 @@ async function handlePaperQaGenerate() {
   renderPaperQaPanel();
 }
 
-async function handlePaperQaUpload() {
+async function handlePaperQaSaveBatch() {
   if (paperQaUploading || !paperQaResult?.items.length) return;
-
-  const auth = currentPlatformAuthPayload();
-  if (!auth) {
-    paperQaErrorMessage = t("paper_qa_no_provider");
-    renderPaperQaPanel();
-    return;
-  }
 
   paperQaUploading = true;
   paperQaErrorMessage = null;
@@ -3812,38 +3901,25 @@ async function handlePaperQaUpload() {
   renderPaperQaPanel();
 
   try {
-    const rows = paperQaResult.items.map((item) => ({
-      id: item.id,
-      question: item.instruction,
-      answer: item.output,
-      context: item.reasoning ?? "",
-      difficulty: "medium",
-      source: "paper_qa",
-      model: item.qaType === "cot" ? "cot" : "direct",
-      metadata: {
-        paperTitle: item.paperTitle,
-        chunkId: item.chunkId,
-        sectionType: item.sectionType,
-        qaType: item.qaType,
-      },
-      candidateAnswers: [],
-    }));
+    const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
+    const paperTitle = chunkedFiles.map(f => f.name).join(", ");
+    const provider = providerInput.value.trim() || "openai-compatible";
+    const model = isUsingPlatformModel()
+      ? (currentPlatformGenerateModel()?.model ?? "unknown")
+      : currentModelValue();
 
-    const batchName = `Paper QA ${new Date().toISOString().slice(0, 19)}`;
-    const externalBatchId = crypto.randomUUID();
-
-    await invoke("push_paper_qa", {
-      platformUrl: auth.platformUrl,
-      username: auth.username,
-      password: auth.password,
-      batchName,
-      externalBatchId,
-      rows,
+    const batch = await invoke<QaBatchSummary>("save_paper_qa_batch", {
+      items: paperQaResult.items,
+      paperTitle,
+      provider,
+      model,
     });
 
-    paperQaUploadMessage = t("paper_qa_upload_done");
+    appendLog(`Paper QA: saved batch ${batch.id} (${batch.totalCount} items) to Browse QA`);
+    paperQaUploadMessage = t("paper_qa_save_batch_done");
   } catch (err) {
-    paperQaErrorMessage = t("paper_qa_upload_error") + ": " + String(err);
+    appendLog(`Paper QA Save Batch: ERROR ${String(err)}`);
+    paperQaErrorMessage = t("paper_qa_save_batch_error") + ": " + String(err);
   }
 
   paperQaUploading = false;
@@ -4341,7 +4417,8 @@ function syncModelOptions(presetId: ProviderPresetId, preferredModel?: string | 
   modelInput.replaceChildren();
 
   // Platform preset: populate from fetched platform models
-  if (presetId === "platform") {
+  const resolved = resolveLLMProvider();
+  if (presetId === "platform" || (resolved.mode === "platform" && platformGenerateModels.length > 0)) {
     for (const pm of platformGenerateModels) {
       const option = document.createElement("option");
       option.value = String(pm.id);
@@ -4486,10 +4563,11 @@ async function loadPlatformGenerateModels() {
 function updatePlatformPresetOption() {
   const opt = document.querySelector<HTMLOptionElement>("#provider-preset-option-platform");
   if (!opt) return;
-  const isLoggedIn = platformLoginState.kind === "success" && platformGenerateModels.length > 0;
-  opt.hidden = !isLoggedIn;
+  // Always keep "platform" hidden as a manual option — it is auto-detected.
+  opt.hidden = true;
   // If current preset is "platform" but no longer valid, reset to first available
-  if (providerPresetInput.value === "platform" && !isLoggedIn) {
+  const resolved = resolveLLMProvider();
+  if (providerPresetInput.value === "platform" && resolved.mode !== "platform") {
     const firstPreset = providerPresetInput.querySelector<HTMLOptionElement>("option:not([hidden]):not([value=platform])");
     if (firstPreset) {
       providerPresetInput.value = firstPreset.value;
@@ -4499,7 +4577,7 @@ function updatePlatformPresetOption() {
 }
 
 function isUsingPlatformModel(): boolean {
-  return providerPresetInput.value === "platform" && selectedPlatformModelId !== null;
+  return selectedPlatformModelId !== null && platformLoginState.kind === "success";
 }
 
 function currentPlatformGenerateModel(): PlatformGenerateModel | null {
@@ -4509,10 +4587,16 @@ function currentPlatformGenerateModel(): PlatformGenerateModel | null {
 
 function syncProviderPresetInput() {
   updatePlatformPresetOption();
-  const presetId = detectProviderPreset({
-    provider: providerInput.value,
-    baseUrl: baseUrlInput.value
-  });
+  const resolved = resolveLLMProvider();
+  let presetId: ProviderPresetId;
+  if (resolved.mode === "platform") {
+    presetId = "platform";
+  } else {
+    presetId = detectProviderPreset({
+      provider: providerInput.value,
+      baseUrl: baseUrlInput.value
+    });
+  }
   providerPresetInput.value = presetId;
   syncProviderFieldVisibility(presetId);
   syncModelOptions(presetId);
@@ -4523,6 +4607,15 @@ function applyProviderPreset(presetId: ProviderPresetId, logChange = false) {
     providerPresetInput.value = "custom";
     syncProviderFieldVisibility("custom");
     syncModelOptions("custom");
+    normalizeRuntimeParameterInputs(true);
+    renderSetupSummary();
+    return;
+  }
+
+  if (presetId === "platform") {
+    providerPresetInput.value = "platform";
+    syncProviderFieldVisibility("platform");
+    syncModelOptions("platform");
     normalizeRuntimeParameterInputs(true);
     renderSetupSummary();
     return;
@@ -4638,16 +4731,19 @@ function renderActionButtons(actions: Array<{ key: string; action: string }>) {
 }
 
 function renderSetupSummary() {
-  const providerReady = providerPresetInput.value.trim().length > 0;
-  const modelReady = currentModelValue().length > 0;
-  const requiresEndpointAuth = providerInput.value === "openai-compatible";
-  const baseUrlReady = !requiresEndpointAuth || baseUrlInput.value.trim().length > 0;
-  const apiKeyReady = !requiresEndpointAuth || apiKeyInput.value.trim().length > 0;
+  const resolved = resolveLLMProvider();
+  const providerReady = resolved.mode !== "none";
+  const modelReady = resolved.model.length > 0;
+  const requiresEndpointAuth = resolved.mode === "settings";
+  const baseUrlReady = !requiresEndpointAuth || resolved.baseUrl.length > 0;
+  const apiKeyReady = !requiresEndpointAuth || resolved.apiKey.length > 0;
   const connectionReady = !requiresEndpointAuth || (baseUrlReady && apiKeyReady);
   const providerLabel = providerReady
-    ? providerPresetInput.value === "custom"
-      ? providerInput.value.trim() || t("empty_value")
-      : currentPresetLabel(providerPresetInput.value as ProviderPresetId)
+    ? (resolved.mode === "platform"
+        ? t("preset_platform")
+        : providerPresetInput.value === "custom"
+          ? providerInput.value.trim() || t("empty_value")
+          : currentPresetLabel(providerPresetInput.value as ProviderPresetId))
     : "";
   const missingKeys: string[] = [];
 
@@ -5794,11 +5890,12 @@ function renderChatQaPanel() {
   const session = getCurrentSession();
   const messages = session?.messages ?? [];
 
-  const providerReady = providerPresetInput.value.trim().length > 0;
-  const modelReady = currentModelValue().length > 0;
-  const hasConfig = providerReady && modelReady;
+  const resolved = resolveLLMProvider();
+  const hasConfig = resolved.mode !== "none" && resolved.model.length > 0;
   const modelLabel = hasConfig
-    ? (currentPresetLabel(providerPresetInput.value as ProviderPresetId) || providerInput.value) + " / " + currentModelValue()
+    ? (resolved.mode === "platform"
+        ? t("preset_platform") + " / " + resolved.model
+        : (currentPresetLabel(providerPresetInput.value as ProviderPresetId) || resolved.provider) + " / " + resolved.model)
     : "";
 
   chatQaModelInfo.innerHTML = hasConfig
@@ -5840,9 +5937,9 @@ async function handleChatSend() {
   const text = chatQaInput.value.trim();
   if (!text) return;
 
-  const providerReady = providerPresetInput.value.trim().length > 0;
-  const modelReady = currentModelValue().length > 0;
-  if (!providerReady || !modelReady) {
+  const resolved = resolveLLMProvider();
+  const modelReady = resolved.model.length > 0;
+  if (resolved.mode === "none" || !modelReady) {
     chatError = t("chat_qa_no_model");
     renderChatQaPanel();
     return;
@@ -5852,29 +5949,26 @@ async function handleChatSend() {
   chatQaInput.value = "";
   chatSending = true;
   chatError = null;
+  // Add empty assistant placeholder for streaming
+  session.messages.push({ role: "assistant", content: "" });
   renderChatQaPanel();
 
   try {
-    const isPlatform = providerPresetInput.value === "platform";
-    const auth = isPlatform ? currentPlatformAuthPayload() : null;
-
-    const response = await invoke<{ message: { role: string; content: string } }>(
-      "send_chat_message",
+    await invoke<{ message: { role: string; content: string } }>(
+      "send_chat_message_stream",
       {
         request: {
-          platformUrl: auth?.platformUrl ?? null,
-          username: auth?.username ?? null,
-          password: auth?.password ?? null,
-          provider: providerInput.value,
-          baseUrl: baseUrlInput.value.trim(),
-          apiKey: apiKeyInput.value.trim(),
-          model: currentModelValue(),
-          messages: session.messages.map((m) => ({ role: m.role, content: m.content }))
+          platformUrl: resolved.mode === "platform" ? resolved.platformUrl : null,
+          username: resolved.mode === "platform" ? resolved.username : null,
+          password: resolved.mode === "platform" ? resolved.password : null,
+          provider: resolved.mode === "settings" ? resolved.provider : "openai-compatible",
+          baseUrl: resolved.mode === "settings" ? resolved.baseUrl : "",
+          apiKey: resolved.mode === "settings" ? resolved.apiKey : "",
+          model: resolved.model,
+          messages: session.messages.filter(m => m.role !== "assistant" || m.content !== "").map((m) => ({ role: m.role, content: m.content }))
         }
       }
     );
-
-    session.messages.push(response.message);
   } catch (error) {
     chatError = `${t("chat_qa_send_failed")}: ${String(error)}`;
   } finally {
@@ -7733,17 +7827,16 @@ function runReadinessMissingKeys(): string[] {
   if (!promptInput.value.trim()) {
     missingKeys.push("run_readiness_missing_prompt");
   }
-  if (!providerPresetInput.value.trim()) {
+  const resolved = resolveLLMProvider();
+  if (resolved.mode === "none") {
     missingKeys.push("settings_checklist_missing_provider");
   }
-  if (!currentModelValue()) {
+  if (!resolved.model) {
     missingKeys.push("settings_checklist_missing_model");
   }
-  if (providerInput.value === "openai-compatible" && !baseUrlInput.value.trim()) {
-    missingKeys.push("settings_checklist_missing_base_url");
-  }
-  if (providerInput.value === "openai-compatible" && !apiKeyInput.value.trim()) {
-    missingKeys.push("settings_checklist_missing_api_key");
+  if (resolved.mode === "settings") {
+    if (!resolved.baseUrl) missingKeys.push("settings_checklist_missing_base_url");
+    if (!resolved.apiKey) missingKeys.push("settings_checklist_missing_api_key");
   }
 
   return missingKeys;
@@ -8096,6 +8189,7 @@ async function chooseManagedOutputRoot() {
 
 function collectRequest() {
   normalizeRuntimeParameterInputs(true);
+  const resolved = resolveLLMProvider();
 
   const request: PipelineFormRequest = {
     prompt: promptInput.value.trim(),
@@ -8107,13 +8201,17 @@ function collectRequest() {
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
     managedOutputRoot: currentManagedOutputRoot() || null,
-    provider: isUsingPlatformModel() ? "openai-compatible" : providerInput.value,
-    model: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.model ?? currentModelValue()) : currentModelValue(),
-    baseUrl: baseUrlInput.value.trim() || null,
-    apiKey: apiKeyInput.value.trim() || null,
+    provider: resolved.mode === "settings" ? resolved.provider : "openai-compatible",
+    model: resolved.model,
+    baseUrl: resolved.mode === "settings" ? resolved.baseUrl : null,
+    apiKey: resolved.mode === "settings" ? resolved.apiKey : null,
     apiKeyEnv: null,
-    temperature: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.temperature ?? 0.8) : 0.8,
-    maxTokens: isUsingPlatformModel() ? (currentPlatformGenerateModel()?.maxTokens ?? 800) : (providerInput.value === "openai-compatible" ? 2400 : 800),
+    temperature: resolved.mode === "platform"
+      ? (currentPlatformGenerateModel()?.temperature ?? 0.8)
+      : 0.8,
+    maxTokens: resolved.mode === "platform"
+      ? (currentPlatformGenerateModel()?.maxTokens ?? 800)
+      : (providerInput.value === "openai-compatible" ? 2400 : 800),
     shardSize: readNumber(shardSizeInput),
     batchSize: readNumber(batchSizeInput),
     maxInFlight: readNumber(maxInFlightInput),
@@ -8141,11 +8239,10 @@ function validateRequest(request: PipelineFormRequest): ValidationIssueKey[] {
   if (!request.model) {
     issues.push("validation_issue_model_required");
   }
-  if (request.provider === "openai-compatible" && !request.baseUrl) {
-    issues.push("validation_issue_base_url_required");
-  }
-  if (request.provider === "openai-compatible" && !request.apiKey) {
-    issues.push("validation_issue_api_key_required");
+  const resolved = resolveLLMProvider();
+  if (resolved.mode === "settings") {
+    if (!request.baseUrl) issues.push("validation_issue_base_url_required");
+    if (!request.apiKey) issues.push("validation_issue_api_key_required");
   }
   if (!Number.isInteger(request.targetCount) || request.targetCount <= 0) {
     issues.push("validation_issue_target_count_invalid");
@@ -8234,6 +8331,32 @@ void listen<AppUpdateProgressEvent>("app-update-progress", (event) => {
   }
   appendLog(event.payload.message);
   updateCheckButtonUi();
+});
+
+void listen<{ step: string; chunkIndex: number; totalChunks: number; status: string; itemCount: number; message: string }>("paper-qa-progress", (event) => {
+  const p = event.payload;
+  paperQaProgressPercent = p.totalChunks > 0 ? Math.round(((p.chunkIndex + (p.step === "qa" ? 1 : 0.5)) / p.totalChunks) * 100) : 0;
+  paperQaProgressMessage = p.message;
+  paperQaLogLines.push(p.message);
+  if (paperQaLogLines.length > 50) paperQaLogLines.shift();
+  renderPaperQaPanel();
+});
+
+void listen<{ message: string }>("paper-qa-log", (event) => {
+  paperQaLogLines.push(event.payload.message);
+  if (paperQaLogLines.length > 50) paperQaLogLines.shift();
+  renderPaperQaPanel();
+});
+
+// Chat QA streaming: update the last assistant message as tokens arrive
+void listen<{ token: string; fullContent: string }>("chat-qa-token", (event) => {
+  const session = getCurrentSession();
+  if (!session) return;
+  const lastMsg = session.messages[session.messages.length - 1];
+  if (lastMsg && lastMsg.role === "assistant") {
+    lastMsg.content = event.payload.fullContent;
+    renderChatQaPanel();
+  }
 });
 
 async function persistCurrentConfig(silent = true) {
@@ -8523,18 +8646,13 @@ modelInput.addEventListener("change", () => {
     customModelInput.value = "";
   }
 
-  // Platform model selected: auto-fill proxy config and lock runtime params
-  if (providerPresetInput.value === "platform") {
-    const modelId = Number(modelInput.value);
-    const pm = platformGenerateModels.find(m => m.id === modelId);
-    if (pm && platformLoginState.kind === "success") {
-      selectedPlatformModelId = modelId;
-      baseUrlInput.value = platformLoginState.response.endpoints.platformApiBaseUrl + "/api/generate";
-      apiKeyInput.value = qaPlatformPasswordInput.value;
-      batchSizeInput.value = String(pm.batchSize);
-      maxInFlightInput.value = String(pm.maxInFlight);
-      modelInput.options[modelInput.selectedIndex]?.style && normalizeRuntimeParameterInputs(false);
-    }
+  // Detect platform model by looking it up in platformGenerateModels
+  const modelId = Number(modelInput.value);
+  const pm = platformGenerateModels.find(m => m.id === modelId);
+  if (pm && platformLoginState.kind === "success") {
+    selectedPlatformModelId = modelId;
+    batchSizeInput.value = String(pm.batchSize);
+    maxInFlightInput.value = String(pm.maxInFlight);
   } else {
     selectedPlatformModelId = null;
   }
@@ -9385,10 +9503,10 @@ paperQaPanelEl?.addEventListener("click", (event) => {
     void handlePaperQaGenerate();
     return;
   }
-  // Upload
-  const upBtn = target.closest<HTMLElement>("#paper-qa-upload-btn");
-  if (upBtn && !(upBtn as HTMLButtonElement).disabled) {
-    void handlePaperQaUpload();
+  // Save as Batch
+  const saveBtn = target.closest<HTMLElement>("#paper-qa-save-batch-btn");
+  if (saveBtn && !(saveBtn as HTMLButtonElement).disabled) {
+    void handlePaperQaSaveBatch();
     return;
   }
   // Remove file

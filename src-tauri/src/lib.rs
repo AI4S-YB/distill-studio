@@ -543,13 +543,6 @@ struct ChatUploadResponse {
     parse_queued: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PaperQaUploadResponse {
-    batch_id: Option<i64>,
-    external_batch_id: String,
-}
-
 // ---- Paper QA structs ----
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -615,6 +608,12 @@ struct PaperQaGenerateRequest {
     api_key: String,
     model: String,
     cot_ratio: f64,
+    #[serde(default)]
+    platform_url: Option<String>,
+    #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -636,6 +635,8 @@ struct PaperQaItem {
 struct PaperQaGenerateResponse {
     items: Vec<PaperQaItem>,
     stats: PaperQaStats,
+    #[serde(default)]
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2210,64 +2211,6 @@ async fn upload_qa_batch(
 }
 
 #[tauri::command]
-async fn push_paper_qa(
-    platform_url: String,
-    username: String,
-    password: String,
-    batch_name: String,
-    external_batch_id: String,
-    rows: Vec<PlatformImportRowPayload>,
-) -> Result<PaperQaUploadResponse, String> {
-    let (endpoints, token, user) =
-        platform_login_with_token(&platform_url, &username, &password).await?;
-    let application = user
-        .applications
-        .first()
-        .ok_or_else(|| "current platform account has no assigned application".to_string())?;
-
-    let payload = serde_json::json!({
-        "name": batch_name,
-        "source": QA_PLATFORM_BATCH_SOURCE,
-        "external_batch_id": external_batch_id,
-        "application_id": application.id,
-        "technical_type_code": "direct_qa",
-        "business_tag_codes": [],
-        "rows": rows,
-        "auto_parse": true,
-        "create_self_review": false,
-    });
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!(
-            "{}/api/expert/imports/push",
-            endpoints.platform_api_base_url
-        ))
-        .bearer_auth(&token)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(error_to_string)?;
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "upload failed with status {}: {}",
-            status.as_u16(),
-            body.trim()
-        ));
-    }
-    let response_payload = response
-        .json::<ApiEnvelope<PlatformImportPushResponseData>>()
-        .await
-        .map_err(error_to_string)?;
-    Ok(PaperQaUploadResponse {
-        batch_id: response_payload.data.batch_id,
-        external_batch_id,
-    })
-}
-
-#[tauri::command]
 async fn push_chat_conversations(
     platform_url: String,
     username: String,
@@ -2564,20 +2507,195 @@ async fn chunk_paper_md(md_text: String, paper_title: String) -> Result<Vec<Pape
     Ok(chunks)
 }
 
+fn extract_paper_qa_json(content: &str) -> Result<serde_json::Value, String> {
+    let trimmed = content.trim();
+    // Try direct parse first
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Ok(value);
+    }
+    // Try extracting from markdown fences
+    for segment in trimmed.split("```") {
+        let s = segment.trim();
+        let json_str = if s.starts_with('{') && s.ends_with('}') {
+            s
+        } else if let Some(rest) = s.strip_prefix("json") {
+            rest.trim()
+        } else {
+            continue;
+        };
+        if json_str.starts_with('{') && json_str.ends_with('}') {
+            if let Ok(value) = serde_json::from_str(json_str) {
+                return Ok(value);
+            }
+        }
+    }
+    // Last resort: balanced brace extraction
+    let bytes = trimmed.as_bytes();
+    let mut start = None;
+    let mut depth = 0u32;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match b {
+                b'\\' => { escaped = true; continue; }
+                b'"' => { in_string = false; continue; }
+                _ => continue,
+            }
+        }
+        match b {
+            b'"' => { in_string = true; }
+            b'{' => {
+                if start.is_none() { start = Some(i); }
+                depth += 1;
+            }
+            b'}' => {
+                if depth > 0 { depth -= 1; }
+                if depth == 0 && start.is_some() {
+                    let json_slice = &trimmed[start.unwrap()..=i];
+                    if let Ok(value) = serde_json::from_str(json_slice) {
+                        return Ok(value);
+                    }
+                    start = None;
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(format!("Failed to extract JSON from: {}", &trimmed[..trimmed.len().min(500)]))
+}
+
 #[tauri::command]
-async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGenerateResponse, String> {
+async fn save_paper_qa_batch(
+    app: AppHandle,
+    items: Vec<PaperQaItem>,
+    paper_title: String,
+    provider: String,
+    model: String,
+) -> Result<QaBatchSummary, String> {
+    let output_root = configured_managed_output_root(&app).map_err(error_to_string)?;
+    let batch_dir = next_managed_output_dir(&output_root, &paper_title).map_err(error_to_string)?;
+
+    let records: Vec<GeneratedQa> = items
+        .iter()
+        .map(|item| GeneratedQa {
+            id: item.id.clone(),
+            shard_id: 0,
+            topic_name: item.paper_title.clone(),
+            subtopic: item.section_type.clone(),
+            axis: item.qa_type.clone(),
+            question_type: "paper_qa".to_string(),
+            difficulty: "medium".to_string(),
+            audience: "researcher".to_string(),
+            question: item.instruction.clone(),
+            answer: item.output.clone(),
+            source_type: "paper_qa".to_string(),
+            grounding: item.reasoning.clone().unwrap_or_default(),
+            provider: provider.clone(),
+            model: model.clone(),
+            qa_mode: item.qa_type.clone(),
+        })
+        .collect();
+
+    let dataset_path = batch_dir.join("dataset.jsonl");
+    write_jsonl(&dataset_path, &records).map_err(error_to_string)?;
+
+    let topic = TopicSpec {
+        user_intent: format!("Paper QA: {}", paper_title),
+        topic_name: paper_title.clone(),
+        goal: "Generated from PDF paper".to_string(),
+        keywords: vec![],
+        subtopics: vec![],
+        question_axes: vec!["cot".to_string(), "qa".to_string()],
+        target_count: items.len() as u32,
+    };
+    write_json(&batch_dir.join("topic.json"), &topic).map_err(error_to_string)?;
+
+    let config = GenerateConfig {
+        provider: ProviderConfig {
+            provider,
+            model,
+            base_url: None,
+            api_key: None,
+            api_key_env: None,
+            temperature: 0.1,
+            max_tokens: 4096,
+        },
+        runtime: RuntimeConfig {
+            target_count: items.len(),
+            shard_size: 1,
+            batch_size: 1,
+            max_in_flight: 1,
+            max_retries: 0,
+            request_timeout_secs: 120,
+            resume: false,
+        },
+        qa_mode: "mixed".to_string(),
+        output_language: "zh".to_string(),
+        cot_section_headers: vec![],
+        supporting_context: None,
+    };
+    write_json(&batch_dir.join("generate_config.json"), &config).map_err(error_to_string)?;
+
+    build_qa_batch_summary(&app, &batch_dir).map_err(error_to_string)
+}
+
+#[tauri::command]
+async fn generate_paper_qa(
+    _app: AppHandle,
+    window: Window,
+    request: PaperQaGenerateRequest,
+) -> Result<PaperQaGenerateResponse, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/chat/completions", request.base_url.trim_end_matches('/'));
     let cot_ratio = request.cot_ratio.clamp(0.0, 1.0);
+
+    // Resolve auth: platform proxy (token) or direct API key
+    let (url, auth_header_value): (String, String) =
+        if let (Some(platform_url), Some(username), Some(password)) =
+            (request.platform_url.as_ref(), request.username.as_ref(), request.password.as_ref())
+        {
+            let (_endpoints, token, _user) =
+                platform_login_with_token(platform_url, username, password).await?;
+            (
+                format!("{}/api/generate/chat/completions", platform_url.trim_end_matches('/')),
+                format!("Bearer {}", token),
+            )
+        } else {
+            (
+                format!("{}/chat/completions", request.base_url.trim_end_matches('/')),
+                format!("Bearer {}", request.api_key),
+            )
+        };
 
     let cot_system = "你是农业科研助手。基于以下论文片段，生成3-5个思维链问答对。覆盖：研究动机与背景、方法原理与设计思路、参数选择依据、结果之间的逻辑关系、应用意义与展望。输出JSON格式。";
 
     let qa_system = "你是农业科普助手。基于以下论文片段，生成3-5个直接问答对。问题清晰具体，答案直接简洁，不做长篇推理分析。输出JSON格式。";
 
     let mut all_items: Vec<PaperQaItem> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    let total = request.chunks.len();
 
-    for chunk in &request.chunks {
+    for (idx, chunk) in request.chunks.iter().enumerate() {
         let chunk_text: String = chunk.text.chars().take(8000).collect();
+
+        // Emit progress: CoT started
+        let _ = window.emit("paper-qa-progress", serde_json::json!({
+            "step": "cot",
+            "chunkIndex": idx,
+            "totalChunks": total,
+            "chunkId": chunk.id,
+            "sectionType": chunk.section_type,
+            "status": "started",
+            "itemCount": all_items.len(),
+            "message": format!("CoT: chunk {}/{} ({})", idx + 1, total, chunk.section_type)
+        }));
+        let _ = window.emit("paper-qa-log", serde_json::json!({
+            "message": format!("CoT chunk {}/{}: section={}, {} chars", idx + 1, total, chunk.section_type, chunk.char_count)
+        }));
 
         // Generate CoT
         let cot_human = format!(
@@ -2588,7 +2706,7 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
         let cot_result: Result<Vec<PaperQaItem>, String> = async {
             let resp = client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", request.api_key))
+                .header("Authorization", &auth_header_value)
                 .json(&serde_json::json!({
                     "model": &request.model,
                     "messages": [
@@ -2617,7 +2735,8 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
                 .map(|c| c.message.content.clone())
                 .unwrap_or_default();
             let parsed: LlmJsonCotResponse =
-                serde_json::from_str(&content).map_err(|e| format!("CoT JSON parse: {}", e))?;
+                serde_json::from_value(extract_paper_qa_json(&content)?)
+                    .map_err(|e| format!("CoT JSON parse: {} — preview: {}", e, &content[..content.len().min(300)]))?;
 
             Ok(parsed.cot_items.into_iter().map(|item| PaperQaItem {
                 id: format!("cot_{}", uuid::Uuid::new_v4()),
@@ -2632,9 +2751,44 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
         }.await;
 
         match cot_result {
-            Ok(items) => all_items.extend(items),
-            Err(e) => eprintln!("CoT generation error for chunk {}: {}", chunk.id, e),
+            Ok(items) => {
+                let added = items.len();
+                all_items.extend(items);
+                let _ = window.emit("paper-qa-progress", serde_json::json!({
+                    "step": "cot",
+                    "chunkIndex": idx,
+                    "totalChunks": total,
+                    "chunkId": chunk.id,
+                    "status": "completed",
+                    "itemCount": all_items.len(),
+                    "message": format!("CoT: chunk {}/{} done, {} items", idx + 1, total, added)
+                }));
+            }
+            Err(e) => {
+                warnings.push(format!("CoT chunk {}: {}", chunk.id, e));
+                let _ = window.emit("paper-qa-progress", serde_json::json!({
+                    "step": "cot",
+                    "chunkIndex": idx,
+                    "totalChunks": total,
+                    "chunkId": chunk.id,
+                    "status": "error",
+                    "itemCount": all_items.len(),
+                    "message": format!("CoT: chunk {}/{} failed", idx + 1, total)
+                }));
+            }
         }
+
+        // Emit progress: QA started
+        let _ = window.emit("paper-qa-progress", serde_json::json!({
+            "step": "qa",
+            "chunkIndex": idx,
+            "totalChunks": total,
+            "chunkId": chunk.id,
+            "sectionType": chunk.section_type,
+            "status": "started",
+            "itemCount": all_items.len(),
+            "message": format!("QA: chunk {}/{} ({})", idx + 1, total, chunk.section_type)
+        }));
 
         // Generate QA
         let qa_human = format!(
@@ -2645,7 +2799,7 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
         let qa_result: Result<Vec<PaperQaItem>, String> = async {
             let resp = client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", request.api_key))
+                .header("Authorization", &auth_header_value)
                 .json(&serde_json::json!({
                     "model": &request.model,
                     "messages": [
@@ -2674,7 +2828,8 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
                 .map(|c| c.message.content.clone())
                 .unwrap_or_default();
             let parsed: LlmJsonQaResponse =
-                serde_json::from_str(&content).map_err(|e| format!("QA JSON parse: {}", e))?;
+                serde_json::from_value(extract_paper_qa_json(&content)?)
+                    .map_err(|e| format!("QA JSON parse: {} — preview: {}", e, &content[..content.len().min(300)]))?;
 
             Ok(parsed.qa_items.into_iter().map(|item| PaperQaItem {
                 id: format!("qa_{}", uuid::Uuid::new_v4()),
@@ -2689,15 +2844,38 @@ async fn generate_paper_qa(request: PaperQaGenerateRequest) -> Result<PaperQaGen
         }.await;
 
         match qa_result {
-            Ok(items) => all_items.extend(items),
-            Err(e) => eprintln!("QA generation error for chunk {}: {}", chunk.id, e),
+            Ok(items) => {
+                let added = items.len();
+                all_items.extend(items);
+                let _ = window.emit("paper-qa-progress", serde_json::json!({
+                    "step": "qa",
+                    "chunkIndex": idx,
+                    "totalChunks": total,
+                    "chunkId": chunk.id,
+                    "status": "completed",
+                    "itemCount": all_items.len(),
+                    "message": format!("QA: chunk {}/{} done, {} items", idx + 1, total, added)
+                }));
+            }
+            Err(e) => {
+                warnings.push(format!("QA chunk {}: {}", chunk.id, e));
+                let _ = window.emit("paper-qa-progress", serde_json::json!({
+                    "step": "qa",
+                    "chunkIndex": idx,
+                    "totalChunks": total,
+                    "chunkId": chunk.id,
+                    "status": "error",
+                    "itemCount": all_items.len(),
+                    "message": format!("QA: chunk {}/{} failed", idx + 1, total)
+                }));
+            }
         }
     }
 
-    filter_paper_qa_inner(all_items, cot_ratio)
+    filter_paper_qa_inner(all_items, cot_ratio, warnings)
 }
 
-fn filter_paper_qa_inner(items: Vec<PaperQaItem>, cot_ratio: f64) -> Result<PaperQaGenerateResponse, String> {
+fn filter_paper_qa_inner(items: Vec<PaperQaItem>, cot_ratio: f64, warnings: Vec<String>) -> Result<PaperQaGenerateResponse, String> {
     // Stage 1: format + length filter
     let filtered: Vec<PaperQaItem> = items
         .into_iter()
@@ -2733,6 +2911,7 @@ fn filter_paper_qa_inner(items: Vec<PaperQaItem>, cot_ratio: f64) -> Result<Pape
                 total: 0, cot_count: 0, qa_count: 0,
                 cot_ratio: 0.0, qa_ratio: 0.0,
             },
+            warnings,
         });
     }
 
@@ -2761,6 +2940,7 @@ fn filter_paper_qa_inner(items: Vec<PaperQaItem>, cot_ratio: f64) -> Result<Pape
             cot_ratio: if final_total > 0 { cot_count as f64 / final_total as f64 } else { 0.0 },
             qa_ratio: if final_total > 0 { qa_count as f64 / final_total as f64 } else { 0.0 },
         },
+        warnings,
     })
 }
 
@@ -3360,7 +3540,7 @@ async fn run_pipeline_inner(
             )
         };
 
-    let config = GenerateConfig {
+    let mut config = GenerateConfig {
         provider: ProviderConfig {
             provider: request.provider,
             model: request.model,
@@ -3388,6 +3568,25 @@ async fn run_pipeline_inner(
         ),
         supporting_context: None,
     };
+
+    // Auto-detect platform proxy auth: if all three platform fields are present,
+    // login with token and override base_url/api_key. Matches Paper QA pattern.
+    if let (Some(platform_url), Some(username), Some(password)) = (
+        request.qa_platform_url.as_ref(),
+        request.qa_platform_username.as_ref(),
+        request.qa_platform_password.as_ref(),
+    ) {
+        if config.provider.base_url.as_ref().map_or(true, |u| u.trim().is_empty()) {
+            let (_endpoints, token, _user) =
+                platform_login_with_token(platform_url, username, password).await?;
+            config.provider.base_url = Some(format!(
+                "{}/api/generate",
+                platform_url.trim_end_matches('/')
+            ));
+            config.provider.api_key = Some(token);
+        }
+    }
+
     let generated_dir = output_dir.join("generated");
     let topic_path = output_dir.join("topic.json");
     let plans_path = output_dir.join("plans.json");
@@ -3880,7 +4079,7 @@ fn build_qa_batch_summary(app: &AppHandle, batch_dir: &Path) -> anyhow::Result<Q
             value
                 .runtime
                 .target_count
-                .div_ceil(value.runtime.shard_size)
+                .div_ceil(value.runtime.shard_size.max(1))
         })
         .or_else(|| generated_shards.as_ref().map(|shards| shards.len()));
     let fallback_completed_shards = generated_shards
@@ -4618,19 +4817,10 @@ struct OpenAiChatCompletion {
 
 #[tauri::command]
 async fn send_chat_message(request: ChatSendRequest) -> Result<ChatSendResponse, String> {
-    if request.provider == "platform" {
-        let platform_url = request
-            .platform_url
-            .as_ref()
-            .ok_or("platform_url is required for platform provider")?;
-        let username = request
-            .username
-            .as_ref()
-            .ok_or("username is required for platform provider")?;
-        let password = request
-            .password
-            .as_ref()
-            .ok_or("password is required for platform provider")?;
+    // Auto-detect: platform proxy (token) or direct API key (match Paper QA pattern)
+    if let (Some(platform_url), Some(username), Some(password)) =
+        (request.platform_url.as_ref(), request.username.as_ref(), request.password.as_ref())
+    {
         let (_endpoints, token, _user) =
             platform_login_with_token(platform_url, username, password).await?;
         let client = reqwest::Client::new();
@@ -4707,6 +4897,88 @@ async fn send_chat_message(request: ChatSendRequest) -> Result<ChatSendResponse,
     }
 }
 
+#[tauri::command]
+async fn send_chat_message_stream(
+    window: Window,
+    request: ChatSendRequest,
+) -> Result<ChatSendResponse, String> {
+    // Resolve auth (match send_chat_message pattern)
+    let (url, auth_header_value): (String, String) =
+        if let (Some(platform_url), Some(username), Some(password)) =
+            (request.platform_url.as_ref(), request.username.as_ref(), request.password.as_ref())
+        {
+            let (_endpoints, token, _user) =
+                platform_login_with_token(platform_url, username, password).await?;
+            (
+                format!("{}/api/generate/chat/completions", platform_url.trim_end_matches('/')),
+                format!("Bearer {}", token),
+            )
+        } else {
+            (
+                format!("{}/chat/completions", request.base_url.trim_end_matches('/')),
+                format!("Bearer {}", request.api_key),
+            )
+        };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .header("Authorization", &auth_header_value)
+        .json(&serde_json::json!({
+            "model": request.model,
+            "messages": request.messages.iter().map(|m| {
+                serde_json::json!({ "role": m.role, "content": m.content })
+            }).collect::<Vec<_>>(),
+            "stream": true
+        }))
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| format!("stream request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("stream API error {}: {}", status, body));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut full_content = String::new();
+
+    use futures::StreamExt;
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("stream read error: {}", e))?;
+        let text = String::from_utf8_lossy(&chunk);
+
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || !line.starts_with("data: ") {
+                continue;
+            }
+            let data = &line["data: ".len()..];
+            if data == "[DONE]" {
+                break;
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(delta) = parsed["choices"][0]["delta"]["content"].as_str() {
+                    full_content.push_str(delta);
+                    let _ = window.emit("chat-qa-token", serde_json::json!({
+                        "token": delta,
+                        "fullContent": full_content
+                    }));
+                }
+            }
+        }
+    }
+
+    Ok(ChatSendResponse {
+        message: ChatMessage {
+            role: "assistant".to_string(),
+            content: full_content,
+        },
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -4739,7 +5011,7 @@ pub fn run() {
             list_platform_import_batches,
             get_platform_import_batch_detail,
             upload_qa_batch,
-            push_paper_qa,
+            save_paper_qa_batch,
             get_qa_batch_platform_statuses,
             list_batch_qa_records,
             list_batch_qa_question_options,
@@ -4760,6 +5032,7 @@ pub fn run() {
             get_exports_stats,
             get_generate_models,
             send_chat_message,
+            send_chat_message_stream,
             push_chat_conversations,
             convert_pdf_via_mineru,
             chunk_paper_md,
