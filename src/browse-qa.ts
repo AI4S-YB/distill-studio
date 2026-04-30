@@ -44,7 +44,8 @@ import {
   canResumeBrowseBatch,
 } from "./utils";
 import { currentPlatformAuthPayload, renderPlatformPanels } from "./platform";
-import { appendLog, setCurrentTab, collectRequest, applyRequest, persistCurrentConfig, syncManagedRunModeUi, renderManagedRunPicker } from "./main";
+import { collectRequest, applyRequest, syncManagedRunModeUi, renderManagedRunPicker } from "./topic-pipeline";
+import { appendLog, setCurrentTab, persistCurrentConfig } from "./main";
 
 // ---- Constants (used only by browse QA) ----
 const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;

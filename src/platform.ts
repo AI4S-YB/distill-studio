@@ -20,7 +20,7 @@ import {
   updatePlatformPresetOption,
   syncProviderPresetInput,
 } from "./provider";
-import { renderSetupSummary } from "./settings";
+import { renderSetupSummary } from "./topic-pipeline";
 import {
   clearBrowsePlatformStatuses,
   clearBrowseRemoteVirtualBatch,

@@ -228,7 +228,52 @@ import {
   restorePlatformPasswordFromKeychain,
   currentQaPlatformUrl,
   hasQaPlatformCredentials,
+  currentManagedOutputRoot,
+  currentModelTrialSelectedQuestion,
 } from "./platform";
+import {
+  currentTopicFieldNode,
+  currentQaMode,
+  currentManagedRunMode,
+  shouldShowContinueRunButton,
+  composeEffectivePrompt,
+  batchMatchesRequest,
+  findLatestResumableBatchForRequest,
+  armResumeBatchForRequest,
+  clearManagedResumeBatchOnUserEdit,
+  applyQaModeDefaults,
+  syncStickyOffsets,
+  normalizeTopicTag,
+  renderTopicFieldModal,
+  renderTopicTags,
+  togglePendingTopicFieldTag,
+  openTopicFieldModal,
+  closeTopicFieldModal,
+  addTopicTag,
+  removeTopicTag,
+  resetRunStats,
+  beginRunStats,
+  stopRunStatsTicker,
+  startRunStatsTicker,
+  updateRunStatsFromEvent,
+  renderRunStats,
+  renderSetupSummary,
+  syncManagedRunModeUi,
+  renderManagedRunPicker,
+  normalizeRuntimeParameterInputs,
+  clearManagedResumeBatch,
+  syncRuntimeParameterInputBounds,
+  syncRuntimeParameterControlStates,
+  isPipelineBusyStatus,
+  runReadinessMissingKeys,
+  hasModelSettingsReady,
+  isRunReady,
+  updateRunButtonUi,
+  collectRequest,
+  validateRequest,
+  applyRequest,
+  scheduleAutoSave,
+} from "./topic-pipeline";
 import {
   renderFeedback2Panel,
   updateCheckButtonUi,
@@ -250,16 +295,7 @@ const DEFAULT_COT_SECTION_TRANSLATION_KEYS: Record<string, string> = {
   "Failure Modes": "cot_section_failure_modes",
   "Final Interpretation": "cot_section_final_interpretation"
 };
-const QUICK_TOPIC_TAG_IDS = [
-  "agri.crop_science.crop_breeding",
-  "agri.crop_science.molecular_breeding",
-  "agri.crop_science.genomic_selection",
-  "agri.crop_science.germplasm",
-  "agri.omics_bioinformatics.transcriptomics",
-  "agri.omics_bioinformatics.multiomics",
-  "agri.omics_bioinformatics.phenomics",
-  "agri.plant_protection.disease_resistance"
-] as const;
+
 const app = injectAppHtml();
 
 const promptInput = document.querySelector<HTMLTextAreaElement>("#prompt");
@@ -524,98 +560,9 @@ const lockableControls: Array<
   resumeInput
 ];
 
-
-function currentTopicFieldNode(): ResearchFieldNode | null {
-  if (!state.topicFieldModalPrimaryId) {
-    return RESEARCH_FIELD_TAXONOMY[0] ?? null;
-  }
-
-  return RESEARCH_FIELD_TAXONOMY.find((node) => node.id === state.topicFieldModalPrimaryId) ?? RESEARCH_FIELD_TAXONOMY[0] ?? null;
-}
-
-
-function currentQaMode(): "normal" | "cot" {
-  return qaModeCotInput.checked ? "cot" : "normal";
-}
-
-function currentManagedRunMode(): "new" | "resume-latest" {
-  if (state.managedResumeBatchId) {
-    return "resume-batch";
-  }
-
-  return "new";
-}
-
-function shouldShowContinueRunButton(): boolean {
-  return state.managedResumeBatchId !== null;
-}
-
-function batchMatchesRequest(batch: QaBatchSummary, request: PipelineFormRequest): boolean {
-  return (
-    batch.status !== "completed" &&
-    batch.prompt.trim() === composeEffectivePrompt(request.prompt, request.topicTags).trim() &&
-    (batch.qaMode ?? "normal") === request.qaMode &&
-    (batch.provider ?? "") === request.provider &&
-    (batch.model ?? "") === request.model
-  );
-}
-
-function findLatestResumableBatchForRequest(request: PipelineFormRequest): QaBatchSummary | null {
-  return (
-    state.browseBatches.find((batch) => batchMatchesRequest(batch, request)) ??
-    null
-  );
-}
-
-async function armResumeBatchForRequest(request: PipelineFormRequest) {
-  await loadBrowseBatches();
-  const batch = findLatestResumableBatchForRequest(request);
-  state.managedResumeBatchId = batch?.id ?? null;
-  state.managedResumeBatchLabel = batch ? batch.topicName || batch.name || batch.id : null;
-  syncManagedRunModeUi();
-  updateRunButtonUi();
-}
-
-function clearManagedResumeBatchOnUserEdit() {
-  if (!state.managedResumeBatchId || isPipelineBusyStatus(state.currentStatus)) {
-    return;
-  }
-  clearManagedResumeBatch(false);
-  updateRunButtonUi();
-}
-
-function applyQaModeDefaults(qaMode: "normal" | "cot") {
-  if (qaMode !== "cot") {
-    return;
-  }
-
-  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(state.currentLang), state.currentLang);
-  targetCountInput.value = String(DEFAULT_COT_TARGET_COUNT);
-  shardSizeInput.value = String(DEFAULT_COT_SHARD_SIZE);
-  batchSizeInput.value = String(DEFAULT_COT_BATCH_SIZE);
-  maxInFlightInput.value = String(DEFAULT_COT_MAX_IN_FLIGHT);
-  normalizeRuntimeParameterInputs(true);
-  renderSetupSummary();
-}
-
 function updateApiKeyVisibilityUi() {
   apiKeyInput.type = state.apiKeyVisible ? "text" : "password";
   toggleApiKeyVisibilityButton.textContent = t(state.apiKeyVisible ? "hide_secret" : "show_secret");
-}
-
-function syncStickyOffsets() {
-  if (!topbar) {
-    return;
-  }
-  const rootStyle = getComputedStyle(document.documentElement);
-  const stickyTop = Number.parseFloat(rootStyle.getPropertyValue("--sticky-top")) || 14;
-  const shellGap = appShell ? Number.parseFloat(getComputedStyle(appShell).gap) || 16 : 16;
-  const topbarOffset = Math.ceil(stickyTop + topbar.getBoundingClientRect().height + shellGap);
-  document.documentElement.style.setProperty("--topbar-offset", `${topbarOffset}px`);
-}
-
-function normalizeTopicTag(tag: string): string {
-  return tag.trim().replace(/\s+/g, " ");
 }
 
 export function setCurrentTab(tab: UiTab) {
@@ -673,387 +620,6 @@ export function setCurrentTab(tab: UiTab) {
   if (tab === "paper-qa") {
     try { renderPaperQaPanel(); } catch (e) { appendLog(`renderPaperQaPanel: ${String(e)}`); }
   }
-}
-
-function renderTopicFieldModal() {
-  const primaryNode = currentTopicFieldNode();
-
-  topicFieldPrimaryList.innerHTML = RESEARCH_FIELD_TAXONOMY.map((node) => {
-    const active = node.id === primaryNode?.id;
-    return `<button class="field-primary-button${active ? " active" : ""}" type="button" data-field-primary="${escapeHtml(node.id)}">${escapeHtml(topicTagLabel(node.id, "short"))}</button>`;
-  }).join("");
-
-  if (!primaryNode?.children?.length) {
-    topicFieldDetailList.innerHTML = `<div class="empty-state compact">${escapeHtml(t("topic_field_empty"))}</div>`;
-  } else {
-    topicFieldDetailList.innerHTML = primaryNode.children
-      .map((secondary) => {
-        const secondarySelected = state.pendingTopicFieldTags.includes(secondary.id);
-        const tertiaryHtml = secondary.children?.length
-          ? `<div class="field-chip-grid">${secondary.children
-              .map((tertiary) => {
-                const tertiarySelected = state.pendingTopicFieldTags.includes(tertiary.id);
-                return `<button class="field-option${tertiarySelected ? " active" : ""}" type="button" data-field-tag="${escapeHtml(tertiary.id)}">${escapeHtml(topicTagLabel(tertiary.id, "short"))}</button>`;
-              })
-              .join("")}</div>`
-          : "";
-
-        return `
-          <section class="field-group">
-            <div class="field-group-header">
-              <button class="field-option field-option-group${secondarySelected ? " active" : ""}" type="button" data-field-tag="${escapeHtml(secondary.id)}">
-                ${escapeHtml(topicTagLabel(secondary.id, "short"))}
-              </button>
-            </div>
-            ${tertiaryHtml}
-          </section>
-        `;
-      })
-      .join("");
-  }
-
-  if (state.pendingTopicFieldTags.length === 0) {
-    topicFieldPendingList.innerHTML = `<p class="empty-inline">${escapeHtml(t("no_tags"))}</p>`;
-  } else {
-    topicFieldPendingList.innerHTML = state.pendingTopicFieldTags
-      .map(
-        (tag) => `
-          <button class="tag-chip active removable" type="button" data-pending-tag="${escapeHtml(tag)}">
-            <span>${escapeHtml(topicTagLabel(tag))}</span>
-            <span class="tag-chip-close">×</span>
-          </button>
-        `
-      )
-      .join("");
-  }
-
-  topicFieldSelectedCount.textContent = formatCountTemplate("topic_field_selected_count", state.pendingTopicFieldTags.length);
-  confirmTopicFieldSelectionButton.disabled = state.pendingTopicFieldTags.length === 0;
-}
-
-function renderTopicTags() {
-  if (state.topicTags.length === 0) {
-    selectedTopicTags.innerHTML = `<p class="empty-inline">${escapeHtml(t("no_tags"))}</p>`;
-  } else {
-    selectedTopicTags.innerHTML = state.topicTags
-      .map(
-        (tag) => `
-          <button class="tag-chip active removable" type="button" data-selected-tag="${escapeHtml(tag)}">
-            <span>${escapeHtml(topicTagLabel(tag))}</span>
-            <span class="tag-chip-close">×</span>
-          </button>
-        `
-      )
-      .join("");
-  }
-
-  topicTagSuggestions.innerHTML = QUICK_TOPIC_TAG_IDS.map((tag) => {
-    const active = state.topicTags.includes(tag);
-    return `<button class="tag-chip${active ? " active" : ""}" type="button" data-suggested-tag="${tag}">${escapeHtml(topicTagLabel(tag, "short"))}</button>`;
-  }).join("");
-
-  if (!topicFieldModal.hidden) {
-    renderTopicFieldModal();
-  }
-}
-
-function togglePendingTopicFieldTag(tag: string) {
-  if (state.pendingTopicFieldTags.includes(tag)) {
-    state.pendingTopicFieldTags = state.pendingTopicFieldTags.filter((item) => item !== tag);
-  } else {
-    state.pendingTopicFieldTags = [...state.pendingTopicFieldTags, tag];
-  }
-
-  renderTopicFieldModal();
-}
-
-function openTopicFieldModal() {
-  if (!state.topicFieldModalPrimaryId) {
-    state.topicFieldModalPrimaryId = RESEARCH_FIELD_TAXONOMY[0]?.id ?? null;
-  }
-
-  state.pendingTopicFieldTags = [];
-  topicFieldModal.hidden = false;
-  renderTopicFieldModal();
-}
-
-function closeTopicFieldModal() {
-  topicFieldModal.hidden = true;
-  state.pendingTopicFieldTags = [];
-}
-
-function addTopicTag(tag: string) {
-  const normalized = normalizeTopicTag(tag);
-  if (!normalized) {
-    return;
-  }
-  if (!state.topicTags.includes(normalized)) {
-    clearManagedResumeBatchOnUserEdit();
-    state.topicTags = [...state.topicTags, normalized];
-    renderTopicTags();
-    renderSetupSummary();
-    scheduleAutoSave();
-  }
-}
-
-function removeTopicTag(tag: string) {
-  clearManagedResumeBatchOnUserEdit();
-  state.topicTags = state.topicTags.filter((item) => item !== tag);
-  renderTopicTags();
-  renderSetupSummary();
-  scheduleAutoSave();
-}
-
-function composeEffectivePrompt(prompt: string, tags: string[]): string {
-  if (!tags.length) {
-    return prompt;
-  }
-
-  return [
-    prompt,
-    "",
-    "Relevant research fields / directions:",
-    ...tags.map((tag) => `- ${topicTagLabel(tag)}`)
-  ].join("\n");
-}
-
-export function renderSetupSummary() {
-  const resolved = resolveLLMProvider();
-  const providerReady = resolved.mode !== "none";
-  const modelReady = resolved.model.length > 0;
-  const requiresEndpointAuth = resolved.mode === "settings";
-  const baseUrlReady = !requiresEndpointAuth || resolved.baseUrl.length > 0;
-  const apiKeyReady = !requiresEndpointAuth || resolved.apiKey.length > 0;
-  const connectionReady = !requiresEndpointAuth || (baseUrlReady && apiKeyReady);
-  const providerLabel = providerReady
-    ? (resolved.mode === "platform"
-        ? t("preset_platform")
-        : providerPresetInput.value === "custom"
-          ? providerInput.value.trim() || t("empty_value")
-          : currentPresetLabel(providerPresetInput.value as ProviderPresetId))
-    : "";
-  const missingKeys: string[] = [];
-
-  if (!providerReady) {
-    missingKeys.push("settings_checklist_missing_provider");
-  }
-  if (!modelReady) {
-    missingKeys.push("settings_checklist_missing_model");
-  }
-  if (requiresEndpointAuth && !baseUrlReady) {
-    missingKeys.push("settings_checklist_missing_base_url");
-  }
-  if (requiresEndpointAuth && !apiKeyReady) {
-    missingKeys.push("settings_checklist_missing_api_key");
-  }
-
-  const missingLabels = missingKeys.map((key) => t(key)).join(state.currentLang === "zh" ? "、" : ", ");
-  const connectionMissingKeys = missingKeys.filter((key) =>
-    ["settings_checklist_missing_base_url", "settings_checklist_missing_api_key"].includes(key)
-  );
-  const connectionMissingLabels = connectionMissingKeys
-    .map((key) => t(key))
-    .join(state.currentLang === "zh" ? "、" : ", ");
-  const items = [
-    {
-      label: t("settings_checklist_provider"),
-      status: providerReady,
-      detail: providerReady
-        ? formatMessage("settings_checklist_provider_ready", providerLabel)
-        : t("settings_checklist_provider_pending")
-    },
-    {
-      label: t("settings_checklist_model"),
-      status: modelReady,
-      detail: modelReady
-        ? formatMessage("settings_checklist_model_ready", currentModelValue(modelInput, customModelInput))
-        : t("settings_checklist_model_pending")
-    },
-    {
-      label: t("settings_checklist_connection"),
-      status: connectionReady,
-      detail: !requiresEndpointAuth
-        ? t("settings_checklist_connection_not_required")
-        : connectionReady
-          ? t("settings_checklist_connection_ready")
-          : formatMessage("settings_checklist_connection_pending", connectionMissingLabels)
-    },
-    {
-      label: t("settings_checklist_ready"),
-      status: missingKeys.length === 0,
-      detail:
-        missingKeys.length === 0
-          ? t("settings_checklist_ready_done")
-          : formatMessage("settings_checklist_ready_pending", missingLabels)
-    }
-  ];
-
-  updateRunButtonUi();
-}
-
-function resetRunStats() {
-  state.runStats = {
-    startedAtMs: null,
-    lastUpdatedAtMs: null,
-    generatedCount: 0,
-    targetCount: null,
-    shardIndex: null,
-    shardCount: null,
-    completedBatchCount: 0,
-    estimatedBatchCount: null,
-    completedShardCount: 0,
-    skippedShardCount: 0,
-    retryCount: 0,
-    failedBatchCount: 0,
-    samples: []
-  };
-}
-
-function beginRunStats(request: PipelineFormRequest) {
-  const startedAtMs = Date.now();
-  state.runStats = {
-    startedAtMs,
-    lastUpdatedAtMs: startedAtMs,
-    generatedCount: 0,
-    targetCount: request.targetCount,
-    shardIndex: null,
-    shardCount: request.shardSize > 0 ? Math.ceil(request.targetCount / request.shardSize) : null,
-    completedBatchCount: 0,
-    estimatedBatchCount:
-      request.batchSize > 0 ? Math.ceil(request.targetCount / request.batchSize) : null,
-    completedShardCount: 0,
-    skippedShardCount: 0,
-    retryCount: 0,
-    failedBatchCount: 0,
-    samples: [{ atMs: startedAtMs, generatedCount: 0 }]
-  };
-}
-
-function stopRunStatsTicker() {
-  if (state.runStatsTimer !== null) {
-    window.clearInterval(state.runStatsTimer);
-    state.runStatsTimer = null;
-  }
-}
-
-function startRunStatsTicker() {
-  stopRunStatsTicker();
-  state.runStatsTimer = window.setInterval(() => {
-    renderRunStats();
-  }, 1000);
-}
-
-function updateRunStatsFromEvent(payload: PipelineProgressEvent) {
-  const now = Date.now();
-  if (state.runStats.startedAtMs === null) {
-    state.runStats.startedAtMs = now;
-  }
-
-  state.runStats.lastUpdatedAtMs = now;
-  if (payload.targetCount !== null && payload.targetCount !== undefined) {
-    state.runStats.targetCount = payload.targetCount;
-  }
-  if (payload.totalGenerated !== null && payload.totalGenerated !== undefined) {
-    state.runStats.generatedCount = payload.totalGenerated;
-  }
-  if (payload.shardIndex !== null && payload.shardIndex !== undefined) {
-    state.runStats.shardIndex = payload.shardIndex;
-  }
-  if (payload.shardCount !== null && payload.shardCount !== undefined) {
-    state.runStats.shardCount = payload.shardCount;
-  }
-
-  if (payload.runtimeKind === "batch_completed") {
-    state.runStats.completedBatchCount += 1;
-  } else if (payload.runtimeKind === "shard_completed") {
-    state.runStats.completedShardCount += 1;
-  } else if (payload.runtimeKind === "shard_skipped") {
-    state.runStats.skippedShardCount += 1;
-  } else if (payload.runtimeKind === "batch_retry") {
-    state.runStats.retryCount += 1;
-  } else if (payload.runtimeKind === "batch_failed") {
-    state.runStats.failedBatchCount += 1;
-  }
-
-  if (
-    state.runStats.samples.length === 0 ||
-    state.runStats.samples[state.runStats.samples.length - 1]?.generatedCount !== state.runStats.generatedCount
-  ) {
-    state.runStats.samples.push({ atMs: now, generatedCount: state.runStats.generatedCount });
-  }
-
-  state.runStats.samples = state.runStats.samples.filter((sample) => now - sample.atMs <= 5 * 60 * 1000);
-}
-
-function renderRunStats() {
-  const now = Date.now();
-  const startedAtMs = state.runStats.startedAtMs;
-  const elapsedMs = startedAtMs === null ? null : now - startedAtMs;
-  const totalGenerated = state.runStats.generatedCount;
-  const totalTarget = state.runStats.targetCount;
-  const avgRatePerMinute =
-    startedAtMs !== null && elapsedMs !== null && elapsedMs > 0
-      ? (totalGenerated / elapsedMs) * 60_000
-      : null;
-
-  const recentWindowStart = now - 60_000;
-  const recentSample = [...state.runStats.samples]
-    .reverse()
-    .find((sample) => sample.atMs <= recentWindowStart) ?? state.runStats.samples[0] ?? null;
-  const currentRatePerMinute =
-    recentSample && recentSample.atMs < now
-      ? ((totalGenerated - recentSample.generatedCount) / (now - recentSample.atMs)) * 60_000
-      : avgRatePerMinute;
-  const remainingCount =
-    totalTarget !== null && totalTarget >= totalGenerated ? totalTarget - totalGenerated : null;
-  const etaMs =
-    remainingCount !== null &&
-    currentRatePerMinute !== null &&
-    currentRatePerMinute > 0 &&
-    remainingCount > 0
-      ? (remainingCount / currentRatePerMinute) * 60_000
-      : remainingCount === 0
-        ? 0
-        : null;
-
-  const generatedProgress =
-    totalTarget !== null
-      ? `${formatCount(totalGenerated)} / ${formatCount(totalTarget)}`
-      : totalGenerated > 0
-        ? formatCount(totalGenerated)
-        : t("stats_idle");
-  const shardCompleted = state.runStats.completedShardCount + state.runStats.skippedShardCount;
-  const shardProgress =
-    state.runStats.shardCount !== null
-      ? `${formatCount(shardCompleted)} / ${formatCount(state.runStats.shardCount)}`
-      : state.runStats.shardIndex !== null
-        ? formatCount(state.runStats.shardIndex)
-        : t("stats_idle");
-
-  const cards = [
-    { label: t("stats_elapsed"), value: startedAtMs === null ? t("stats_idle") : formatDuration(elapsedMs) },
-    { label: t("stats_current_speed"), value: formatRate(currentRatePerMinute) },
-    { label: t("stats_eta"), value: formatDuration(etaMs) },
-    { label: t("stats_generated_progress"), value: generatedProgress },
-    { label: t("stats_shard_progress"), value: shardProgress },
-    ...(state.runStats.retryCount > 0
-      ? [{ label: t("stats_retry_count"), value: formatCount(state.runStats.retryCount) }]
-      : []),
-    ...(state.runStats.failedBatchCount > 0
-      ? [{ label: t("stats_failed_requests"), value: formatCount(state.runStats.failedBatchCount) }]
-      : [])
-  ];
-
-  runStatsGrid.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="run-stat-card">
-          <p class="run-stat-label">${escapeHtml(card.label)}</p>
-          <p class="run-stat-value">${escapeHtml(card.value)}</p>
-        </article>
-      `
-    )
-    .join("");
 }
 
 function currentRunResponse(): PipelineResponse | null {
@@ -1392,235 +958,6 @@ function updateRuntimeConstraintHint() {
   );
 }
 
-function syncRuntimeParameterInputBounds() {
-  const targetValue = readOptionalInteger(targetCountInput) ?? defaultNumberValue(targetCountInput);
-  const safeTarget = Math.max(
-    1,
-    currentQaMode() === "cot" ? Math.min(targetValue, COT_TARGET_COUNT_CAP) : targetValue
-  );
-  const shardCap =
-    currentQaMode() === "cot" ? Math.min(safeTarget, COT_SAFE_SHARD_SIZE_CAP) : safeTarget;
-  const currentShardValue = readOptionalInteger(shardSizeInput);
-  const batchCap =
-    currentQaMode() === "cot"
-      ? 1
-      : Math.max(1, Math.min(currentShardValue ?? shardCap, shardCap));
-
-  targetCountInput.min = "1";
-  targetCountInput.max = currentQaMode() === "cot" ? String(COT_TARGET_COUNT_CAP) : "";
-  planLimitInput.min = "1";
-  shardSizeInput.min = "1";
-  shardSizeInput.max = String(Math.max(1, shardCap));
-  batchSizeInput.min = "1";
-  batchSizeInput.max = String(batchCap);
-  maxInFlightInput.min = "1";
-  maxInFlightInput.max = currentQaMode() === "cot" ? String(DEFAULT_COT_MAX_IN_FLIGHT) : "";
-  maxRetriesInput.min = "0";
-  timeoutInput.min = "1";
-}
-
-function syncRuntimeParameterControlStates() {
-  if (isPipelineBusyStatus(state.currentStatus)) {
-    return;
-  }
-
-  const cotMode = currentQaMode() === "cot";
-  const resumeMode = currentManagedRunMode() !== "new";
-  batchSizeInput.disabled = cotMode;
-  maxInFlightInput.disabled = cotMode;
-  if (resumeMode) {
-    resumeInput.checked = true;
-  }
-  resumeInput.disabled = resumeMode;
-}
-
-export function syncManagedRunModeUi() {
-  managedRunBanner.hidden = !state.managedResumeBatchId;
-  managedRunModeCurrent.textContent = state.managedResumeBatchId
-    ? formatMessage("managed_run_mode_exact_hint", state.managedResumeBatchLabel ?? state.managedResumeBatchId)
-    : "";
-  clearManagedResumeBatchButton.textContent = t("managed_run_mode_clear");
-  renderManagedRunPicker();
-}
-
-export function renderManagedRunPicker() {
-  const localBatches = localBrowseBatches();
-  const options = [
-    {
-      value: "",
-      label: localBatches.length ? t("managed_run_mode_pick_placeholder") : t("managed_run_mode_pick_empty")
-    },
-    ...localBatches.map((batch) => ({
-      value: batch.id,
-      label: `${batch.topicName || batch.name} · ${formatUpdatedAt(batch.updatedAtMs)}`
-    }))
-  ];
-
-  managedRunPickInput.innerHTML = options
-    .map(
-      ({ value, label }) =>
-        `<option value="${escapeHtml(value)}"${value === "" ? "" : ""}>${escapeHtml(label)}</option>`
-    )
-    .join("");
-  managedRunPickInput.value = state.managedResumeBatchId ?? "";
-  managedRunPickInput.disabled =
-    state.currentStatus === "running" || state.currentStatus === "stopping" || localBatches.length === 0;
-}
-
-function clearManagedResumeBatch(logChange = false) {
-  state.managedResumeBatchId = null;
-  state.managedResumeBatchLabel = null;
-  managedRunModeNewInput.checked = true;
-  managedRunModeResumeLatestInput.checked = false;
-  syncManagedRunModeUi();
-  syncRuntimeParameterControlStates();
-  if (logChange) {
-    appendLog(t("log_cleared_batch_task"));
-  }
-}
-
-export function normalizeRuntimeParameterInputs(commit = false) {
-  const cotMode = currentQaMode() === "cot";
-  const fallbackTarget = cotMode ? DEFAULT_COT_TARGET_COUNT : defaultNumberValue(targetCountInput);
-  const fallbackShard = cotMode ? DEFAULT_COT_SHARD_SIZE : defaultNumberValue(shardSizeInput);
-  const fallbackBatch = cotMode ? DEFAULT_COT_BATCH_SIZE : defaultNumberValue(batchSizeInput);
-  const fallbackMaxInFlight = cotMode
-    ? DEFAULT_COT_MAX_IN_FLIGHT
-    : defaultNumberValue(maxInFlightInput);
-  const fallbackPlanLimit = defaultNumberValue(planLimitInput);
-  const fallbackMaxRetries = Math.max(0, defaultNumberValue(maxRetriesInput));
-  const fallbackTimeout = defaultNumberValue(timeoutInput);
-
-  let target = readOptionalInteger(targetCountInput);
-  let planLimit = readOptionalInteger(planLimitInput);
-  let shardSize = readOptionalInteger(shardSizeInput);
-  let batchSize = readOptionalInteger(batchSizeInput);
-  let maxInFlight = readOptionalInteger(maxInFlightInput);
-  let maxRetries = readOptionalInteger(maxRetriesInput);
-  let timeout = readOptionalInteger(timeoutInput);
-
-  if (commit) {
-    target ??= fallbackTarget;
-    planLimit ??= fallbackPlanLimit;
-    shardSize ??= fallbackShard;
-    batchSize ??= fallbackBatch;
-    maxInFlight ??= fallbackMaxInFlight;
-    maxRetries ??= fallbackMaxRetries;
-    timeout ??= fallbackTimeout;
-  }
-
-  if (target !== null) {
-    target = Math.max(1, cotMode ? Math.min(target, COT_TARGET_COUNT_CAP) : target);
-    setNumberValueIfNeeded(targetCountInput, target);
-  }
-
-  if (planLimit !== null) {
-    planLimit = Math.max(1, planLimit);
-    setNumberValueIfNeeded(planLimitInput, planLimit);
-  }
-
-  if (shardSize !== null) {
-    const shardUpperBound = target !== null
-      ? cotMode
-        ? Math.min(target, COT_SAFE_SHARD_SIZE_CAP)
-        : target
-      : cotMode
-        ? COT_SAFE_SHARD_SIZE_CAP
-        : null;
-    shardSize = Math.max(1, shardSize);
-    if (shardUpperBound !== null) {
-      shardSize = Math.min(shardSize, Math.max(1, shardUpperBound));
-    }
-    setNumberValueIfNeeded(shardSizeInput, shardSize);
-  }
-
-  if (batchSize !== null) {
-    batchSize = cotMode ? 1 : Math.max(1, batchSize);
-    if (!cotMode && shardSize !== null) {
-      batchSize = Math.min(batchSize, Math.max(1, shardSize));
-    }
-    setNumberValueIfNeeded(batchSizeInput, batchSize);
-  }
-
-  if (maxInFlight !== null) {
-    maxInFlight = cotMode ? DEFAULT_COT_MAX_IN_FLIGHT : Math.max(1, maxInFlight);
-    setNumberValueIfNeeded(maxInFlightInput, maxInFlight);
-  }
-
-  if (maxRetries !== null) {
-    maxRetries = Math.max(0, maxRetries);
-    setNumberValueIfNeeded(maxRetriesInput, maxRetries);
-  }
-
-  if (timeout !== null) {
-    timeout = Math.max(1, timeout);
-    setNumberValueIfNeeded(timeoutInput, timeout);
-  }
-
-  syncRuntimeParameterInputBounds();
-  updateRuntimeConstraintHint();
-  syncRuntimeParameterControlStates();
-}
-
-function isPipelineBusyStatus(statusValue: typeof state.currentStatus): boolean {
-  return statusValue === "running" || statusValue === "stopping";
-}
-
-function runReadinessMissingKeys(): string[] {
-  const missingKeys: string[] = [];
-
-  if (!promptInput.value.trim()) {
-    missingKeys.push("run_readiness_missing_prompt");
-  }
-  const resolved = resolveLLMProvider();
-  if (resolved.mode === "none") {
-    missingKeys.push("settings_checklist_missing_provider");
-  }
-  if (!resolved.model) {
-    missingKeys.push("settings_checklist_missing_model");
-  }
-  if (resolved.mode === "settings") {
-    if (!resolved.baseUrl) missingKeys.push("settings_checklist_missing_base_url");
-    if (!resolved.apiKey) missingKeys.push("settings_checklist_missing_api_key");
-  }
-
-  return missingKeys;
-}
-
-function hasModelSettingsReady() {
-  return runReadinessMissingKeys().every((key) =>
-    ![
-      "settings_checklist_missing_provider",
-      "settings_checklist_missing_model",
-      "settings_checklist_missing_base_url",
-      "settings_checklist_missing_api_key"
-    ].includes(key)
-  );
-}
-
-function isRunReady() {
-  return runReadinessMissingKeys().length === 0;
-}
-
-function updateRunButtonUi() {
-  runButton.dataset.intent = state.currentStatus === "running" || state.currentStatus === "stopping" ? "stop" : "run";
-  if (state.currentStatus === "running") {
-    runButton.textContent = t("stop_run");
-  } else if (state.currentStatus === "stopping") {
-    runButton.textContent = t("stop_requested");
-  } else if (shouldShowContinueRunButton()) {
-    runButton.textContent = t("continue_run");
-  } else {
-    runButton.textContent = t("run_pipeline");
-  }
-
-  runButton.disabled =
-    state.currentStatus === "previewing" ||
-    state.currentStatus === "updating" ||
-    state.currentStatus === "stopping" ||
-    (state.currentStatus !== "running" && !isRunReady());
-}
-
 function setControlsLocked(locked: boolean) {
   for (const control of lockableControls) {
     control.disabled = locked;
@@ -1815,134 +1152,6 @@ async function chooseManagedOutputRoot() {
   }
 }
 
-export function collectRequest() {
-  normalizeRuntimeParameterInputs(true);
-  const resolved = resolveLLMProvider();
-
-  const request: PipelineFormRequest = {
-    prompt: promptInput.value.trim(),
-    topicTags: [...state.topicTags],
-    qaMode: currentQaMode(),
-    outputLanguage: state.currentLang,
-    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/), state.currentLang),
-    targetCount: readNumber(targetCountInput),
-    planLimit: readNumber(planLimitInput),
-    outputDir: MANAGED_OUTPUT_DIR,
-    managedOutputRoot: currentManagedOutputRoot() || null,
-    provider: resolved.mode === "settings" ? resolved.provider : "openai-compatible",
-    model: resolved.model,
-    baseUrl: resolved.mode === "settings" ? resolved.baseUrl : null,
-    apiKey: resolved.mode === "settings" ? resolved.apiKey : null,
-    apiKeyEnv: null,
-    temperature: resolved.mode === "platform"
-      ? (currentPlatformGenerateModel()?.temperature ?? 0.8)
-      : 0.8,
-    maxTokens: resolved.mode === "platform"
-      ? (currentPlatformGenerateModel()?.maxTokens ?? 800)
-      : (providerInput.value === "openai-compatible" ? 2400 : 800),
-    shardSize: readNumber(shardSizeInput),
-    batchSize: readNumber(batchSizeInput),
-    maxInFlight: readNumber(maxInFlightInput),
-    maxRetries: readNumber(maxRetriesInput),
-    requestTimeoutSecs: readNumber(timeoutInput),
-    resume: resumeInput.checked,
-    managedRunMode: currentManagedRunMode(),
-    managedRunBatchId: state.managedResumeBatchId,
-    qaPlatformUrl: currentQaPlatformUrl() || null,
-    qaPlatformUsername: qaPlatformUsernameInput.value.trim() || null,
-    qaPlatformPassword: qaPlatformPasswordInput.value.trim() || null,
-    literatureApiUrl: literatureApiUrlInput.value.trim() || null,
-    literatureApiAuthToken: literatureApiAuthInput.value.trim() || null
-  };
-
-  return request;
-}
-
-function validateRequest(request: PipelineFormRequest): ValidationIssueKey[] {
-  const issues: ValidationIssueKey[] = [];
-
-  if (!request.prompt) {
-    issues.push("validation_issue_prompt_required");
-  }
-  if (!request.model) {
-    issues.push("validation_issue_model_required");
-  }
-  const resolved = resolveLLMProvider();
-  if (resolved.mode === "settings") {
-    if (!request.baseUrl) issues.push("validation_issue_base_url_required");
-    if (!request.apiKey) issues.push("validation_issue_api_key_required");
-  }
-  if (!Number.isInteger(request.targetCount) || request.targetCount <= 0) {
-    issues.push("validation_issue_target_count_invalid");
-  }
-  if (!Number.isInteger(request.planLimit) || request.planLimit <= 0) {
-    issues.push("validation_issue_plan_limit_invalid");
-  }
-  if (!Number.isInteger(request.shardSize) || request.shardSize <= 0) {
-    issues.push("validation_issue_shard_size_invalid");
-  }
-  if (!Number.isInteger(request.batchSize) || request.batchSize <= 0) {
-    issues.push("validation_issue_batch_size_invalid");
-  }
-  if (!Number.isInteger(request.maxInFlight) || request.maxInFlight <= 0) {
-    issues.push("validation_issue_max_in_flight_invalid");
-  }
-  if (!Number.isInteger(request.maxRetries) || request.maxRetries < 0) {
-    issues.push("validation_issue_max_retries_invalid");
-  }
-  if (!Number.isInteger(request.requestTimeoutSecs) || request.requestTimeoutSecs <= 0) {
-    issues.push("validation_issue_timeout_invalid");
-  }
-
-  return issues;
-}
-
-export function applyRequest(request: PipelineFormRequest) {
-  promptInput.value = request.prompt;
-  state.topicTags = [...request.topicTags];
-  qaModeNormalInput.checked = (request.qaMode ?? "normal") !== "cot";
-  qaModeCotInput.checked = (request.qaMode ?? "normal") === "cot";
-  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders, state.currentLang);
-  targetCountInput.value = String(request.targetCount);
-  planLimitInput.value = String(request.planLimit);
-  if (request.managedOutputRoot?.trim()) {
-    outputRootInput.value = request.managedOutputRoot.trim();
-  }
-  providerInput.value = request.provider;
-  baseUrlInput.value = request.baseUrl ?? "";
-  apiKeyInput.value = request.apiKey ?? "";
-  const savedUrl = request.qaPlatformUrl ?? "";
-  if (qaPlatformDevInput) qaPlatformDevInput.checked = savedUrl.includes("127.0.0.1");
-  if (qaPlatformProdInput) qaPlatformProdInput.checked = !savedUrl.includes("127.0.0.1");
-  qaPlatformUsernameInput.value = request.qaPlatformUsername ?? "";
-  qaPlatformPasswordInput.value = request.qaPlatformPassword ?? "";
-  literatureApiUrlInput.value = request.literatureApiUrl ?? "";
-  literatureApiAuthInput.value = request.literatureApiAuthToken ?? "";
-  shardSizeInput.value = String(request.shardSize);
-  batchSizeInput.value = String(request.batchSize);
-  maxInFlightInput.value = String(request.maxInFlight);
-  maxRetriesInput.value = String(request.maxRetries);
-  timeoutInput.value = String(request.requestTimeoutSecs);
-  resumeInput.checked = request.resume;
-  state.managedResumeBatchId = request.managedRunMode === "resume-batch" ? request.managedRunBatchId ?? null : null;
-  state.managedResumeBatchLabel = null;
-  managedRunModeNewInput.checked = (request.managedRunMode ?? "new") === "new";
-  managedRunModeResumeLatestInput.checked = (request.managedRunMode ?? "new") !== "new";
-  const presetId = detectProviderPreset({
-    provider: request.provider,
-    baseUrl: request.baseUrl
-  });
-  resetPlatformIntegrationState();
-  providerPresetInput.value = presetId;
-  syncProviderFieldVisibility(presetId);
-  syncModelOptions(presetId, request.model);
-  normalizeRuntimeParameterInputs(true);
-  syncManagedRunModeUi();
-  renderTopicTags();
-  renderSetupSummary();
-  updateRunButtonUi();
-}
-
 void listen<PipelineProgressEvent>("pipeline-progress", (event) => {
   const payload = event.payload;
   const stageKey = `stage_${payload.stage.replace(/-/g, "_")}`;
@@ -2010,22 +1219,6 @@ export async function persistCurrentConfig(silent = true) {
   } catch (error) {
     appendLog(`${t("log_save_failed")}: ${String(error)}`);
   }
-}
-
-
-function scheduleAutoSave() {
-  if (!state.autoSaveEnabled) {
-    return;
-  }
-
-  if (state.autoSaveTimer !== null) {
-    window.clearTimeout(state.autoSaveTimer);
-  }
-
-  state.autoSaveTimer = window.setTimeout(() => {
-    state.autoSaveTimer = null;
-    void persistCurrentConfig(true);
-  }, AUTO_SAVE_DELAY_MS);
 }
 
 async function loadConfig(auto = false) {

@@ -22,12 +22,9 @@ import {
 import { state } from "./state";
 import { t, formatMessage } from "./translations";
 import { currentPresetLabel, currentModelValue } from "./utils";
-import {
-  currentPlatformAuthPayload,
-  normalizeRuntimeParameterInputs,
-  renderSetupSummary,
-  appendLog,
-} from "./main";
+import { currentPlatformAuthPayload } from "./platform";
+import { normalizeRuntimeParameterInputs, renderSetupSummary } from "./topic-pipeline";
+import { appendLog } from "./main";
 
 // ---- DOM element references (owned by main.ts, assigned at init) ----
 export let baseUrlInput: HTMLInputElement;
