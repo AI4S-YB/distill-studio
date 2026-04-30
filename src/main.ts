@@ -51,60 +51,33 @@ import type {
   ManagedOutputRootResponse,
   RunStatsSnapshot,
 } from "./types";
+import {
+  formatCotSectionHeaders,
+  defaultCotSectionHeadersForLang,
+  isDefaultCotSectionHeaderText,
+  normalizeCotSectionHeaders,
+  LANG_STORAGE_KEY,
+  CHAT_SESSIONS_STORAGE_KEY,
+  PAPER_QA_STORAGE_KEY,
+  DEFAULT_PROFILE_NAME,
+  AUTO_SAVE_DELAY_MS,
+  MANAGED_OUTPUT_DIR,
+  CUSTOM_MODEL_VALUE,
+  DEFAULT_COT_TARGET_COUNT,
+  COT_TARGET_COUNT_CAP,
+  PROVIDER_PRESETS,
+  DEFAULT_COT_SECTION_HEADERS_ZH,
+  DEFAULT_COT_SECTION_HEADERS_EN,
+} from "./constants";
 
 declare const __APP_VERSION__: string;
 
 const DEFAULT_MANUAL_UPDATE_URL = "https://github.com/AI4S-YB/distill-studio/releases/latest";
 
-function formatCotSectionHeaders(headers: readonly string[] | null | undefined): string {
-  return normalizeCotSectionHeaders(headers).join("\n");
-}
-
-function defaultCotSectionHeadersForLang(lang: Lang): string[] {
-  return [...(lang === "zh" ? DEFAULT_COT_SECTION_HEADERS_ZH : DEFAULT_COT_SECTION_HEADERS_EN)];
-}
-
-function isDefaultCotSectionHeaderText(value: string): boolean {
-  const normalized = formatCotSectionHeaders(value.split(/\r?\n/));
-  return (
-    normalized === formatCotSectionHeaders(DEFAULT_COT_SECTION_HEADERS_ZH) ||
-    normalized === formatCotSectionHeaders(DEFAULT_COT_SECTION_HEADERS_EN)
-  );
-}
-
-const LANG_STORAGE_KEY = "distill-studio.lang";
-const CHAT_SESSIONS_STORAGE_KEY = "distill-studio.chat-sessions";
-const PAPER_QA_STORAGE_KEY = "distill-studio.paper-qa";
-const DEFAULT_PROFILE_NAME = "default";
-const AUTO_SAVE_DELAY_MS = 600;
-const MANAGED_OUTPUT_DIR = "__managed__";
-const CUSTOM_MODEL_VALUE = "__custom__";
-const DEFAULT_COT_TARGET_COUNT = 10;
-const COT_TARGET_COUNT_CAP = 100;
 const DEFAULT_COT_SHARD_SIZE = 10;
 const COT_SAFE_SHARD_SIZE_CAP = 10;
 const DEFAULT_COT_BATCH_SIZE = 1;
 const DEFAULT_COT_MAX_IN_FLIGHT = 2;
-const DEFAULT_COT_SECTION_HEADERS_EN = [
-  "Workflow Summary",
-  "Reference Milestones",
-  "Reference Steps",
-  "Step Rationale",
-  "Decision Points",
-  "Quality Checks",
-  "Failure Modes",
-  "Final Interpretation"
-] as const;
-const DEFAULT_COT_SECTION_HEADERS_ZH = [
-  "研究流程概述",
-  "参考里程碑",
-  "参考步骤",
-  "步骤依据",
-  "关键决策点",
-  "质量检查",
-  "失败模式",
-  "最终解释"
-] as const;
 const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetId = "qwen_dashscope";
 const DEFAULT_QA_PLATFORM_URL = "http://182.92.166.143";
 const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;
@@ -624,88 +597,6 @@ const QUICK_TOPIC_TAG_IDS = [
   "agri.plant_protection.disease_resistance"
 ] as const;
 const RESEARCH_FIELD_LABELS = createResearchFieldLabels(RESEARCH_FIELD_TAXONOMY);
-const PROVIDER_PRESETS: Record<ProviderPresetConfigKey, ProviderPresetConfig> = {
-  qwen_dashscope: {
-    provider: "openai-compatible",
-    defaultModel: "qwen3.6-max-preview",
-    models: [
-      "qwen3.6-max-preview",
-      "qwen3.6-plus",
-      "qwen-plus",
-      "qwen-max",
-      "qwen-turbo",
-      "qwen-long",
-      "qwen3-max"
-    ],
-    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 180
-  },
-  deepseek: {
-    provider: "openai-compatible",
-    defaultModel: "deepseek-chat",
-    models: ["deepseek-chat", "deepseek-reasoner"],
-    baseUrl: "https://api.deepseek.com",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  moonshot_kimi: {
-    provider: "openai-compatible",
-    defaultModel: "kimi-latest-32k",
-    models: ["kimi-latest-8k", "kimi-latest-32k", "kimi-latest-128k", "kimi-k2-0711-preview"],
-    baseUrl: "https://api.moonshot.cn/v1",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  zhipu_glm: {
-    provider: "openai-compatible",
-    defaultModel: "glm-4.5-flash",
-    models: ["glm-4.5-flash", "glm-4.5-air", "glm-4.5", "glm-5.1"],
-    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  minimax: {
-    provider: "openai-compatible",
-    defaultModel: "MiniMax-M2.5",
-    models: ["MiniMax-M2.5", "MiniMax-M2.5-Preview", "MiniMax-M1"],
-    baseUrl: "https://api.minimaxi.com/v1",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  tencent_hunyuan: {
-    provider: "openai-compatible",
-    defaultModel: "hunyuan-turbos-latest",
-    models: ["hunyuan-lite", "hunyuan-turbos-latest", "hunyuan-t1-latest"],
-    baseUrl: "https://api.hunyuan.cloud.tencent.com/v1",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  baidu_qianfan: {
-    provider: "openai-compatible",
-    defaultModel: "ERNIE-4.5-Turbo-128K",
-    models: ["ERNIE-4.5-Turbo-128K", "ERNIE-5.0", "ERNIE-X1.1"],
-    baseUrl: "https://qianfan.baidubce.com/v2",
-    batchSize: 8,
-    maxInFlight: 4,
-    requestTimeoutSecs: 240
-  },
-  stub_local: {
-    provider: "stub",
-    defaultModel: "stub-topic-distiller",
-    models: ["stub-topic-distiller"],
-    baseUrl: "",
-    batchSize: 24,
-    maxInFlight: 16,
-    requestTimeoutSecs: 120
-  }
-} as const;
 
 const translations: Record<Lang, Record<string, string>> = {
   zh: {
@@ -2898,7 +2789,7 @@ if (
   throw new Error("Missing UI elements");
 }
 
-cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
+cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
 
 const lockableControls: Array<
   HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
@@ -3093,7 +2984,7 @@ function applyQaModeDefaults(qaMode: "normal" | "cot") {
     return;
   }
 
-  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
+  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
   targetCountInput.value = String(DEFAULT_COT_TARGET_COUNT);
   shardSizeInput.value = String(DEFAULT_COT_SHARD_SIZE);
   batchSizeInput.value = String(DEFAULT_COT_BATCH_SIZE);
@@ -5865,18 +5756,11 @@ function truncateText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
-function normalizeCotSectionHeaders(headers: string[] | null | undefined): string[] {
-  const normalized = (headers ?? [])
-    .map((value) => value.trim().replace(/:+$/, "").trim())
-    .filter(Boolean);
-  return normalized.length ? normalized : defaultCotSectionHeadersForLang(currentLang);
-}
-
 function parseCotAnswerSections(
   answer: string,
   headers: string[] | null | undefined
 ): Array<{ label: string; value: string }> {
-  const normalizedHeaders = normalizeCotSectionHeaders(headers);
+  const normalizedHeaders = normalizeCotSectionHeaders(headers, currentLang);
   const headingPattern = normalizedHeaders.map((heading) => escapeRegExp(heading)).join("|");
   const matcher = new RegExp(`^(${headingPattern})\\s*:\\s*`, "gm");
   const matches = Array.from(answer.matchAll(matcher));
@@ -7840,7 +7724,7 @@ function collectRequest() {
     topicTags: [...topicTags],
     qaMode: currentQaMode(),
     outputLanguage: currentLang,
-    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/)),
+    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/), currentLang),
     targetCount: readNumber(targetCountInput),
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
@@ -7918,7 +7802,7 @@ function applyRequest(request: PipelineFormRequest) {
   topicTags = [...request.topicTags];
   qaModeNormalInput.checked = (request.qaMode ?? "normal") !== "cot";
   qaModeCotInput.checked = (request.qaMode ?? "normal") === "cot";
-  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders);
+  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders, currentLang);
   targetCountInput.value = String(request.targetCount);
   planLimitInput.value = String(request.planLimit);
   if (request.managedOutputRoot?.trim()) {
@@ -8101,11 +7985,11 @@ async function loadConfig(auto = false) {
 }
 
 langSelect.addEventListener("change", () => {
-  const shouldSyncCotHeaders = isDefaultCotSectionHeaderText(cotSectionHeadersInput.value);
+  const shouldSyncCotHeaders = isDefaultCotSectionHeaderText(cotSectionHeadersInput.value, currentLang);
   currentLang = langSelect.value === "zh" ? "zh" : "en";
   window.localStorage.setItem(LANG_STORAGE_KEY, currentLang);
   if (shouldSyncCotHeaders) {
-    cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang));
+    cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
   }
   applyTranslations();
 });
