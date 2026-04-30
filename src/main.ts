@@ -68,11 +68,25 @@ import {
   PROVIDER_PRESETS,
   DEFAULT_COT_SECTION_HEADERS_ZH,
   DEFAULT_COT_SECTION_HEADERS_EN,
+  DEFAULT_MANUAL_UPDATE_URL,
+  RESEARCH_FIELD_TAXONOMY,
 } from "./constants";
-
-declare const __APP_VERSION__: string;
-
-const DEFAULT_MANUAL_UPDATE_URL = "https://github.com/AI4S-YB/distill-studio/releases/latest";
+import { state } from "./state";
+import type {
+  PlatformNews,
+  DashboardOverview,
+  ChangePasswordResponse,
+  ModelChangelogEntry,
+  PlatformGenerateModel,
+  ExportsStatsData,
+  ExportsStatsWeekly,
+  PaperFileStatus,
+  PaperChunk,
+  PaperQaGenerateResponse,
+  PaperFile,
+  ChatSession,
+  ChatUploadResponse,
+} from "./state";
 
 const DEFAULT_COT_SHARD_SIZE = 10;
 const COT_SAFE_SHARD_SIZE_CAP = 10;
@@ -236,356 +250,6 @@ const SETTING_HELP_CONTENT: Record<Lang, Record<string, { title: string; body: s
     }
   }
 };
-const RESEARCH_FIELD_TAXONOMY: readonly ResearchFieldNode[] = [
-  {
-    id: "agri",
-    zh: "农业与生物育种",
-    en: "Agriculture and Biological Breeding",
-    children: [
-      {
-        id: "agri.crop_science",
-        zh: "作物科学",
-        en: "Crop Science",
-        children: [
-          { id: "agri.crop_science.crop_breeding", zh: "作物遗传育种", en: "Crop Genetics and Breeding" },
-          { id: "agri.crop_science.molecular_breeding", zh: "分子育种", en: "Molecular Breeding" },
-          { id: "agri.crop_science.genomic_selection", zh: "基因组选择", en: "Genomic Selection" },
-          { id: "agri.crop_science.germplasm", zh: "种质创新与资源利用", en: "Germplasm Innovation and Utilization" },
-          { id: "agri.crop_science.quality_improvement", zh: "品质改良", en: "Quality Improvement" }
-        ]
-      },
-      {
-        id: "agri.plant_biology",
-        zh: "植物生物学",
-        en: "Plant Biology",
-        children: [
-          { id: "agri.plant_biology.molecular_biology", zh: "植物分子生物学", en: "Plant Molecular Biology" },
-          { id: "agri.plant_biology.gene_regulation", zh: "基因调控", en: "Gene Regulation" },
-          { id: "agri.plant_biology.stress_biology", zh: "逆境生物学", en: "Stress Biology" },
-          { id: "agri.plant_biology.development", zh: "植物发育", en: "Plant Development" },
-          { id: "agri.plant_biology.physiology", zh: "植物生理", en: "Plant Physiology" }
-        ]
-      },
-      {
-        id: "agri.plant_protection",
-        zh: "植物保护",
-        en: "Plant Protection",
-        children: [
-          { id: "agri.plant_protection.disease_resistance", zh: "病害抗性", en: "Disease Resistance" },
-          { id: "agri.plant_protection.insect_resistance", zh: "虫害抗性", en: "Insect Resistance" },
-          { id: "agri.plant_protection.host_pathogen", zh: "寄主-病原互作", en: "Host-Pathogen Interaction" },
-          { id: "agri.plant_protection.integrated_management", zh: "综合防控", en: "Integrated Pest Management" }
-        ]
-      },
-      {
-        id: "agri.seed_horticulture",
-        zh: "种子与园艺",
-        en: "Seed Science and Horticulture",
-        children: [
-          { id: "agri.seed_horticulture.seed_science", zh: "种子科学与技术", en: "Seed Science and Technology" },
-          { id: "agri.seed_horticulture.vegetable_science", zh: "蔬菜科学", en: "Vegetable Science" },
-          { id: "agri.seed_horticulture.fruit_science", zh: "果树科学", en: "Fruit Science" },
-          { id: "agri.seed_horticulture.postharvest", zh: "采后生物学", en: "Postharvest Biology" }
-        ]
-      },
-      {
-        id: "agri.omics_bioinformatics",
-        zh: "组学与农业生物信息",
-        en: "Omics and Agricultural Bioinformatics",
-        children: [
-          { id: "agri.omics_bioinformatics.genomics", zh: "基因组学", en: "Genomics" },
-          { id: "agri.omics_bioinformatics.transcriptomics", zh: "转录组学", en: "Transcriptomics" },
-          { id: "agri.omics_bioinformatics.multiomics", zh: "多组学整合", en: "Multi-omics Integration" },
-          { id: "agri.omics_bioinformatics.phenomics", zh: "表型组学", en: "Phenomics" },
-          { id: "agri.omics_bioinformatics.systems_biology", zh: "系统生物学", en: "Systems Biology" }
-        ]
-      },
-      {
-        id: "agri.environment",
-        zh: "农业资源与环境",
-        en: "Agricultural Resources and Environment",
-        children: [
-          { id: "agri.environment.soil_science", zh: "土壤科学", en: "Soil Science" },
-          { id: "agri.environment.nutrient_management", zh: "养分管理", en: "Nutrient Management" },
-          { id: "agri.environment.agroecology", zh: "农业生态", en: "Agroecology" },
-          { id: "agri.environment.smart_agriculture", zh: "智慧农业", en: "Smart Agriculture" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "medicine",
-    zh: "医学与健康",
-    en: "Medicine and Health",
-    children: [
-      {
-        id: "medicine.basic",
-        zh: "基础医学",
-        en: "Basic Medicine",
-        children: [
-          { id: "medicine.basic.molecular_medicine", zh: "分子医学", en: "Molecular Medicine" },
-          { id: "medicine.basic.immunology", zh: "免疫学", en: "Immunology" },
-          { id: "medicine.basic.neuroscience", zh: "神经科学", en: "Neuroscience" },
-          { id: "medicine.basic.genomics", zh: "医学基因组学", en: "Medical Genomics" }
-        ]
-      },
-      {
-        id: "medicine.clinical",
-        zh: "临床医学",
-        en: "Clinical Medicine",
-        children: [
-          { id: "medicine.clinical.oncology", zh: "肿瘤学", en: "Oncology" },
-          { id: "medicine.clinical.cardiovascular", zh: "心血管医学", en: "Cardiovascular Medicine" },
-          { id: "medicine.clinical.infectious", zh: "感染性疾病", en: "Infectious Diseases" },
-          { id: "medicine.clinical.precision", zh: "精准医学", en: "Precision Medicine" }
-        ]
-      },
-      {
-        id: "medicine.public_health",
-        zh: "公共卫生与药学",
-        en: "Public Health and Pharmacy",
-        children: [
-          { id: "medicine.public_health.epidemiology", zh: "流行病学", en: "Epidemiology" },
-          { id: "medicine.public_health.drug_discovery", zh: "药物发现", en: "Drug Discovery" },
-          { id: "medicine.public_health.pharmacology", zh: "药理学", en: "Pharmacology" },
-          { id: "medicine.public_health.medical_informatics", zh: "医学信息学", en: "Medical Informatics" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "chemistry_materials",
-    zh: "化学与材料",
-    en: "Chemistry and Materials",
-    children: [
-      {
-        id: "chemistry_materials.chemistry",
-        zh: "化学",
-        en: "Chemistry",
-        children: [
-          { id: "chemistry_materials.chemistry.organic", zh: "有机化学", en: "Organic Chemistry" },
-          { id: "chemistry_materials.chemistry.analytical", zh: "分析化学", en: "Analytical Chemistry" },
-          { id: "chemistry_materials.chemistry.physical", zh: "物理化学", en: "Physical Chemistry" },
-          { id: "chemistry_materials.chemistry.computational", zh: "计算化学", en: "Computational Chemistry" }
-        ]
-      },
-      {
-        id: "chemistry_materials.materials",
-        zh: "材料科学",
-        en: "Materials Science",
-        children: [
-          { id: "chemistry_materials.materials.nanomaterials", zh: "纳米材料", en: "Nanomaterials" },
-          { id: "chemistry_materials.materials.energy_storage", zh: "储能材料", en: "Energy Storage Materials" },
-          { id: "chemistry_materials.materials.polymer", zh: "高分子材料", en: "Polymer Materials" },
-          { id: "chemistry_materials.materials.biomaterials", zh: "生物材料", en: "Biomaterials" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "computer_ai",
-    zh: "计算机与人工智能",
-    en: "Computer Science and AI",
-    children: [
-      {
-        id: "computer_ai.ai",
-        zh: "人工智能",
-        en: "Artificial Intelligence",
-        children: [
-          { id: "computer_ai.ai.large_models", zh: "大模型与智能体", en: "Large Models and Agents" },
-          { id: "computer_ai.ai.machine_learning", zh: "机器学习", en: "Machine Learning" },
-          { id: "computer_ai.ai.cv", zh: "计算机视觉", en: "Computer Vision" },
-          { id: "computer_ai.ai.nlp", zh: "自然语言处理", en: "Natural Language Processing" }
-        ]
-      },
-      {
-        id: "computer_ai.data",
-        zh: "数据与软件系统",
-        en: "Data and Software Systems",
-        children: [
-          { id: "computer_ai.data.data_mining", zh: "数据挖掘", en: "Data Mining" },
-          { id: "computer_ai.data.databases", zh: "数据库与知识管理", en: "Databases and Knowledge Management" },
-          { id: "computer_ai.data.systems", zh: "分布式系统", en: "Distributed Systems" },
-          { id: "computer_ai.data.scientific_computing", zh: "科学计算", en: "Scientific Computing" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "engineering",
-    zh: "工程技术",
-    en: "Engineering",
-    children: [
-      {
-        id: "engineering.information",
-        zh: "电子与信息工程",
-        en: "Electronic and Information Engineering",
-        children: [
-          { id: "engineering.information.communication", zh: "通信与网络", en: "Communication and Networking" },
-          { id: "engineering.information.signal", zh: "信号处理", en: "Signal Processing" },
-          { id: "engineering.information.microelectronics", zh: "微电子", en: "Microelectronics" },
-          { id: "engineering.information.control", zh: "自动控制", en: "Automatic Control" }
-        ]
-      },
-      {
-        id: "engineering.mechanical",
-        zh: "机械与制造",
-        en: "Mechanical and Manufacturing",
-        children: [
-          { id: "engineering.mechanical.robotics", zh: "机器人", en: "Robotics" },
-          { id: "engineering.mechanical.intelligent_manufacturing", zh: "智能制造", en: "Intelligent Manufacturing" },
-          { id: "engineering.mechanical.thermal_fluids", zh: "热流体工程", en: "Thermal and Fluid Engineering" },
-          { id: "engineering.mechanical.design", zh: "机械设计", en: "Mechanical Design" }
-        ]
-      },
-      {
-        id: "engineering.energy_environment",
-        zh: "能源化工与环境工程",
-        en: "Energy, Chemical, and Environmental Engineering",
-        children: [
-          { id: "engineering.energy_environment.process", zh: "过程系统工程", en: "Process Systems Engineering" },
-          { id: "engineering.energy_environment.renewable", zh: "可再生能源", en: "Renewable Energy" },
-          { id: "engineering.energy_environment.carbon", zh: "碳管理与减排", en: "Carbon Management and Mitigation" },
-          { id: "engineering.energy_environment.water", zh: "水处理与环境修复", en: "Water Treatment and Remediation" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "physics_math",
-    zh: "物理与数学统计",
-    en: "Physics, Mathematics, and Statistics",
-    children: [
-      {
-        id: "physics_math.physics",
-        zh: "物理学",
-        en: "Physics",
-        children: [
-          { id: "physics_math.physics.condensed_matter", zh: "凝聚态物理", en: "Condensed Matter Physics" },
-          { id: "physics_math.physics.optics", zh: "光学与光子学", en: "Optics and Photonics" },
-          { id: "physics_math.physics.particle", zh: "粒子与核物理", en: "Particle and Nuclear Physics" },
-          { id: "physics_math.physics.computational", zh: "计算物理", en: "Computational Physics" }
-        ]
-      },
-      {
-        id: "physics_math.math",
-        zh: "数学与统计",
-        en: "Mathematics and Statistics",
-        children: [
-          { id: "physics_math.math.applied_math", zh: "应用数学", en: "Applied Mathematics" },
-          { id: "physics_math.math.statistics", zh: "统计学", en: "Statistics" },
-          { id: "physics_math.math.optimization", zh: "优化方法", en: "Optimization" },
-          { id: "physics_math.math.biostatistics", zh: "生物统计", en: "Biostatistics" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "earth_environment",
-    zh: "地球与环境科学",
-    en: "Earth and Environmental Sciences",
-    children: [
-      {
-        id: "earth_environment.earth",
-        zh: "地球科学",
-        en: "Earth Science",
-        children: [
-          { id: "earth_environment.earth.climate", zh: "气候变化", en: "Climate Change" },
-          { id: "earth_environment.earth.remote_sensing", zh: "遥感与地理信息", en: "Remote Sensing and GIS" },
-          { id: "earth_environment.earth.hydrology", zh: "水文学", en: "Hydrology" },
-          { id: "earth_environment.earth.geology", zh: "地质过程", en: "Geological Processes" }
-        ]
-      },
-      {
-        id: "earth_environment.ecology",
-        zh: "生态与保护",
-        en: "Ecology and Conservation",
-        children: [
-          { id: "earth_environment.ecology.biodiversity", zh: "生物多样性保护", en: "Biodiversity Conservation" },
-          { id: "earth_environment.ecology.restoration", zh: "生态修复", en: "Ecological Restoration" },
-          { id: "earth_environment.ecology.pollution", zh: "污染生态学", en: "Pollution Ecology" },
-          { id: "earth_environment.ecology.sustainability", zh: "可持续发展", en: "Sustainability" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "economics_management",
-    zh: "经济与管理",
-    en: "Economics and Management",
-    children: [
-      {
-        id: "economics_management.economics",
-        zh: "经济学",
-        en: "Economics",
-        children: [
-          { id: "economics_management.economics.agri_economics", zh: "农业经济", en: "Agricultural Economics" },
-          { id: "economics_management.economics.innovation", zh: "创新经济", en: "Innovation Economics" },
-          { id: "economics_management.economics.finance", zh: "金融与投资", en: "Finance and Investment" },
-          { id: "economics_management.economics.policy", zh: "政策评估", en: "Policy Evaluation" }
-        ]
-      },
-      {
-        id: "economics_management.management",
-        zh: "管理科学",
-        en: "Management Science",
-        children: [
-          { id: "economics_management.management.operations", zh: "运营与供应链", en: "Operations and Supply Chain" },
-          { id: "economics_management.management.project", zh: "项目管理", en: "Project Management" },
-          { id: "economics_management.management.strategy", zh: "战略管理", en: "Strategic Management" },
-          { id: "economics_management.management.digital", zh: "数字化管理", en: "Digital Management" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "social_humanities",
-    zh: "社会科学与人文",
-    en: "Social Sciences and Humanities",
-    children: [
-      {
-        id: "social_humanities.social",
-        zh: "社会科学",
-        en: "Social Sciences",
-        children: [
-          { id: "social_humanities.social.education", zh: "教育研究", en: "Education Research" },
-          { id: "social_humanities.social.psychology", zh: "心理学", en: "Psychology" },
-          { id: "social_humanities.social.sociology", zh: "社会学", en: "Sociology" },
-          { id: "social_humanities.social.media", zh: "传播与媒体", en: "Communication and Media" }
-        ]
-      },
-      {
-        id: "social_humanities.humanities",
-        zh: "人文与法政",
-        en: "Humanities and Law/Policy",
-        children: [
-          { id: "social_humanities.humanities.law", zh: "法学", en: "Law" },
-          { id: "social_humanities.humanities.policy", zh: "公共政策", en: "Public Policy" },
-          { id: "social_humanities.humanities.history", zh: "历史与文化研究", en: "History and Cultural Studies" },
-          { id: "social_humanities.humanities.linguistics", zh: "语言学", en: "Linguistics" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "interdisciplinary",
-    zh: "交叉前沿",
-    en: "Interdisciplinary Frontiers",
-    children: [
-      {
-        id: "interdisciplinary.aiforscience",
-        zh: "AI for Science",
-        en: "AI for Science",
-        children: [
-          { id: "interdisciplinary.aiforscience.digital_agriculture", zh: "数字农业", en: "Digital Agriculture" },
-          { id: "interdisciplinary.aiforscience.synthetic_biology", zh: "合成生物学", en: "Synthetic Biology" },
-          { id: "interdisciplinary.aiforscience.biomedical_engineering", zh: "生物医学工程", en: "Biomedical Engineering" },
-          { id: "interdisciplinary.aiforscience.science_foundation_models", zh: "科学基础模型", en: "Scientific Foundation Models" }
-        ]
-      }
-    ]
-  }
-] as const;
 const QUICK_TOPIC_TAG_IDS = [
   "agri.crop_science.crop_breeding",
   "agri.crop_science.molecular_breeding",
@@ -1679,284 +1343,6 @@ const translations: Record<Lang, Record<string, string>> = {
   }
 };
 
-const storedLang = window.localStorage.getItem(LANG_STORAGE_KEY);
-let currentLang: Lang =
-  storedLang === "zh" || storedLang === "en"
-    ? storedLang
-    : navigator.language.toLowerCase().startsWith("zh")
-      ? "zh"
-      : "en";
-let currentTab: UiTab = "topic";
-let currentStatus: "idle" | "previewing" | "running" | "stopping" | "updating" = "idle";
-let outputState: OutputState = { kind: "idle" };
-let topicTags: string[] = [];
-let topicFieldModalPrimaryId = RESEARCH_FIELD_TAXONOMY[0]?.id ?? null;
-let pendingTopicFieldTags: string[] = [];
-let apiKeyVisible = false;
-let autoSaveTimer: number | null = null;
-let autoSaveEnabled = false;
-let lastPipelineProgressEvent: PipelineProgressEvent | null = null;
-let browseBatches: QaBatchSummary[] = [];
-let browsePageData: QaRecordPage | null = null;
-let browseDetailData: QaRecordDetail | null = null;
-let browseSelectedBatchId: string | null = null;
-let browseLoading = false;
-let browseView: BrowseView = "batches";
-let browseQuestionsLoading = false;
-let browseDetailLoading = false;
-let browseReviewLoading = false;
-let browseReviewSaving = false;
-let browseErrorMessage: string | null = null;
-let browseUploadingBatchId: string | null = null;
-let browsePlatformStatusLoading = false;
-let browsePlatformStatusRequestId = 0;
-let browsePlatformStatusMap = new Map<string, PlatformImportBatchStatus>();
-let browseRemoteVirtualBatch: QaBatchSummary | null = null;
-let browseRemoteVirtualBatchDetail: PlatformImportBatchDetail | null = null;
-let browseReviewItems: QaRecordSummary[] = [];
-let browseReviewIndex = 0;
-let browseReviewDrafts = new Map<string, string>();
-let managedResumeBatchId: string | null = null;
-let managedResumeBatchLabel: string | null = null;
-let appVersion = __APP_VERSION__;
-let pendingAppUpdate: AppUpdateCheckResponse | null = null;
-let appUpdateLastError: string | null = null;
-let appUpdateManualDownloadUrl: string | null = DEFAULT_MANUAL_UPDATE_URL;
-let platformHealthState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; response: PlatformHealthResponse }
-  | { kind: "error"; message: string } = { kind: "idle" };
-let platformLoginState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; response: PlatformLoginResponse }
-  | { kind: "error"; message: string } = { kind: "idle" };
-let modelTrialWorkspaceLoading = false;
-let modelTrialDetailLoading = false;
-let modelTrialCreating = false;
-let modelTrialSending = false;
-let modelTrialDeletingSessionId: number | null = null;
-let modelTrialConfigs: TrialLlmConfigOption[] = [];
-let modelTrialSessions: TrialSessionSummary[] = [];
-let modelTrialDetail: TrialSessionDetail | null = null;
-let modelTrialSelectedConfigId: number | null = null;
-let modelTrialSelectedSessionId: number | null = null;
-let modelTrialComposer = "";
-let modelTrialErrorMessage: string | null = null;
-let modelTrialNoticeMessage: string | null = null;
-let modelTrialLocalBatches: QaBatchSummary[] = [];
-let modelTrialSelectedBatchId: string | null = null;
-let modelTrialLocalQuestions: QaRecordSummary[] = [];
-let modelTrialSelectedQuestionId: string | null = null;
-let modelTrialLocalQuestionDetail: QaRecordDetail | null = null;
-let modelTrialLocalQuestionsLoading = false;
-let runStatsTimer: number | null = null;
-
-// ---- v0.1.8: Recent updates & feedback state ----
-
-type PlatformNews = {
-  id: number;
-  title: string;
-  content: string;
-  isPublished: boolean;
-  createdAt: string;
-  createdByName: string | null;
-};
-
-type DashboardOverview = {
-  todayQas: number;
-  weekQas: number;
-  todayReviews?: number;
-  weekReviews?: number;
-  availableModels?: number;
-};
-
-type ChangePasswordResponse = {
-  success: boolean;
-};
-
-type ModelChangelogEntry = {
-  id: number;
-  modelName: string;
-  changeType: string;
-  description: string;
-  createdAt: string;
-};
-
-type PlatformGenerateModel = {
-  id: number;
-  name: string;
-  provider: string;
-  baseUrl: string;
-  model: string;
-  temperature: number;
-  maxTokens: number;
-  batchSize: number;
-  maxInFlight: number;
-};
-
-type FeedbackResponse = {
-  id: number;
-  createdAt: string;
-};
-
-type ExportsStatsDaily = {
-  period: string;
-  importCount: number;
-  reviewCount?: number;
-};
-
-type ExportsStatsWeekly = {
-  period: string;
-  periodStart: string;
-  periodEnd: string;
-  importCount: number;
-  reviewCount?: number;
-};
-
-type ExportsStatsData = {
-  daily: ExportsStatsDaily[];
-  weekly: ExportsStatsWeekly[];
-};
-
-let platformNewsState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; items: PlatformNews[] }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-let dashboardOverviewState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; data: DashboardOverview }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-let modelChangelogState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; items: ModelChangelogEntry[] }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-let exportsStatsState:
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "success"; data: ExportsStatsData }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-let platformGenerateModels: PlatformGenerateModel[] = [];
-let selectedPlatformModelId: number | null = null;
-
-// Paper QA state
-type PaperFileStatus = "pending" | "converting" | "converted" | "chunked" | "error";
-type PaperChunk = {
-  id: string;
-  text: string;
-  sectionType: string;
-  charCount: number;
-};
-type PaperQaItem = {
-  id: string;
-  qaType: string;
-  instruction: string;
-  reasoning?: string | null;
-  output: string;
-  paperTitle: string;
-  chunkId: string;
-  sectionType: string;
-};
-type PaperQaStats = {
-  total: number;
-  cotCount: number;
-  qaCount: number;
-  cotRatio: number;
-  qaRatio: number;
-};
-type PaperQaGenerateResponse = {
-  items: PaperQaItem[];
-  stats: PaperQaStats;
-  warnings?: string[];
-};
-type PaperFile = {
-  id: string;
-  name: string;
-  path: string;
-  status: PaperFileStatus;
-  mdText: string | null;
-  chunks: PaperChunk[] | null;
-  error: string | null;
-};
-let paperFiles: PaperFile[] = [];
-let paperQaResult: PaperQaGenerateResponse | null = null;
-let paperQaCotRatio = 0.4;
-let paperQaConverting = false;
-let paperQaGenerating = false;
-let paperQaUploading = false;
-let paperQaErrorMessage: string | null = null;
-let paperQaUploadMessage: string | null = null;
-let paperQaSelectedFileId: string | null = null;
-let paperQaProgressMessage = "";
-let paperQaProgressPercent = 0;
-let paperQaLogLines: string[] = [];
-
-let feedback2FormState:
-  | { kind: "idle" }
-  | { kind: "submitting" }
-  | { kind: "success" }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-let passwordChangeState:
-  | { kind: "idle" }
-  | { kind: "submitting" }
-  | { kind: "success" }
-  | { kind: "error"; message: string } = { kind: "idle" };
-
-type ChatSession = {
-  id: string;
-  name: string;
-  messages: { role: "user" | "assistant"; content: string }[];
-  createdAt: number;
-};
-
-let chatSessions: ChatSession[] = [];
-let currentChatSessionId: string | null = null;
-let sessionCounter = 0;
-let chatSending = false;
-let chatError: string | null = null;
-
-type ChatUploadResponse = {
-  batch_id: number | null;
-  external_batch_id: string;
-  existing_batch: boolean | null;
-  import_status: string | null;
-  parse_queued: boolean | null;
-};
-
-let sessionUploadStates: Record<string,
-  | { kind: "idle" }
-  | { kind: "uploading" }
-  | { kind: "success"; batchId: number }
-  | { kind: "error"; message: string }
-> = {};
-
-let recentUpdatesLastRefreshTime: number | null = null;
-let recentUpdatesRefreshTimer: number | null = null;
-let runStats: RunStatsSnapshot = {
-  startedAtMs: null,
-  lastUpdatedAtMs: null,
-  generatedCount: 0,
-  targetCount: null,
-  shardIndex: null,
-  shardCount: null,
-  completedBatchCount: 0,
-  estimatedBatchCount: null,
-  completedShardCount: 0,
-  skippedShardCount: 0,
-  retryCount: 0,
-  failedBatchCount: 0,
-  samples: []
-};
-
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -2789,7 +2175,7 @@ if (
   throw new Error("Missing UI elements");
 }
 
-cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
+cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(state.currentLang), state.currentLang);
 
 const lockableControls: Array<
   HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
@@ -2835,7 +2221,7 @@ const lockableControls: Array<
 ];
 
 function t(key: string): string {
-  return translations[currentLang][key] ?? key;
+  return translations[state.currentLang][key] ?? key;
 }
 
 function translationValues(key: string): string[] {
@@ -2899,7 +2285,7 @@ function lookupResearchFieldLabel(tag: string, mode: "full" | "short" = "full"):
     return null;
   }
 
-  if (currentLang === "zh") {
+  if (state.currentLang === "zh") {
     return mode === "short" ? meta.shortZh : meta.fullZh;
   }
 
@@ -2913,16 +2299,16 @@ function topicTagLabel(tag: string, mode: "full" | "short" = "full"): string {
   }
 
   const translationKey = `tag_${tag}`;
-  const translated = translations[currentLang][translationKey];
+  const translated = translations[state.currentLang][translationKey];
   return translated ?? tag;
 }
 
 function currentTopicFieldNode(): ResearchFieldNode | null {
-  if (!topicFieldModalPrimaryId) {
+  if (!state.topicFieldModalPrimaryId) {
     return RESEARCH_FIELD_TAXONOMY[0] ?? null;
   }
 
-  return RESEARCH_FIELD_TAXONOMY.find((node) => node.id === topicFieldModalPrimaryId) ?? RESEARCH_FIELD_TAXONOMY[0] ?? null;
+  return RESEARCH_FIELD_TAXONOMY.find((node) => node.id === state.topicFieldModalPrimaryId) ?? RESEARCH_FIELD_TAXONOMY[0] ?? null;
 }
 
 function formatCountTemplate(key: string, count: number): string {
@@ -2934,7 +2320,7 @@ function currentQaMode(): "normal" | "cot" {
 }
 
 function currentManagedRunMode(): "new" | "resume-latest" {
-  if (managedResumeBatchId) {
+  if (state.managedResumeBatchId) {
     return "resume-batch";
   }
 
@@ -2942,7 +2328,7 @@ function currentManagedRunMode(): "new" | "resume-latest" {
 }
 
 function shouldShowContinueRunButton(): boolean {
-  return managedResumeBatchId !== null;
+  return state.managedResumeBatchId !== null;
 }
 
 function batchMatchesRequest(batch: QaBatchSummary, request: PipelineFormRequest): boolean {
@@ -2957,7 +2343,7 @@ function batchMatchesRequest(batch: QaBatchSummary, request: PipelineFormRequest
 
 function findLatestResumableBatchForRequest(request: PipelineFormRequest): QaBatchSummary | null {
   return (
-    browseBatches.find((batch) => batchMatchesRequest(batch, request)) ??
+    state.browseBatches.find((batch) => batchMatchesRequest(batch, request)) ??
     null
   );
 }
@@ -2965,14 +2351,14 @@ function findLatestResumableBatchForRequest(request: PipelineFormRequest): QaBat
 async function armResumeBatchForRequest(request: PipelineFormRequest) {
   await loadBrowseBatches();
   const batch = findLatestResumableBatchForRequest(request);
-  managedResumeBatchId = batch?.id ?? null;
-  managedResumeBatchLabel = batch ? batch.topicName || batch.name || batch.id : null;
+  state.managedResumeBatchId = batch?.id ?? null;
+  state.managedResumeBatchLabel = batch ? batch.topicName || batch.name || batch.id : null;
   syncManagedRunModeUi();
   updateRunButtonUi();
 }
 
 function clearManagedResumeBatchOnUserEdit() {
-  if (!managedResumeBatchId || isPipelineBusyStatus(currentStatus)) {
+  if (!state.managedResumeBatchId || isPipelineBusyStatus(state.currentStatus)) {
     return;
   }
   clearManagedResumeBatch(false);
@@ -2984,7 +2370,7 @@ function applyQaModeDefaults(qaMode: "normal" | "cot") {
     return;
   }
 
-  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
+  cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(state.currentLang), state.currentLang);
   targetCountInput.value = String(DEFAULT_COT_TARGET_COUNT);
   shardSizeInput.value = String(DEFAULT_COT_SHARD_SIZE);
   batchSizeInput.value = String(DEFAULT_COT_BATCH_SIZE);
@@ -2994,8 +2380,8 @@ function applyQaModeDefaults(qaMode: "normal" | "cot") {
 }
 
 function updateApiKeyVisibilityUi() {
-  apiKeyInput.type = apiKeyVisible ? "text" : "password";
-  toggleApiKeyVisibilityButton.textContent = t(apiKeyVisible ? "hide_secret" : "show_secret");
+  apiKeyInput.type = state.apiKeyVisible ? "text" : "password";
+  toggleApiKeyVisibilityButton.textContent = t(state.apiKeyVisible ? "hide_secret" : "show_secret");
 }
 
 function syncStickyOffsets() {
@@ -3018,22 +2404,22 @@ function renderPaperQaPanel() {
   const errBanner = document.querySelector("#paper-qa-error-banner");
   const okBanner = document.querySelector("#paper-qa-success-banner");
   if (errBanner) {
-    errBanner.hidden = !paperQaErrorMessage;
-    if (paperQaErrorMessage) errBanner.textContent = paperQaErrorMessage;
+    errBanner.hidden = !state.paperQaErrorMessage;
+    if (state.paperQaErrorMessage) errBanner.textContent = state.paperQaErrorMessage;
   }
   if (okBanner) {
-    okBanner.hidden = !paperQaUploadMessage;
-    if (paperQaUploadMessage) okBanner.textContent = paperQaUploadMessage;
+    okBanner.hidden = !state.paperQaUploadMessage;
+    if (state.paperQaUploadMessage) okBanner.textContent = state.paperQaUploadMessage;
   }
 
   // File list
   const fileList = document.querySelector("#paper-qa-file-list");
   if (fileList) {
-    if (paperFiles.length === 0) {
+    if (state.paperFiles.length === 0) {
       fileList.innerHTML = `<div class="paper-qa-hint">${t("paper_qa_empty")}</div>`;
     } else {
-      fileList.innerHTML = paperFiles.map((f) => {
-        const isSelected = paperQaSelectedFileId === f.id;
+      fileList.innerHTML = state.paperFiles.map((f) => {
+        const isSelected = state.paperQaSelectedFileId === f.id;
         const statusCls = f.status === "converting" ? "paper-file-status-converting"
           : f.status === "error" ? "paper-file-status-error"
           : f.status === "converted" || f.status === "chunked" ? "paper-file-status-converted"
@@ -3071,10 +2457,10 @@ function renderPaperQaPanel() {
   // Results
   const results = document.querySelector("#paper-qa-results");
   if (results) {
-    if (!paperQaResult || paperQaResult.items.length === 0) {
+    if (!state.paperQaResult || state.paperQaResult.items.length === 0) {
       results.innerHTML = `<div class="paper-qa-empty">${t("paper_qa_empty")}</div>`;
     } else {
-      results.innerHTML = paperQaResult.items.map((item) => `
+      results.innerHTML = state.paperQaResult.items.map((item) => `
         <div class="paper-qa-result-item">
           <div class="paper-qa-result-header">
             <span class="paper-qa-result-type ${item.qaType === "cot" ? "paper-qa-type-cot" : "paper-qa-type-qa"}">${item.qaType === "cot" ? "CoT" : "QA"}</span>
@@ -3091,12 +2477,12 @@ function renderPaperQaPanel() {
   // Stats
   const stats = document.querySelector("#paper-qa-stats");
   if (stats) {
-    if (paperQaResult && paperQaResult.stats.total > 0) {
+    if (state.paperQaResult && state.paperQaResult.stats.total > 0) {
       stats.hidden = false;
       stats.textContent = t("paper_qa_stats")
-        .replace("{total}", String(paperQaResult.stats.total))
-        .replace("{cot}", String(paperQaResult.stats.cotCount))
-        .replace("{qa}", String(paperQaResult.stats.qaCount));
+        .replace("{total}", String(state.paperQaResult.stats.total))
+        .replace("{cot}", String(state.paperQaResult.stats.cotCount))
+        .replace("{qa}", String(state.paperQaResult.stats.qaCount));
     } else {
       stats.hidden = true;
     }
@@ -3107,10 +2493,10 @@ function renderPaperQaPanel() {
   const progressBar = document.querySelector<HTMLElement>("#paper-qa-progress-bar");
   const progressText = document.querySelector("#paper-qa-progress-text");
   if (progressEl && progressBar && progressText) {
-    if (paperQaGenerating) {
+    if (state.paperQaGenerating) {
       progressEl.hidden = false;
-      progressBar.style.width = paperQaProgressPercent + "%";
-      progressText.textContent = paperQaProgressMessage || t("paper_qa_generating");
+      progressBar.style.width = state.paperQaProgressPercent + "%";
+      progressText.textContent = state.paperQaProgressMessage || t("paper_qa_generating");
     } else {
       progressEl.hidden = true;
     }
@@ -3119,9 +2505,9 @@ function renderPaperQaPanel() {
   // Log area
   const logEl = document.querySelector("#paper-qa-log");
   if (logEl) {
-    if (paperQaLogLines.length > 0) {
+    if (state.paperQaLogLines.length > 0) {
       logEl.hidden = false;
-      logEl.innerHTML = paperQaLogLines.map(l => `<div class="paper-qa-log-line">${escapeHtml(l)}</div>`).join("");
+      logEl.innerHTML = state.paperQaLogLines.map(l => `<div class="paper-qa-log-line">${escapeHtml(l)}</div>`).join("");
       logEl.scrollTop = logEl.scrollHeight;
     } else {
       logEl.hidden = true;
@@ -3135,23 +2521,23 @@ function renderPaperQaPanel() {
   const statusEl = document.querySelector("#paper-qa-generate-status");
 
   if (convertBtn) {
-    convertBtn.disabled = paperQaConverting || paperQaGenerating || paperFiles.length === 0;
+    convertBtn.disabled = state.paperQaConverting || state.paperQaGenerating || state.paperFiles.length === 0;
   }
   if (generateBtn) {
-    const hasChunked = paperFiles.some(f => f.status === "chunked");
+    const hasChunked = state.paperFiles.some(f => f.status === "chunked");
     const hasProvider = resolveLLMProvider().mode !== "none";
-    generateBtn.disabled = paperQaConverting || paperQaGenerating || !hasChunked || !hasProvider;
+    generateBtn.disabled = state.paperQaConverting || state.paperQaGenerating || !hasChunked || !hasProvider;
     generateBtn.title = (!hasProvider && hasChunked) ? t("paper_qa_no_provider") : "";
   }
   if (saveBatchBtn) {
-    saveBatchBtn.disabled = paperQaUploading || !paperQaResult || paperQaResult.items.length === 0;
+    saveBatchBtn.disabled = state.paperQaUploading || !state.paperQaResult || state.paperQaResult.items.length === 0;
   }
   if (statusEl) {
-    const hasChunked2 = paperFiles.some(f => f.status === "chunked");
+    const hasChunked2 = state.paperFiles.some(f => f.status === "chunked");
     const hasProvider2 = resolveLLMProvider().mode !== "none";
-    if (paperQaConverting) statusEl.textContent = t("paper_qa_converting");
-    else if (paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
-    else if (paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
+    if (state.paperQaConverting) statusEl.textContent = t("paper_qa_converting");
+    else if (state.paperQaGenerating) statusEl.textContent = t("paper_qa_generating");
+    else if (state.paperQaUploading) statusEl.textContent = t("paper_qa_uploading");
     else if (!hasProvider2 && hasChunked2) statusEl.textContent = t("paper_qa_no_provider");
     else statusEl.textContent = "";
   }
@@ -3159,8 +2545,8 @@ function renderPaperQaPanel() {
   // CoT ratio slider
   const ratioSlider = document.querySelector<HTMLInputElement>("#paper-qa-cot-ratio");
   const ratioValue = document.querySelector("#paper-qa-cot-ratio-value");
-  if (ratioSlider) ratioSlider.value = String(paperQaCotRatio);
-  if (ratioValue) ratioValue.textContent = String(paperQaCotRatio);
+  if (ratioSlider) ratioSlider.value = String(state.paperQaCotRatio);
+  if (ratioValue) ratioValue.textContent = String(state.paperQaCotRatio);
 
   // Tab labels
   const tabLabel = document.querySelector("#tab-paper-qa-label");
@@ -3189,18 +2575,18 @@ function addPaperFiles(filesOrPaths: FileList | File[] | string[]) {
 
   if (paths.length === 0) return;
 
-  const remaining = 20 - paperFiles.length;
+  const remaining = 20 - state.paperFiles.length;
   if (remaining <= 0) {
-    paperQaErrorMessage = t("paper_qa_max_files");
+    state.paperQaErrorMessage = t("paper_qa_max_files");
     renderPaperQaPanel();
     return;
   }
 
   const toAdd = paths.slice(0, remaining);
   if (paths.length > remaining) {
-    paperQaErrorMessage = t("paper_qa_max_files");
+    state.paperQaErrorMessage = t("paper_qa_max_files");
   } else {
-    paperQaErrorMessage = null;
+    state.paperQaErrorMessage = null;
   }
 
   for (const p of toAdd) {
@@ -3214,29 +2600,29 @@ function addPaperFiles(filesOrPaths: FileList | File[] | string[]) {
       chunks: null,
       error: null,
     };
-    paperFiles.push(paperFile);
+    state.paperFiles.push(paperFile);
   }
 
   renderPaperQaPanel();
 }
 
 function removePaperFile(id: string) {
-  paperFiles = paperFiles.filter(f => f.id !== id);
-  if (paperFiles.length === 0) {
-    paperQaResult = null;
+  state.paperFiles = state.paperFiles.filter(f => f.id !== id);
+  if (state.paperFiles.length === 0) {
+    state.paperQaResult = null;
   }
-  paperQaErrorMessage = null;
-  paperQaSelectedFileId = null;
+  state.paperQaErrorMessage = null;
+  state.paperQaSelectedFileId = null;
   renderPaperQaPanel();
 }
 
 async function handlePaperQaConvert() {
-  if (paperQaConverting || paperQaGenerating) return;
-  const pending = paperFiles.filter(f => f.status === "pending");
+  if (state.paperQaConverting || state.paperQaGenerating) return;
+  const pending = state.paperFiles.filter(f => f.status === "pending");
   if (pending.length === 0) return;
 
-  paperQaConverting = true;
-  paperQaErrorMessage = null;
+  state.paperQaConverting = true;
+  state.paperQaErrorMessage = null;
   renderPaperQaPanel();
 
   for (const file of pending) {
@@ -3262,7 +2648,7 @@ async function handlePaperQaConvert() {
     renderPaperQaPanel();
   }
 
-  paperQaConverting = false;
+  state.paperQaConverting = false;
   renderPaperQaPanel();
 }
 
@@ -3285,10 +2671,10 @@ function resolveLLMProvider(): ResolvedLLMProvider {
   }
 
   const platformAuth = currentPlatformAuthPayload();
-  if (platformLoginState.kind === "success" && platformAuth !== null) {
+  if (state.platformLoginState.kind === "success" && platformAuth !== null) {
     const platformModel = currentPlatformGenerateModel();
     const model = platformModel?.model
-      ?? (platformGenerateModels.length > 0 ? platformGenerateModels[0].model : "");
+      ?? (state.platformGenerateModels.length > 0 ? state.platformGenerateModels[0].model : "");
     if (model) {
       return {
         mode: "platform",
@@ -3304,9 +2690,9 @@ function resolveLLMProvider(): ResolvedLLMProvider {
 }
 
 async function handlePaperQaGenerate() {
-  if (paperQaConverting || paperQaGenerating) return;
-  const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
-  appendLog(`Paper QA Generate: chunkedFiles=${chunkedFiles.length}, files=${paperFiles.map(f => `${f.name}(${f.status})`).join(", ")}`);
+  if (state.paperQaConverting || state.paperQaGenerating) return;
+  const chunkedFiles = state.paperFiles.filter(f => f.status === "chunked" && f.chunks);
+  appendLog(`Paper QA Generate: chunkedFiles=${chunkedFiles.length}, files=${state.paperFiles.map(f => `${f.name}(${f.status})`).join(", ")}`);
   if (chunkedFiles.length === 0) return;
 
   const resolved = resolveLLMProvider();
@@ -3334,7 +2720,7 @@ async function handlePaperQaGenerate() {
   appendLog(`Paper QA Generate: mode=${resolved.mode}, model=${model}, platformUrl=${platformUrl || "(none)"}`);
 
   if (!model || resolved.mode === "none") {
-    paperQaErrorMessage = t("paper_qa_no_provider");
+    state.paperQaErrorMessage = t("paper_qa_no_provider");
     appendLog(`Paper QA Generate: ABORT no provider`);
     renderPaperQaPanel();
     return;
@@ -3349,7 +2735,7 @@ async function handlePaperQaGenerate() {
     baseUrl,
     apiKey,
     model,
-    cotRatio: paperQaCotRatio,
+    cotRatio: state.paperQaCotRatio,
   };
   if (platformUrl) {
     request.platformUrl = platformUrl;
@@ -3357,11 +2743,11 @@ async function handlePaperQaGenerate() {
     request.password = password;
   }
 
-  appendLog(`Paper QA Generate: sending ${allChunks.length} chunks, title="${paperTitle}", cotRatio=${paperQaCotRatio}`);
+  appendLog(`Paper QA Generate: sending ${allChunks.length} chunks, title="${paperTitle}", cotRatio=${state.paperQaCotRatio}`);
 
-  paperQaGenerating = true;
-  paperQaErrorMessage = null;
-  paperQaUploadMessage = null;
+  state.paperQaGenerating = true;
+  state.paperQaErrorMessage = null;
+  state.paperQaUploadMessage = null;
   renderPaperQaPanel();
 
   try {
@@ -3372,51 +2758,51 @@ async function handlePaperQaGenerate() {
         appendLog(`Paper QA Warning: ${w}`);
       }
     }
-    paperQaResult = result;
+    state.paperQaResult = result;
   } catch (err) {
     appendLog(`Paper QA Generate: ERROR ${String(err)}`);
-    paperQaErrorMessage = t("paper_qa_generate_error") + ": " + String(err);
+    state.paperQaErrorMessage = t("paper_qa_generate_error") + ": " + String(err);
   }
 
-  paperQaGenerating = false;
+  state.paperQaGenerating = false;
   renderPaperQaPanel();
 }
 
 async function handlePaperQaSaveBatch() {
-  if (paperQaUploading || !paperQaResult?.items.length) return;
+  if (state.paperQaUploading || !state.paperQaResult?.items.length) return;
 
-  paperQaUploading = true;
-  paperQaErrorMessage = null;
-  paperQaUploadMessage = null;
+  state.paperQaUploading = true;
+  state.paperQaErrorMessage = null;
+  state.paperQaUploadMessage = null;
   renderPaperQaPanel();
 
   try {
-    const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
+    const chunkedFiles = state.paperFiles.filter(f => f.status === "chunked" && f.chunks);
     const paperTitle = chunkedFiles.map(f => f.name).join(", ");
     const resolved = resolveLLMProvider();
     const provider = resolved.mode === "settings" ? resolved.provider : "openai-compatible";
     const model = resolved.model;
 
     const batch = await invoke<QaBatchSummary>("save_paper_qa_batch", {
-      items: paperQaResult.items,
+      items: state.paperQaResult.items,
       paperTitle,
       provider,
       model,
     });
 
     appendLog(`Paper QA: saved batch ${batch.id} (${batch.totalCount} items) to Browse QA`);
-    paperQaUploadMessage = t("paper_qa_save_batch_done");
+    state.paperQaUploadMessage = t("paper_qa_save_batch_done");
   } catch (err) {
     appendLog(`Paper QA Save Batch: ERROR ${String(err)}`);
-    paperQaErrorMessage = t("paper_qa_save_batch_error") + ": " + String(err);
+    state.paperQaErrorMessage = t("paper_qa_save_batch_error") + ": " + String(err);
   }
 
-  paperQaUploading = false;
+  state.paperQaUploading = false;
   renderPaperQaPanel();
 }
 
 function setCurrentTab(tab: UiTab) {
-  currentTab = tab;
+  state.currentTab = tab;
   topbarTabSelect.value = tab;
   for (const button of tabs) {
     button.dataset.active = button.dataset.tab === tab ? "true" : "false";
@@ -3435,7 +2821,7 @@ function setCurrentTab(tab: UiTab) {
     });
   }
 
-  if (tab === "browse" && !browseLoading) {
+  if (tab === "browse" && !state.browseLoading) {
     void loadBrowseBatches();
   }
   if (tab === "qa-evaluate") {
@@ -3443,17 +2829,17 @@ function setCurrentTab(tab: UiTab) {
   }
   if (
     tab === "model-trial" &&
-    !modelTrialLocalBatches.length
+    !state.modelTrialLocalBatches.length
   ) {
     void loadModelTrialLocalBatches();
   }
   if (
     tab === "model-trial" &&
-    !modelTrialWorkspaceLoading &&
+    !state.modelTrialWorkspaceLoading &&
     hasQaPlatformCredentials() &&
     currentQaPlatformUrl() &&
-    !modelTrialConfigs.length &&
-    !modelTrialSessions.length
+    !state.modelTrialConfigs.length &&
+    !state.modelTrialSessions.length
   ) {
     void loadModelTrialWorkspace();
   }
@@ -3485,11 +2871,11 @@ function renderTopicFieldModal() {
   } else {
     topicFieldDetailList.innerHTML = primaryNode.children
       .map((secondary) => {
-        const secondarySelected = pendingTopicFieldTags.includes(secondary.id);
+        const secondarySelected = state.pendingTopicFieldTags.includes(secondary.id);
         const tertiaryHtml = secondary.children?.length
           ? `<div class="field-chip-grid">${secondary.children
               .map((tertiary) => {
-                const tertiarySelected = pendingTopicFieldTags.includes(tertiary.id);
+                const tertiarySelected = state.pendingTopicFieldTags.includes(tertiary.id);
                 return `<button class="field-option${tertiarySelected ? " active" : ""}" type="button" data-field-tag="${escapeHtml(tertiary.id)}">${escapeHtml(topicTagLabel(tertiary.id, "short"))}</button>`;
               })
               .join("")}</div>`
@@ -3509,10 +2895,10 @@ function renderTopicFieldModal() {
       .join("");
   }
 
-  if (pendingTopicFieldTags.length === 0) {
+  if (state.pendingTopicFieldTags.length === 0) {
     topicFieldPendingList.innerHTML = `<p class="empty-inline">${escapeHtml(t("no_tags"))}</p>`;
   } else {
-    topicFieldPendingList.innerHTML = pendingTopicFieldTags
+    topicFieldPendingList.innerHTML = state.pendingTopicFieldTags
       .map(
         (tag) => `
           <button class="tag-chip active removable" type="button" data-pending-tag="${escapeHtml(tag)}">
@@ -3524,15 +2910,15 @@ function renderTopicFieldModal() {
       .join("");
   }
 
-  topicFieldSelectedCount.textContent = formatCountTemplate("topic_field_selected_count", pendingTopicFieldTags.length);
-  confirmTopicFieldSelectionButton.disabled = pendingTopicFieldTags.length === 0;
+  topicFieldSelectedCount.textContent = formatCountTemplate("topic_field_selected_count", state.pendingTopicFieldTags.length);
+  confirmTopicFieldSelectionButton.disabled = state.pendingTopicFieldTags.length === 0;
 }
 
 function renderTopicTags() {
-  if (topicTags.length === 0) {
+  if (state.topicTags.length === 0) {
     selectedTopicTags.innerHTML = `<p class="empty-inline">${escapeHtml(t("no_tags"))}</p>`;
   } else {
-    selectedTopicTags.innerHTML = topicTags
+    selectedTopicTags.innerHTML = state.topicTags
       .map(
         (tag) => `
           <button class="tag-chip active removable" type="button" data-selected-tag="${escapeHtml(tag)}">
@@ -3545,7 +2931,7 @@ function renderTopicTags() {
   }
 
   topicTagSuggestions.innerHTML = QUICK_TOPIC_TAG_IDS.map((tag) => {
-    const active = topicTags.includes(tag);
+    const active = state.topicTags.includes(tag);
     return `<button class="tag-chip${active ? " active" : ""}" type="button" data-suggested-tag="${tag}">${escapeHtml(topicTagLabel(tag, "short"))}</button>`;
   }).join("");
 
@@ -3555,28 +2941,28 @@ function renderTopicTags() {
 }
 
 function togglePendingTopicFieldTag(tag: string) {
-  if (pendingTopicFieldTags.includes(tag)) {
-    pendingTopicFieldTags = pendingTopicFieldTags.filter((item) => item !== tag);
+  if (state.pendingTopicFieldTags.includes(tag)) {
+    state.pendingTopicFieldTags = state.pendingTopicFieldTags.filter((item) => item !== tag);
   } else {
-    pendingTopicFieldTags = [...pendingTopicFieldTags, tag];
+    state.pendingTopicFieldTags = [...state.pendingTopicFieldTags, tag];
   }
 
   renderTopicFieldModal();
 }
 
 function openTopicFieldModal() {
-  if (!topicFieldModalPrimaryId) {
-    topicFieldModalPrimaryId = RESEARCH_FIELD_TAXONOMY[0]?.id ?? null;
+  if (!state.topicFieldModalPrimaryId) {
+    state.topicFieldModalPrimaryId = RESEARCH_FIELD_TAXONOMY[0]?.id ?? null;
   }
 
-  pendingTopicFieldTags = [];
+  state.pendingTopicFieldTags = [];
   topicFieldModal.hidden = false;
   renderTopicFieldModal();
 }
 
 function closeTopicFieldModal() {
   topicFieldModal.hidden = true;
-  pendingTopicFieldTags = [];
+  state.pendingTopicFieldTags = [];
 }
 
 function addTopicTag(tag: string) {
@@ -3584,9 +2970,9 @@ function addTopicTag(tag: string) {
   if (!normalized) {
     return;
   }
-  if (!topicTags.includes(normalized)) {
+  if (!state.topicTags.includes(normalized)) {
     clearManagedResumeBatchOnUserEdit();
-    topicTags = [...topicTags, normalized];
+    state.topicTags = [...state.topicTags, normalized];
     renderTopicTags();
     renderSetupSummary();
     scheduleAutoSave();
@@ -3595,7 +2981,7 @@ function addTopicTag(tag: string) {
 
 function removeTopicTag(tag: string) {
   clearManagedResumeBatchOnUserEdit();
-  topicTags = topicTags.filter((item) => item !== tag);
+  state.topicTags = state.topicTags.filter((item) => item !== tag);
   renderTopicTags();
   renderSetupSummary();
   scheduleAutoSave();
@@ -3648,7 +3034,7 @@ function isRemoteVirtualBrowseBatch(batchId: string | null | undefined): boolean
 }
 
 function localBrowseBatches(): QaBatchSummary[] {
-  return browseBatches.filter((batch) => !isRemoteVirtualBrowseBatch(batch.id));
+  return state.browseBatches.filter((batch) => !isRemoteVirtualBrowseBatch(batch.id));
 }
 
 function platformBatchQaMode(
@@ -3702,7 +3088,7 @@ function metadataString(metadata: Record<string, unknown>, ...keys: string[]): s
 
 function remoteVirtualBatchPrompt(summary: PlatformImportBatchSummary): string {
   const scope = [summary.applicationName, summary.technicalTypeName].filter(Boolean).join(" · ");
-  if (currentLang === "zh") {
+  if (state.currentLang === "zh") {
     return scope
       ? `远程服务器中未归批次 QA 聚合 · ${scope}`
       : "远程服务器中未归批次 QA 聚合";
@@ -3720,7 +3106,7 @@ function remoteVirtualBatchToBrowseSummary(summary: PlatformImportBatchSummary):
     topicName: summary.name,
     prompt: remoteVirtualBatchPrompt(summary),
     qaMode,
-    cotSectionHeaders: defaultCotSectionHeadersForLang(currentLang),
+    cotSectionHeaders: defaultCotSectionHeadersForLang(state.currentLang),
     targetCount: summary.totalCount,
     generatedCount: summary.successCount || summary.totalCount,
     keptCount: summary.successCount || summary.totalCount,
@@ -3854,7 +3240,7 @@ function batchPlatformStatusLabel(status: PlatformBatchStatusKind | null | undef
 }
 
 function currentBrowseBatchPlatformStatus(batchId: string): PlatformImportBatchStatus | null {
-  return browsePlatformStatusMap.get(batchId) ?? null;
+  return state.browsePlatformStatusMap.get(batchId) ?? null;
 }
 
 function browseBatchPlatformBadgeHtml(batchId: string): string {
@@ -3907,17 +3293,17 @@ function syncModelOptions(presetId: ProviderPresetId, preferredModel?: string | 
 
   // Platform preset: populate from fetched platform models
   const resolved = resolveLLMProvider();
-  if (presetId === "platform" || (resolved.mode === "platform" && platformGenerateModels.length > 0)) {
-    for (const pm of platformGenerateModels) {
+  if (presetId === "platform" || (resolved.mode === "platform" && state.platformGenerateModels.length > 0)) {
+    for (const pm of state.platformGenerateModels) {
       const option = document.createElement("option");
       option.value = String(pm.id);
       option.textContent = `${pm.name} (${pm.model})`;
       option.dataset.platformModelId = String(pm.id);
       modelInput.append(option);
     }
-    if (platformGenerateModels.length > 0) {
-      const firstId = String(platformGenerateModels[0].id);
-      modelInput.value = resolvedModel && platformGenerateModels.some(m => String(m.id) === resolvedModel) ? resolvedModel : firstId;
+    if (state.platformGenerateModels.length > 0) {
+      const firstId = String(state.platformGenerateModels[0].id);
+      modelInput.value = resolvedModel && state.platformGenerateModels.some(m => String(m.id) === resolvedModel) ? resolvedModel : firstId;
       modelInput.dispatchEvent(new Event("change"));
     }
     customModelField.hidden = true;
@@ -3998,7 +3384,7 @@ function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRe
       .filter(Boolean);
     return normalized.length
       ? normalized
-      : defaultCotSectionHeadersForLang(request.outputLanguage ?? currentLang);
+      : defaultCotSectionHeadersForLang(request.outputLanguage ?? state.currentLang);
   })();
   if (request.qaMode !== "cot") {
     const currentHeaders = request.cotSectionHeaders ?? [];
@@ -4038,14 +3424,14 @@ function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRe
 async function loadPlatformGenerateModels() {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    platformGenerateModels = [];
-    selectedPlatformModelId = null;
+    state.platformGenerateModels = [];
+    state.selectedPlatformModelId = null;
     return;
   }
   try {
-    platformGenerateModels = await invoke<PlatformGenerateModel[]>("get_generate_models", auth);
+    state.platformGenerateModels = await invoke<PlatformGenerateModel[]>("get_generate_models", auth);
   } catch {
-    platformGenerateModels = [];
+    state.platformGenerateModels = [];
   }
 }
 
@@ -4066,8 +3452,8 @@ function updatePlatformPresetOption() {
 }
 
 function currentPlatformGenerateModel(): PlatformGenerateModel | null {
-  if (!(selectedPlatformModelId !== null && platformLoginState.kind === "success")) return null;
-  return platformGenerateModels.find(m => m.id === selectedPlatformModelId) ?? null;
+  if (!(state.selectedPlatformModelId !== null && state.platformLoginState.kind === "success")) return null;
+  return state.platformGenerateModels.find(m => m.id === state.selectedPlatformModelId) ?? null;
 }
 
 function syncProviderPresetInput() {
@@ -4124,7 +3510,7 @@ function applyProviderPreset(presetId: ProviderPresetId, logChange = false) {
 }
 
 function formatCount(value: number): string {
-  return new Intl.NumberFormat(currentLang === "zh" ? "zh-CN" : "en-US").format(value);
+  return new Intl.NumberFormat(state.currentLang === "zh" ? "zh-CN" : "en-US").format(value);
 }
 
 function formatDuration(ms: number | null): string {
@@ -4149,7 +3535,7 @@ function formatRate(itemsPerMinute: number | null): string {
     return t("stats_not_available");
   }
 
-  return currentLang === "zh"
+  return state.currentLang === "zh"
     ? `${formatCount(Math.round(itemsPerMinute))} 条/分钟`
     : `${formatCount(Math.round(itemsPerMinute))} items/min`;
 }
@@ -4245,13 +3631,13 @@ function renderSetupSummary() {
     missingKeys.push("settings_checklist_missing_api_key");
   }
 
-  const missingLabels = missingKeys.map((key) => t(key)).join(currentLang === "zh" ? "、" : ", ");
+  const missingLabels = missingKeys.map((key) => t(key)).join(state.currentLang === "zh" ? "、" : ", ");
   const connectionMissingKeys = missingKeys.filter((key) =>
     ["settings_checklist_missing_base_url", "settings_checklist_missing_api_key"].includes(key)
   );
   const connectionMissingLabels = connectionMissingKeys
     .map((key) => t(key))
-    .join(currentLang === "zh" ? "、" : ", ");
+    .join(state.currentLang === "zh" ? "、" : ", ");
   const items = [
     {
       label: t("settings_checklist_provider"),
@@ -4290,7 +3676,7 @@ function renderSetupSummary() {
 }
 
 function resetRunStats() {
-  runStats = {
+  state.runStats = {
     startedAtMs: null,
     lastUpdatedAtMs: null,
     generatedCount: 0,
@@ -4309,7 +3695,7 @@ function resetRunStats() {
 
 function beginRunStats(request: PipelineFormRequest) {
   const startedAtMs = Date.now();
-  runStats = {
+  state.runStats = {
     startedAtMs,
     lastUpdatedAtMs: startedAtMs,
     generatedCount: 0,
@@ -4328,76 +3714,76 @@ function beginRunStats(request: PipelineFormRequest) {
 }
 
 function stopRunStatsTicker() {
-  if (runStatsTimer !== null) {
-    window.clearInterval(runStatsTimer);
-    runStatsTimer = null;
+  if (state.runStatsTimer !== null) {
+    window.clearInterval(state.runStatsTimer);
+    state.runStatsTimer = null;
   }
 }
 
 function startRunStatsTicker() {
   stopRunStatsTicker();
-  runStatsTimer = window.setInterval(() => {
+  state.runStatsTimer = window.setInterval(() => {
     renderRunStats();
   }, 1000);
 }
 
 function updateRunStatsFromEvent(payload: PipelineProgressEvent) {
   const now = Date.now();
-  if (runStats.startedAtMs === null) {
-    runStats.startedAtMs = now;
+  if (state.runStats.startedAtMs === null) {
+    state.runStats.startedAtMs = now;
   }
 
-  runStats.lastUpdatedAtMs = now;
+  state.runStats.lastUpdatedAtMs = now;
   if (payload.targetCount !== null && payload.targetCount !== undefined) {
-    runStats.targetCount = payload.targetCount;
+    state.runStats.targetCount = payload.targetCount;
   }
   if (payload.totalGenerated !== null && payload.totalGenerated !== undefined) {
-    runStats.generatedCount = payload.totalGenerated;
+    state.runStats.generatedCount = payload.totalGenerated;
   }
   if (payload.shardIndex !== null && payload.shardIndex !== undefined) {
-    runStats.shardIndex = payload.shardIndex;
+    state.runStats.shardIndex = payload.shardIndex;
   }
   if (payload.shardCount !== null && payload.shardCount !== undefined) {
-    runStats.shardCount = payload.shardCount;
+    state.runStats.shardCount = payload.shardCount;
   }
 
   if (payload.runtimeKind === "batch_completed") {
-    runStats.completedBatchCount += 1;
+    state.runStats.completedBatchCount += 1;
   } else if (payload.runtimeKind === "shard_completed") {
-    runStats.completedShardCount += 1;
+    state.runStats.completedShardCount += 1;
   } else if (payload.runtimeKind === "shard_skipped") {
-    runStats.skippedShardCount += 1;
+    state.runStats.skippedShardCount += 1;
   } else if (payload.runtimeKind === "batch_retry") {
-    runStats.retryCount += 1;
+    state.runStats.retryCount += 1;
   } else if (payload.runtimeKind === "batch_failed") {
-    runStats.failedBatchCount += 1;
+    state.runStats.failedBatchCount += 1;
   }
 
   if (
-    runStats.samples.length === 0 ||
-    runStats.samples[runStats.samples.length - 1]?.generatedCount !== runStats.generatedCount
+    state.runStats.samples.length === 0 ||
+    state.runStats.samples[state.runStats.samples.length - 1]?.generatedCount !== state.runStats.generatedCount
   ) {
-    runStats.samples.push({ atMs: now, generatedCount: runStats.generatedCount });
+    state.runStats.samples.push({ atMs: now, generatedCount: state.runStats.generatedCount });
   }
 
-  runStats.samples = runStats.samples.filter((sample) => now - sample.atMs <= 5 * 60 * 1000);
+  state.runStats.samples = state.runStats.samples.filter((sample) => now - sample.atMs <= 5 * 60 * 1000);
 }
 
 function renderRunStats() {
   const now = Date.now();
-  const startedAtMs = runStats.startedAtMs;
+  const startedAtMs = state.runStats.startedAtMs;
   const elapsedMs = startedAtMs === null ? null : now - startedAtMs;
-  const totalGenerated = runStats.generatedCount;
-  const totalTarget = runStats.targetCount;
+  const totalGenerated = state.runStats.generatedCount;
+  const totalTarget = state.runStats.targetCount;
   const avgRatePerMinute =
     startedAtMs !== null && elapsedMs !== null && elapsedMs > 0
       ? (totalGenerated / elapsedMs) * 60_000
       : null;
 
   const recentWindowStart = now - 60_000;
-  const recentSample = [...runStats.samples]
+  const recentSample = [...state.runStats.samples]
     .reverse()
-    .find((sample) => sample.atMs <= recentWindowStart) ?? runStats.samples[0] ?? null;
+    .find((sample) => sample.atMs <= recentWindowStart) ?? state.runStats.samples[0] ?? null;
   const currentRatePerMinute =
     recentSample && recentSample.atMs < now
       ? ((totalGenerated - recentSample.generatedCount) / (now - recentSample.atMs)) * 60_000
@@ -4420,12 +3806,12 @@ function renderRunStats() {
       : totalGenerated > 0
         ? formatCount(totalGenerated)
         : t("stats_idle");
-  const shardCompleted = runStats.completedShardCount + runStats.skippedShardCount;
+  const shardCompleted = state.runStats.completedShardCount + state.runStats.skippedShardCount;
   const shardProgress =
-    runStats.shardCount !== null
-      ? `${formatCount(shardCompleted)} / ${formatCount(runStats.shardCount)}`
-      : runStats.shardIndex !== null
-        ? formatCount(runStats.shardIndex)
+    state.runStats.shardCount !== null
+      ? `${formatCount(shardCompleted)} / ${formatCount(state.runStats.shardCount)}`
+      : state.runStats.shardIndex !== null
+        ? formatCount(state.runStats.shardIndex)
         : t("stats_idle");
 
   const cards = [
@@ -4434,11 +3820,11 @@ function renderRunStats() {
     { label: t("stats_eta"), value: formatDuration(etaMs) },
     { label: t("stats_generated_progress"), value: generatedProgress },
     { label: t("stats_shard_progress"), value: shardProgress },
-    ...(runStats.retryCount > 0
-      ? [{ label: t("stats_retry_count"), value: formatCount(runStats.retryCount) }]
+    ...(state.runStats.retryCount > 0
+      ? [{ label: t("stats_retry_count"), value: formatCount(state.runStats.retryCount) }]
       : []),
-    ...(runStats.failedBatchCount > 0
-      ? [{ label: t("stats_failed_requests"), value: formatCount(runStats.failedBatchCount) }]
+    ...(state.runStats.failedBatchCount > 0
+      ? [{ label: t("stats_failed_requests"), value: formatCount(state.runStats.failedBatchCount) }]
       : [])
   ];
 
@@ -4456,15 +3842,15 @@ function renderRunStats() {
 
 function currentBrowseBatch(): QaBatchSummary | null {
   return (
-    browseBatches.find((batch) => batch.id === browseSelectedBatchId) ??
-    browsePageData?.batch ??
-    browseDetailData?.batch ??
+    state.browseBatches.find((batch) => batch.id === state.browseSelectedBatchId) ??
+    state.browsePageData?.batch ??
+    state.browseDetailData?.batch ??
     null
   );
 }
 
 function currentBrowseReviewItem(): QaRecordSummary | null {
-  return browseReviewItems[browseReviewIndex] ?? null;
+  return state.browseReviewItems[state.browseReviewIndex] ?? null;
 }
 
 function currentBrowseReviewDraft(): string {
@@ -4472,12 +3858,12 @@ function currentBrowseReviewDraft(): string {
   if (!item) {
     return "";
   }
-  return browseReviewDrafts.get(item.id) ?? item.effectiveQuestion;
+  return state.browseReviewDrafts.get(item.id) ?? item.effectiveQuestion;
 }
 
 function moveToNextBrowseReviewItem() {
-  if (browseReviewIndex < browseReviewItems.length - 1) {
-    browseReviewIndex += 1;
+  if (state.browseReviewIndex < state.browseReviewItems.length - 1) {
+    state.browseReviewIndex += 1;
   }
 }
 
@@ -4485,7 +3871,7 @@ function updateBrowseBatchReviewSummary(
   batchId: string,
   summary: { reviewedCount: number; keptCount: number; discardedCount: number }
 ) {
-  browseBatches = browseBatches.map((batch) =>
+  state.browseBatches = state.browseBatches.map((batch) =>
     batch.id === batchId
       ? {
           ...batch,
@@ -4495,22 +3881,22 @@ function updateBrowseBatchReviewSummary(
         }
       : batch
   );
-  if (browsePageData?.batch.id === batchId) {
-    browsePageData = {
-      ...browsePageData,
+  if (state.browsePageData?.batch.id === batchId) {
+    state.browsePageData = {
+      ...state.browsePageData,
       batch: {
-        ...browsePageData.batch,
+        ...state.browsePageData.batch,
         reviewedCount: summary.reviewedCount,
         reviewKeptCount: summary.keptCount,
         discardedCount: summary.discardedCount
       }
     };
   }
-  if (browseDetailData?.batch.id === batchId) {
-    browseDetailData = {
-      ...browseDetailData,
+  if (state.browseDetailData?.batch.id === batchId) {
+    state.browseDetailData = {
+      ...state.browseDetailData,
       batch: {
-        ...browseDetailData.batch,
+        ...state.browseDetailData.batch,
         reviewedCount: summary.reviewedCount,
         reviewKeptCount: summary.keptCount,
         discardedCount: summary.discardedCount
@@ -4525,7 +3911,7 @@ function applyBrowseReviewUpdate(
   response: SaveBatchReviewItemResponse
 ) {
   updateBrowseBatchReviewSummary(batchId, response.summary);
-  browseReviewItems = browseReviewItems.map((item) =>
+  state.browseReviewItems = state.browseReviewItems.map((item) =>
     item.id === qaId
       ? {
           ...item,
@@ -4535,11 +3921,11 @@ function applyBrowseReviewUpdate(
         }
       : item
   );
-  browsePageData =
-    browsePageData && browsePageData.batch.id === batchId
+  state.browsePageData =
+    state.browsePageData && state.browsePageData.batch.id === batchId
       ? {
-          ...browsePageData,
-          items: browsePageData.items.map((item) =>
+          ...state.browsePageData,
+          items: state.browsePageData.items.map((item) =>
             item.id === qaId
               ? {
                   ...item,
@@ -4550,20 +3936,20 @@ function applyBrowseReviewUpdate(
               : item
           )
         }
-      : browsePageData;
-  browseDetailData =
-    browseDetailData && browseDetailData.batch.id === batchId && browseDetailData.item.id === qaId
+      : state.browsePageData;
+  state.browseDetailData =
+    state.browseDetailData && state.browseDetailData.batch.id === batchId && state.browseDetailData.item.id === qaId
       ? {
-          ...browseDetailData,
+          ...state.browseDetailData,
           review: response.review
         }
-      : browseDetailData;
-  browseReviewDrafts.set(qaId, response.review.effectiveQuestion);
+      : state.browseDetailData;
+  state.browseReviewDrafts.set(qaId, response.review.effectiveQuestion);
 }
 
 function clearBrowseRemoteVirtualBatch() {
-  browseRemoteVirtualBatch = null;
-  browseRemoteVirtualBatchDetail = null;
+  state.browseRemoteVirtualBatch = null;
+  state.browseRemoteVirtualBatchDetail = null;
 }
 
 function currentQaPlatformUrl(): string {
@@ -4580,11 +3966,11 @@ function hasQaPlatformCredentials(): boolean {
 }
 
 function currentPlatformEndpoints(): PlatformEndpoints | null {
-  if (platformLoginState.kind === "success") {
-    return platformLoginState.response.endpoints;
+  if (state.platformLoginState.kind === "success") {
+    return state.platformLoginState.response.endpoints;
   }
-  if (platformHealthState.kind === "success") {
-    return platformHealthState.response.endpoints;
+  if (state.platformHealthState.kind === "success") {
+    return state.platformHealthState.response.endpoints;
   }
   return null;
 }
@@ -4601,44 +3987,44 @@ function currentPlatformOpenUrl(kind: "qa-evaluate" | "model-trial"): string | n
 }
 
 function resetModelTrialState() {
-  modelTrialWorkspaceLoading = false;
-  modelTrialDetailLoading = false;
-  modelTrialCreating = false;
-  modelTrialSending = false;
-  modelTrialDeletingSessionId = null;
-  modelTrialConfigs = [];
-  modelTrialSessions = [];
-  modelTrialDetail = null;
-  modelTrialSelectedConfigId = null;
-  modelTrialSelectedSessionId = null;
-  modelTrialComposer = "";
-  modelTrialErrorMessage = null;
-  modelTrialNoticeMessage = null;
-  modelTrialLocalBatches = [];
-  modelTrialSelectedBatchId = null;
-  modelTrialLocalQuestions = [];
-  modelTrialSelectedQuestionId = null;
-  modelTrialLocalQuestionDetail = null;
-  modelTrialLocalQuestionsLoading = false;
+  state.modelTrialWorkspaceLoading = false;
+  state.modelTrialDetailLoading = false;
+  state.modelTrialCreating = false;
+  state.modelTrialSending = false;
+  state.modelTrialDeletingSessionId = null;
+  state.modelTrialConfigs = [];
+  state.modelTrialSessions = [];
+  state.modelTrialDetail = null;
+  state.modelTrialSelectedConfigId = null;
+  state.modelTrialSelectedSessionId = null;
+  state.modelTrialComposer = "";
+  state.modelTrialErrorMessage = null;
+  state.modelTrialNoticeMessage = null;
+  state.modelTrialLocalBatches = [];
+  state.modelTrialSelectedBatchId = null;
+  state.modelTrialLocalQuestions = [];
+  state.modelTrialSelectedQuestionId = null;
+  state.modelTrialLocalQuestionDetail = null;
+  state.modelTrialLocalQuestionsLoading = false;
 }
 
 function resetPlatformIntegrationState() {
-  platformHealthState = { kind: "idle" };
-  platformLoginState = { kind: "idle" };
+  state.platformHealthState = { kind: "idle" };
+  state.platformLoginState = { kind: "idle" };
   clearBrowsePlatformStatuses();
   clearBrowseRemoteVirtualBatch();
   resetModelTrialState();
 }
 
 function currentModelTrialSelectedQuestion(): QaRecordSummary | null {
-  if (!modelTrialSelectedQuestionId) {
+  if (!state.modelTrialSelectedQuestionId) {
     return null;
   }
-  return modelTrialLocalQuestions.find((item) => item.id === modelTrialSelectedQuestionId) ?? null;
+  return state.modelTrialLocalQuestions.find((item) => item.id === state.modelTrialSelectedQuestionId) ?? null;
 }
 
 function currentModelTrialSelectedConfig(): TrialLlmConfigOption | null {
-  return modelTrialConfigs.find((item) => item.id === modelTrialSelectedConfigId) ?? null;
+  return state.modelTrialConfigs.find((item) => item.id === state.modelTrialSelectedConfigId) ?? null;
 }
 
 function formatPlatformTime(value: string | null | undefined): string {
@@ -4649,7 +4035,7 @@ function formatPlatformTime(value: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+  return new Intl.DateTimeFormat(state.currentLang === "zh" ? "zh-CN" : "en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -4658,27 +4044,27 @@ function formatPlatformTime(value: string | null | undefined): string {
   }).format(date);
 }
 
-function renderPlatformStateBlock(state: typeof platformHealthState | typeof platformLoginState, kind: "health" | "login"): string {
-  if (state.kind === "loading") {
+function renderPlatformStateBlock(platformState: typeof state.platformHealthState | typeof state.platformLoginState, kind: "health" | "login"): string {
+  if (platformState.kind === "loading") {
     return `<div class="platform-state-card"><p class="platform-state-value">${escapeHtml(
       kind === "health" ? t("platform_health_checking") : t("platform_login_checking")
     )}</p></div>`;
   }
-  if (state.kind === "error") {
-    return `<div class="platform-state-card error"><p class="platform-state-value">${escapeHtml(state.message)}</p></div>`;
+  if (platformState.kind === "error") {
+    return `<div class="platform-state-card error"><p class="platform-state-value">${escapeHtml(platformState.message)}</p></div>`;
   }
-  if (state.kind === "success") {
+  if (platformState.kind === "success") {
     if (kind === "health") {
       return `
         <div class="platform-state-card success">
           <p class="platform-state-label">${escapeHtml(t("platform_web_base"))}</p>
-          <p class="platform-state-value">${escapeHtml(state.response.endpoints.platformWebBaseUrl)}</p>
+          <p class="platform-state-value">${escapeHtml(platformState.response.endpoints.platformWebBaseUrl)}</p>
           <p class="platform-state-label">${escapeHtml(t("platform_api_base"))}</p>
-          <p class="platform-state-value">${escapeHtml(state.response.endpoints.platformApiBaseUrl)}</p>
+          <p class="platform-state-value">${escapeHtml(platformState.response.endpoints.platformApiBaseUrl)}</p>
         </div>
       `;
     }
-    const loginResponse = state.response as PlatformLoginResponse;
+    const loginResponse = platformState.response as PlatformLoginResponse;
     const apps = loginResponse.user.applications.length
       ? loginResponse.user.applications.map((item) => item.name).join(" / ")
       : t("platform_no_application");
@@ -4700,11 +4086,11 @@ function renderQaEvaluatePanel() {
   const platformUrl = currentQaPlatformUrl() || DEFAULT_QA_PLATFORM_URL;
   const qaOpenUrl = currentPlatformOpenUrl("qa-evaluate");
   const bannerHtml =
-    platformLoginState.kind === "error"
-      ? `<div class="platform-inline-banner error">${escapeHtml(platformLoginState.message)}</div>`
-      : platformLoginState.kind === "success"
+    state.platformLoginState.kind === "error"
+      ? `<div class="platform-inline-banner error">${escapeHtml(state.platformLoginState.message)}</div>`
+      : state.platformLoginState.kind === "success"
         ? `<div class="platform-inline-banner success">${escapeHtml(
-            `${t("platform_login_ok")} ${platformLoginState.response.user.username}`
+            `${t("platform_login_ok")} ${state.platformLoginState.response.user.username}`
           )}</div>`
         : "";
 
@@ -4717,8 +4103,8 @@ function renderQaEvaluatePanel() {
       <div class="model-trial-topbar-item">
         <span class="platform-card-label">${escapeHtml(t("platform_current_user"))}</span>
         <span class="platform-card-value">${escapeHtml(
-          platformLoginState.kind === "success"
-            ? platformLoginState.response.user.username
+          state.platformLoginState.kind === "success"
+            ? state.platformLoginState.response.user.username
             : qaPlatformUsernameInput.value.trim() || t("empty_value")
         )}</span>
       </div>
@@ -4726,11 +4112,11 @@ function renderQaEvaluatePanel() {
         <span class="platform-card-label">${escapeHtml(t("platform_action_check"))}</span>
         <div class="model-trial-topbar-check">
           <span class="platform-card-value">${escapeHtml(
-            platformHealthState.kind === "success"
+            state.platformHealthState.kind === "success"
               ? t("platform_health_ok")
-              : platformHealthState.kind === "error"
+              : state.platformHealthState.kind === "error"
                 ? t("platform_health_failed")
-                : platformHealthState.kind === "loading"
+                : state.platformHealthState.kind === "loading"
                   ? t("platform_health_checking")
                   : t("platform_health_idle")
           )}</span>
@@ -4758,15 +4144,15 @@ function renderModelTrialPanel() {
   const selectedConfig = currentModelTrialSelectedConfig();
   const selectedQuestion = currentModelTrialSelectedQuestion();
   const selectedBatch =
-    modelTrialLocalBatches.find((item) => item.id === modelTrialSelectedBatchId) ?? null;
+    state.modelTrialLocalBatches.find((item) => item.id === state.modelTrialSelectedBatchId) ?? null;
   const sourceMeta = selectedBatch
     ? `${t("model_trial_source_local")}: ${selectedBatch.topicName || selectedBatch.name}`
     : "";
 
-  const sessionListHtml = modelTrialSessions.length
-    ? modelTrialSessions
+  const sessionListHtml = state.modelTrialSessions.length
+    ? state.modelTrialSessions
         .map((session) => {
-          const selected = session.id === modelTrialSelectedSessionId;
+          const selected = session.id === state.modelTrialSelectedSessionId;
           const sessionMeta = [session.llmConfigName || session.llmModelName, formatPlatformTime(session.updatedAt)]
             .filter(Boolean)
             .join(" / ");
@@ -4788,9 +4174,9 @@ function renderModelTrialPanel() {
                   class="browse-mini-button browse-mini-button-danger"
                   data-model-trial-action="delete-session"
                   data-session-id="${session.id}"
-                  ${modelTrialDeletingSessionId === session.id ? "disabled" : ""}
+                  ${state.modelTrialDeletingSessionId === session.id ? "disabled" : ""}
                 >${escapeHtml(
-                  modelTrialDeletingSessionId === session.id
+                  state.modelTrialDeletingSessionId === session.id
                     ? t("model_trial_delete_busy")
                     : t("model_trial_delete")
                 )}</button>
@@ -4800,11 +4186,11 @@ function renderModelTrialPanel() {
         })
         .join("")
     : `<div class="empty-state compact">${escapeHtml(
-        modelTrialWorkspaceLoading ? t("model_trial_loading") : t("model_trial_empty_sessions")
+        state.modelTrialWorkspaceLoading ? t("model_trial_loading") : t("model_trial_empty_sessions")
       )}</div>`;
 
-  const messagesHtml = modelTrialDetail?.messages.length
-    ? modelTrialDetail.messages
+  const messagesHtml = state.modelTrialDetail?.messages.length
+    ? state.modelTrialDetail.messages
         .map(
           (item) => `
             <article class="model-trial-message ${item.role === "assistant" ? "assistant" : "user"}">
@@ -4820,13 +4206,13 @@ function renderModelTrialPanel() {
         )
         .join("")
     : `<div class="empty-state compact">${escapeHtml(
-        modelTrialDetailLoading ? t("model_trial_loading") : t("model_trial_message_empty")
+        state.modelTrialDetailLoading ? t("model_trial_loading") : t("model_trial_message_empty")
       )}</div>`;
 
-  const bannerHtml = modelTrialErrorMessage
-    ? `<div class="platform-inline-banner error">${escapeHtml(modelTrialErrorMessage)}</div>`
-    : modelTrialNoticeMessage
-      ? `<div class="platform-inline-banner success">${escapeHtml(modelTrialNoticeMessage)}</div>`
+  const bannerHtml = state.modelTrialErrorMessage
+    ? `<div class="platform-inline-banner error">${escapeHtml(state.modelTrialErrorMessage)}</div>`
+    : state.modelTrialNoticeMessage
+      ? `<div class="platform-inline-banner success">${escapeHtml(state.modelTrialNoticeMessage)}</div>`
       : "";
 
   modelTrialPanel.innerHTML = `
@@ -4838,8 +4224,8 @@ function renderModelTrialPanel() {
       <div class="model-trial-topbar-item">
         <span class="platform-card-label">${escapeHtml(t("platform_current_user"))}</span>
         <span class="platform-card-value">${escapeHtml(
-          platformLoginState.kind === "success"
-            ? platformLoginState.response.user.username
+          state.platformLoginState.kind === "success"
+            ? state.platformLoginState.response.user.username
             : qaPlatformUsernameInput.value.trim() || t("empty_value")
         )}</span>
       </div>
@@ -4847,11 +4233,11 @@ function renderModelTrialPanel() {
         <span class="platform-card-label">${escapeHtml(t("platform_action_check"))}</span>
         <div class="model-trial-topbar-check">
           <span class="platform-card-value">${escapeHtml(
-            platformHealthState.kind === "success"
+            state.platformHealthState.kind === "success"
               ? t("platform_health_ok")
-              : platformHealthState.kind === "error"
+              : state.platformHealthState.kind === "error"
                 ? t("platform_health_failed")
-                : platformHealthState.kind === "loading"
+                : state.platformHealthState.kind === "loading"
                   ? t("platform_health_checking")
                   : t("platform_health_idle")
           )}</span>
@@ -4871,7 +4257,7 @@ function renderModelTrialPanel() {
                   type="button"
                   class="secondary"
                   data-model-trial-action="create-session"
-                  ${modelTrialCreating || !selectedConfig ? "disabled" : ""}
+                  ${state.modelTrialCreating || !selectedConfig ? "disabled" : ""}
                 >${escapeHtml(t("platform_action_create_trial"))}</button>
               </div>
               <div class="model-trial-session-list">${sessionListHtml}</div>
@@ -4882,10 +4268,10 @@ function renderModelTrialPanel() {
                   <span>${escapeHtml(t("model_trial_select_model"))}</span>
                   <select id="model-trial-config-select">
                     <option value="">${escapeHtml(t("model_trial_need_model"))}</option>
-                    ${modelTrialConfigs
+                    ${state.modelTrialConfigs
                       .map(
                         (config) => `
-                          <option value="${config.id}" ${config.id === modelTrialSelectedConfigId ? "selected" : ""}>
+                          <option value="${config.id}" ${config.id === state.modelTrialSelectedConfigId ? "selected" : ""}>
                             ${escapeHtml(`${config.name} / ${config.modelName}`)}
                           </option>
                         `
@@ -4897,10 +4283,10 @@ function renderModelTrialPanel() {
                   <span>${escapeHtml(t("model_trial_select_batch"))}</span>
                   <select id="model-trial-batch-select">
                     <option value="">${escapeHtml(t("model_trial_select_batch_empty"))}</option>
-                    ${modelTrialLocalBatches
+                    ${state.modelTrialLocalBatches
                       .map(
                         (batch) => `
-                          <option value="${escapeHtml(batch.id)}" ${batch.id === modelTrialSelectedBatchId ? "selected" : ""}>
+                          <option value="${escapeHtml(batch.id)}" ${batch.id === state.modelTrialSelectedBatchId ? "selected" : ""}>
                             ${escapeHtml(batch.topicName || batch.name)}
                           </option>
                         `
@@ -4910,18 +4296,18 @@ function renderModelTrialPanel() {
                 </label>
                 <label class="model-trial-field">
                   <span>${escapeHtml(t("model_trial_select_question"))}</span>
-                  <select id="model-trial-question-select" ${modelTrialSelectedBatchId ? "" : "disabled"}>
+                  <select id="model-trial-question-select" ${state.modelTrialSelectedBatchId ? "" : "disabled"}>
                     <option value="">${escapeHtml(
-                      modelTrialSelectedBatchId
-                        ? modelTrialLocalQuestionsLoading
+                      state.modelTrialSelectedBatchId
+                        ? state.modelTrialLocalQuestionsLoading
                           ? t("model_trial_loading")
                           : t("model_trial_select_question_empty")
                         : t("model_trial_select_question_empty")
                     )}</option>
-                    ${modelTrialLocalQuestions
+                    ${state.modelTrialLocalQuestions
                       .map(
                         (question) => `
-                          <option value="${escapeHtml(question.id)}" ${question.id === modelTrialSelectedQuestionId ? "selected" : ""}>
+                          <option value="${escapeHtml(question.id)}" ${question.id === state.modelTrialSelectedQuestionId ? "selected" : ""}>
                             ${escapeHtml(truncateText(question.question, 90))}
                           </option>
                         `
@@ -4931,10 +4317,10 @@ function renderModelTrialPanel() {
                 </label>
                 <div class="model-trial-meta-cards">
                   <div class="version-badge">${escapeHtml(
-                    `${t("model_trial_user_badge")} ${platformLoginState.kind === "success" ? platformLoginState.response.user.username : t("empty_value")}`
+                    `${t("model_trial_user_badge")} ${state.platformLoginState.kind === "success" ? state.platformLoginState.response.user.username : t("empty_value")}`
                   )}</div>
                   <div class="version-badge">${escapeHtml(
-                    `${t("model_trial_model_badge")} ${selectedConfig?.modelName || modelTrialDetail?.session.llmModelName || t("empty_value")}`
+                    `${t("model_trial_model_badge")} ${selectedConfig?.modelName || state.modelTrialDetail?.session.llmModelName || t("empty_value")}`
                   )}</div>
                 </div>
               </div>
@@ -4944,21 +4330,21 @@ function renderModelTrialPanel() {
                   ${sourceMeta ? `<p class="model-trial-source-meta">${escapeHtml(sourceMeta)}</p>` : ""}
                 </div>
                 ${
-                  modelTrialLocalQuestionDetail
+                  state.modelTrialLocalQuestionDetail
                     ? `
-                      <p class="model-trial-source-question">${escapeHtml(modelTrialLocalQuestionDetail.item.question)}</p>
+                      <p class="model-trial-source-question">${escapeHtml(state.modelTrialLocalQuestionDetail.item.question)}</p>
                       ${
-                        modelTrialLocalQuestionDetail.item.answer
-                          ? `<p class="model-trial-source-answer">${escapeHtml(modelTrialLocalQuestionDetail.item.answer)}</p>`
+                        state.modelTrialLocalQuestionDetail.item.answer
+                          ? `<p class="model-trial-source-answer">${escapeHtml(state.modelTrialLocalQuestionDetail.item.answer)}</p>`
                           : ""
                       }
                     `
-                    : modelTrialDetail?.source
+                    : state.modelTrialDetail?.source
                       ? `
-                          <p class="model-trial-source-question">${escapeHtml(modelTrialDetail.source.questionText)}</p>
+                          <p class="model-trial-source-question">${escapeHtml(state.modelTrialDetail.source.questionText)}</p>
                           ${
-                            modelTrialDetail.source.answerText
-                              ? `<p class="model-trial-source-answer">${escapeHtml(modelTrialDetail.source.answerText)}</p>`
+                            state.modelTrialDetail.source.answerText
+                              ? `<p class="model-trial-source-answer">${escapeHtml(state.modelTrialDetail.source.answerText)}</p>`
                               : ""
                           }
                         `
@@ -4969,9 +4355,9 @@ function renderModelTrialPanel() {
                 <div class="title-with-meta">
                   <p class="section-title">${escapeHtml(t("model_trial_conversation"))}</p>
                   ${
-                    modelTrialDetail?.session
+                    state.modelTrialDetail?.session
                       ? `<p class="model-trial-chat-meta">${escapeHtml(
-                          `${modelTrialDetail.session.title} · ${formatPlatformTime(modelTrialDetail.session.updatedAt)}`
+                          `${state.modelTrialDetail.session.title} · ${formatPlatformTime(state.modelTrialDetail.session.updatedAt)}`
                         )}</p>`
                       : ""
                   }
@@ -4980,12 +4366,12 @@ function renderModelTrialPanel() {
                 <div class="model-trial-composer">
                   <textarea id="model-trial-composer" placeholder="${escapeHtml(
                     t("model_trial_input_placeholder")
-                  )}">${escapeHtml(modelTrialComposer)}</textarea>
+                  )}">${escapeHtml(state.modelTrialComposer)}</textarea>
                   <div class="model-trial-composer-actions">
                     <button
                       type="button"
                       data-model-trial-action="send-message"
-                      ${modelTrialSending || modelTrialCreating || !selectedConfig ? "disabled" : ""}
+                      ${state.modelTrialSending || state.modelTrialCreating || !selectedConfig ? "disabled" : ""}
                     >${escapeHtml(t("platform_action_send_trial"))}</button>
                   </div>
                 </div>
@@ -5015,13 +4401,13 @@ function renderPlatformPanels() {
 
 function updatePlatformStatusBadge() {
   if (!platformStatusBadge) return;
-  if (platformLoginState.kind === "success") {
+  if (state.platformLoginState.kind === "success") {
     platformStatusBadge.className = "platform-status-badge connected";
-    platformStatusBadge.textContent = platformLoginState.response.user.username;
-  } else if (platformLoginState.kind === "loading") {
+    platformStatusBadge.textContent = state.platformLoginState.response.user.username;
+  } else if (state.platformLoginState.kind === "loading") {
     platformStatusBadge.className = "platform-status-badge checking";
     platformStatusBadge.textContent = "...";
-  } else if (platformLoginState.kind === "error") {
+  } else if (state.platformLoginState.kind === "error") {
     platformStatusBadge.className = "platform-status-badge error";
     platformStatusBadge.textContent = "✕";
   } else {
@@ -5030,15 +4416,15 @@ function updatePlatformStatusBadge() {
   }
   // Also sync the in-settings login status
   if (platformLoginStatus) {
-    if (platformLoginState.kind === "success") {
+    if (state.platformLoginState.kind === "success") {
       platformLoginStatus.className = "platform-login-status connected";
-      platformLoginStatus.textContent = `${t("platform_login_ok")} ${platformLoginState.response.user.username}`;
-    } else if (platformLoginState.kind === "loading") {
+      platformLoginStatus.textContent = `${t("platform_login_ok")} ${state.platformLoginState.response.user.username}`;
+    } else if (state.platformLoginState.kind === "loading") {
       platformLoginStatus.className = "platform-login-status checking";
       platformLoginStatus.textContent = t("platform_login_checking");
-    } else if (platformLoginState.kind === "error") {
+    } else if (state.platformLoginState.kind === "error") {
       platformLoginStatus.className = "platform-login-status error";
-      platformLoginStatus.textContent = `${t("platform_login_failed")}: ${platformLoginState.message}`;
+      platformLoginStatus.textContent = `${t("platform_login_failed")}: ${state.platformLoginState.message}`;
     } else {
       platformLoginStatus.className = "platform-login-status";
       platformLoginStatus.textContent = t("platform_login_idle");
@@ -5050,7 +4436,7 @@ function renderPlatformAccountCard() {
   const card = document.querySelector<HTMLElement>("#platform-account-card");
   if (!card) return;
 
-  if (platformLoginState.kind !== "success") {
+  if (state.platformLoginState.kind !== "success") {
     card.innerHTML = `
       <div class="platform-account-card disconnected">
         <p class="platform-account-status">${escapeHtml(t("platform_login_idle"))}</p>
@@ -5058,7 +4444,7 @@ function renderPlatformAccountCard() {
     return;
   }
 
-  const user = platformLoginState.response.user;
+  const user = state.platformLoginState.response.user;
   card.innerHTML = `
     <div class="platform-account-card connected">
       <div class="platform-account-row">
@@ -5076,7 +4462,7 @@ function renderPlatformAccountCard() {
     if (container) {
       container.hidden = !container.hidden;
       if (!container.hidden) {
-        passwordChangeState = { kind: "idle" };
+        state.passwordChangeState = { kind: "idle" };
         renderPasswordChangeForm();
       }
     }
@@ -5088,7 +4474,7 @@ function renderPlatformAccountCard() {
     try {
       await invoke("logout_platform", auth);
     } catch { /* ignore */ }
-    platformLoginState = { kind: "idle" };
+    state.platformLoginState = { kind: "idle" };
     renderPlatformPanels();
   });
 }
@@ -5098,7 +4484,7 @@ function renderPlatformAccountCard() {
 function renderRecentUpdatesPanel() {
   if (!recentUpdatesPanel) return;
 
-  const isConnected = platformLoginState.kind === "success";
+  const isConnected = state.platformLoginState.kind === "success";
 
   if (!isConnected) {
     recentUpdatesPanel.innerHTML = `
@@ -5108,14 +4494,14 @@ function renderRecentUpdatesPanel() {
     return;
   }
 
-  const overview = dashboardOverviewState;
-  const exportsStats = exportsStatsState;
-  const changelog = modelChangelogState;
-  const news = platformNewsState;
+  const overview = state.dashboardOverviewState;
+  const exportsStats = state.exportsStatsState;
+  const changelog = state.modelChangelogState;
+  const news = state.platformNewsState;
 
   const overviewHtml = overview.kind === "loading" ? `
     <div class="recent-updates-card">
-      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+      <div class="recent-updates-loading">${state.currentLang === "zh" ? "加载中" : "Loading"}...</div>
     </div>` : overview.kind === "error" ? `
     <div class="recent-updates-card error">
       <p>${escapeHtml(overview.message)}</p>
@@ -5132,24 +4518,24 @@ function renderRecentUpdatesPanel() {
         </div>
       </div>
       <div class="recent-updates-refresh">
-        <span class="stat-label">${escapeHtml(t("recent_updates_last_refresh"))}: ${escapeHtml(formatTimestamp(recentUpdatesLastRefreshTime))}</span>
+        <span class="stat-label">${escapeHtml(t("recent_updates_last_refresh"))}: ${escapeHtml(formatTimestamp(state.recentUpdatesLastRefreshTime))}</span>
       </div>
     </div>` : "";
 
   const weeklyHtml = exportsStats.kind === "loading" ? `
     <div class="recent-updates-card">
-      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
-      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+      <h3>${state.currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      <div class="recent-updates-loading">${state.currentLang === "zh" ? "加载中" : "Loading"}...</div>
     </div>` : exportsStats.kind === "error" ? `
     <div class="recent-updates-card error">
-      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      <h3>${state.currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
       <p>${escapeHtml(exportsStats.message)}</p>
     </div>` : exportsStats.kind === "success" ? renderWeeklyStats(exportsStats.data) : "";
 
   const changelogHtml = changelog.kind === "loading" ? `
     <div class="recent-updates-card">
       <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
-      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+      <div class="recent-updates-loading">${state.currentLang === "zh" ? "加载中" : "Loading"}...</div>
     </div>` : changelog.kind === "error" ? `
     <div class="recent-updates-card error">
       <h3>${escapeHtml(t("recent_updates_model_changes"))}</h3>
@@ -5175,7 +4561,7 @@ function renderRecentUpdatesPanel() {
   const newsHtml = news.kind === "loading" ? `
     <div class="recent-updates-card">
       <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
-      <div class="recent-updates-loading">${currentLang === "zh" ? "加载中" : "Loading"}...</div>
+      <div class="recent-updates-loading">${state.currentLang === "zh" ? "加载中" : "Loading"}...</div>
     </div>` : news.kind === "error" ? `
     <div class="recent-updates-card error">
       <h3>${escapeHtml(t("recent_updates_messages"))}</h3>
@@ -5246,7 +4632,7 @@ function renderWeeklyStats(data: ExportsStatsData): string {
   function dayLabel(dateStr: string): string {
     try {
       const d = new Date(dateStr + "T00:00:00");
-      return currentLang === "zh"
+      return state.currentLang === "zh"
         ? ["日", "一", "二", "三", "四", "五", "六"][d.getDay()]
         : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
     } catch { return dateStr.slice(-5); }
@@ -5254,17 +4640,17 @@ function renderWeeklyStats(data: ExportsStatsData): string {
 
   return `
     <div class="recent-updates-card">
-      <h3>${currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
+      <h3>${state.currentLang === "zh" ? "周 QA 趋势" : "Weekly QA Trend"}</h3>
       ${thisWeek || lastWeek ? `
       <div class="weekly-summary">
         ${lastWeek ? `
         <div class="weekly-summary-item">
-          <span class="weekly-summary-period">${currentLang === "zh" ? "上周" : "Last Week"}</span>
+          <span class="weekly-summary-period">${state.currentLang === "zh" ? "上周" : "Last Week"}</span>
           <span class="weekly-summary-count">${lastWeek.importCount.toLocaleString()}</span>
         </div>` : ""}
         ${thisWeek ? `
         <div class="weekly-summary-item">
-          <span class="weekly-summary-period">${currentLang === "zh" ? "本周" : "This Week"}</span>
+          <span class="weekly-summary-period">${state.currentLang === "zh" ? "本周" : "This Week"}</span>
           <span class="weekly-summary-count">${thisWeek.importCount.toLocaleString()}</span>
         </div>` : ""}
       </div>` : ""}
@@ -5274,7 +4660,7 @@ function renderWeeklyStats(data: ExportsStatsData): string {
             <div class="daily-bar-item" title="${d.date}: ${d.count.toLocaleString()}">
               <span class="daily-bar-count">${d.count > 0 ? d.count.toLocaleString() : ""}</span>
               <div class="daily-bar" style="height: ${barHeight(d.count)}px"></div>
-              ${d.isToday ? '<span class="daily-bar-today">' + (currentLang === "zh" ? "今天" : "Today") + '</span>' : `<span class="daily-bar-label">${dayLabel(d.date)}</span>`}
+              ${d.isToday ? '<span class="daily-bar-today">' + (state.currentLang === "zh" ? "今天" : "Today") + '</span>' : `<span class="daily-bar-label">${dayLabel(d.date)}</span>`}
             </div>
           `).join("")}
         </div>
@@ -5283,52 +4669,52 @@ function renderWeeklyStats(data: ExportsStatsData): string {
 }
 
 function changeTypeLabel(type: string): string {
-  if (type === "added") return currentLang === "zh" ? "新增" : "Added";
-  if (type === "updated") return currentLang === "zh" ? "更新" : "Updated";
-  if (type === "deprecated") return currentLang === "zh" ? "弃用" : "Deprecated";
-  if (type === "status_changed") return currentLang === "zh" ? "状态变更" : "Changed";
+  if (type === "added") return state.currentLang === "zh" ? "新增" : "Added";
+  if (type === "updated") return state.currentLang === "zh" ? "更新" : "Updated";
+  if (type === "deprecated") return state.currentLang === "zh" ? "弃用" : "Deprecated";
+  if (type === "status_changed") return state.currentLang === "zh" ? "状态变更" : "Changed";
   return type;
 }
 
 function getCurrentSession(): ChatSession | undefined {
-  return chatSessions.find(s => s.id === currentChatSessionId);
+  return state.chatSessions.find(s => s.id === state.currentChatSessionId);
 }
 
 function createChatSession() {
-  sessionCounter++;
+  state.sessionCounter++;
   const session: ChatSession = {
     id: crypto.randomUUID(),
-    name: `${t("chat_qa_session_untitled")} ${sessionCounter}`,
+    name: `${t("chat_qa_session_untitled")} ${state.sessionCounter}`,
     messages: [],
     createdAt: Date.now()
   };
-  chatSessions.push(session);
-  currentChatSessionId = session.id;
+  state.chatSessions.push(session);
+  state.currentChatSessionId = session.id;
   persistChatSessions();
   renderChatQaPanel();
 }
 
 function switchChatSession(id: string) {
-  if (chatSessions.some(s => s.id === id)) {
-    currentChatSessionId = id;
+  if (state.chatSessions.some(s => s.id === id)) {
+    state.currentChatSessionId = id;
     persistChatSessions();
     renderChatQaPanel();
   }
 }
 
 function deleteChatSession(id: string) {
-  const idx = chatSessions.findIndex(s => s.id === id);
+  const idx = state.chatSessions.findIndex(s => s.id === id);
   if (idx === -1) return;
-  chatSessions.splice(idx, 1);
-  if (currentChatSessionId === id) {
-    if (chatSessions.length > 0) {
-      currentChatSessionId = chatSessions[chatSessions.length - 1].id;
+  state.chatSessions.splice(idx, 1);
+  if (state.currentChatSessionId === id) {
+    if (state.chatSessions.length > 0) {
+      state.currentChatSessionId = state.chatSessions[state.chatSessions.length - 1].id;
     } else {
-      currentChatSessionId = null;
+      state.currentChatSessionId = null;
     }
   }
   persistChatSessions();
-  if (chatSessions.length === 0) {
+  if (state.chatSessions.length === 0) {
     createChatSession();
   } else {
     renderChatQaPanel();
@@ -5338,9 +4724,9 @@ function deleteChatSession(id: string) {
 function persistChatSessions() {
   try {
     const data = JSON.stringify({
-      sessions: chatSessions,
-      currentId: currentChatSessionId,
-      counter: sessionCounter,
+      sessions: state.chatSessions,
+      currentId: state.currentChatSessionId,
+      counter: state.sessionCounter,
     });
     window.localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, data);
   } catch { /* quota exceeded — silently skip */ }
@@ -5352,9 +4738,9 @@ function restoreChatSessions() {
     if (!raw) return;
     const data = JSON.parse(raw);
     if (Array.isArray(data.sessions) && data.sessions.length > 0) {
-      chatSessions = data.sessions;
-      currentChatSessionId = data.currentId ?? chatSessions[0]?.id ?? null;
-      sessionCounter = data.counter ?? chatSessions.length;
+      state.chatSessions = data.sessions;
+      state.currentChatSessionId = data.currentId ?? state.chatSessions[0]?.id ?? null;
+      state.sessionCounter = data.counter ?? state.chatSessions.length;
     }
   } catch { /* corrupted data — ignore */ }
 }
@@ -5362,9 +4748,9 @@ function restoreChatSessions() {
 function persistPaperQaState() {
   try {
     const data = JSON.stringify({
-      files: paperFiles,
-      result: paperQaResult,
-      cotRatio: paperQaCotRatio,
+      files: state.paperFiles,
+      result: state.paperQaResult,
+      cotRatio: state.paperQaCotRatio,
     });
     window.localStorage.setItem(PAPER_QA_STORAGE_KEY, data);
   } catch { /* quota exceeded — silently skip */ }
@@ -5375,9 +4761,9 @@ function restorePaperQaState() {
     const raw = window.localStorage.getItem(PAPER_QA_STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (Array.isArray(data.files)) paperFiles = data.files;
-    if (data.result) paperQaResult = data.result;
-    if (typeof data.cotRatio === "number") paperQaCotRatio = data.cotRatio;
+    if (Array.isArray(data.files)) state.paperFiles = data.files;
+    if (data.result) state.paperQaResult = data.result;
+    if (typeof data.cotRatio === "number") state.paperQaCotRatio = data.cotRatio;
   } catch { /* corrupted data — ignore */ }
 }
 
@@ -5389,9 +4775,9 @@ function renderChatSessionsBar() {
   const hasMessages = (currentSession?.messages.length ?? 0) > 0;
   const canUpload = Boolean(auth) && hasMessages;
 
-  const tabs = chatSessions.map(s => {
-    const activeClass = s.id === currentChatSessionId ? " active" : "";
-    const uploadState = sessionUploadStates[s.id];
+  const tabs = state.chatSessions.map(s => {
+    const activeClass = s.id === state.currentChatSessionId ? " active" : "";
+    const uploadState = state.sessionUploadStates[s.id];
     let statusIcon = "";
     if (uploadState) {
       if (uploadState.kind === "uploading") {
@@ -5413,7 +4799,7 @@ function renderChatSessionsBar() {
 
   chatQaSessionsBar.innerHTML = tabs
     + `<button type="button" class="chat-qa-new-session-button" id="chat-qa-new-session-button" title="${escapeHtml(t("chat_qa_new_session"))}">+</button>`
-    + `<button type="button" class="chat-qa-upload-button${uploadDisabled}" id="chat-qa-upload-button" title="${uploadTitle}"${uploadDisabled} data-upload-session="${currentChatSessionId ?? ""}">${escapeHtml(t("chat_qa_upload"))}</button>`;
+    + `<button type="button" class="chat-qa-upload-button${uploadDisabled}" id="chat-qa-upload-button" title="${uploadTitle}"${uploadDisabled} data-upload-session="${state.currentChatSessionId ?? ""}">${escapeHtml(t("chat_qa_upload"))}</button>`;
 }
 
 function renderChatQaPanel() {
@@ -5451,19 +4837,19 @@ function renderChatQaPanel() {
     chatQaMessages.scrollTop = chatQaMessages.scrollHeight;
   }
 
-  chatQaSendButton.disabled = !hasConfig || chatSending;
-  chatQaInput.disabled = !hasConfig || chatSending;
+  chatQaSendButton.disabled = !hasConfig || state.chatSending;
+  chatQaInput.disabled = !hasConfig || state.chatSending;
 
-  if (chatError) {
+  if (state.chatError) {
     chatQaError.hidden = false;
-    chatQaError.textContent = chatError;
+    chatQaError.textContent = state.chatError;
   } else {
     chatQaError.hidden = true;
   }
 }
 
 async function handleChatSend() {
-  if (chatSending) return;
+  if (state.chatSending) return;
 
   const session = getCurrentSession();
   if (!session) return;
@@ -5474,15 +4860,15 @@ async function handleChatSend() {
   const resolved = resolveLLMProvider();
   const modelReady = resolved.model.length > 0;
   if (resolved.mode === "none" || !modelReady) {
-    chatError = t("chat_qa_no_model");
+    state.chatError = t("chat_qa_no_model");
     renderChatQaPanel();
     return;
   }
 
   session.messages.push({ role: "user", content: text });
   chatQaInput.value = "";
-  chatSending = true;
-  chatError = null;
+  state.chatSending = true;
+  state.chatError = null;
   // Add empty assistant placeholder for streaming
   session.messages.push({ role: "assistant", content: "" });
   renderChatQaPanel();
@@ -5504,26 +4890,26 @@ async function handleChatSend() {
       }
     );
   } catch (error) {
-    chatError = `${t("chat_qa_send_failed")}: ${String(error)}`;
+    state.chatError = `${t("chat_qa_send_failed")}: ${String(error)}`;
   } finally {
-    chatSending = false;
+    state.chatSending = false;
     persistChatSessions();
     renderChatQaPanel();
   }
 }
 
 async function uploadChatSession(sessionId: string) {
-  const session = chatSessions.find(s => s.id === sessionId);
+  const session = state.chatSessions.find(s => s.id === sessionId);
   if (!session || session.messages.length === 0) return;
 
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    sessionUploadStates[sessionId] = { kind: "error", message: t("chat_qa_upload_no_auth") };
+    state.sessionUploadStates[sessionId] = { kind: "error", message: t("chat_qa_upload_no_auth") };
     renderChatQaPanel();
     return;
   }
 
-  sessionUploadStates[sessionId] = { kind: "uploading" };
+  state.sessionUploadStates[sessionId] = { kind: "uploading" };
   renderChatQaPanel();
 
   try {
@@ -5535,16 +4921,16 @@ async function uploadChatSession(sessionId: string) {
       externalBatchId: session.id,
       messages: session.messages.map(m => ({ role: m.role, content: m.content }))
     });
-    sessionUploadStates[sessionId] = { kind: "success", batchId: response.batch_id ?? 0 };
+    state.sessionUploadStates[sessionId] = { kind: "success", batchId: response.batch_id ?? 0 };
   } catch (error) {
-    sessionUploadStates[sessionId] = { kind: "error", message: String(error) };
+    state.sessionUploadStates[sessionId] = { kind: "error", message: String(error) };
   }
   renderChatQaPanel();
 }
 
 function renderFeedback2Panel() {
-  const isLoggedIn = platformLoginState.kind === "success";
-  const formState = feedback2FormState;
+  const isLoggedIn = state.platformLoginState.kind === "success";
+  const formState = state.feedback2FormState;
 
   const loginRequired = document.querySelector<HTMLElement>("#feedback2-login-required");
   const form = document.querySelector<HTMLFormElement>("#feedback2-form");
@@ -5570,18 +4956,18 @@ function renderFeedback2Panel() {
 async function loadRecentUpdatesData() {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    dashboardOverviewState = { kind: "idle" };
-    platformNewsState = { kind: "idle" };
-    modelChangelogState = { kind: "idle" };
-    exportsStatsState = { kind: "idle" };
+    state.dashboardOverviewState = { kind: "idle" };
+    state.platformNewsState = { kind: "idle" };
+    state.modelChangelogState = { kind: "idle" };
+    state.exportsStatsState = { kind: "idle" };
     renderRecentUpdatesPanel();
     return;
   }
 
-  dashboardOverviewState = { kind: "loading" };
-  platformNewsState = { kind: "loading" };
-  modelChangelogState = { kind: "loading" };
-  exportsStatsState = { kind: "loading" };
+  state.dashboardOverviewState = { kind: "loading" };
+  state.platformNewsState = { kind: "loading" };
+  state.modelChangelogState = { kind: "loading" };
+  state.exportsStatsState = { kind: "loading" };
   renderRecentUpdatesPanel();
 
   try {
@@ -5591,16 +4977,16 @@ async function loadRecentUpdatesData() {
       invoke<ModelChangelogEntry[]>("get_model_changelog", { ...auth, days: 7 }),
       invoke<ExportsStatsData>("get_exports_stats", auth)
     ]);
-    dashboardOverviewState = { kind: "success", data: overview };
-    platformNewsState = { kind: "success", items: news };
-    modelChangelogState = { kind: "success", items: changelog };
-    exportsStatsState = { kind: "success", data: exportsStats };
-    recentUpdatesLastRefreshTime = Date.now();
+    state.dashboardOverviewState = { kind: "success", data: overview };
+    state.platformNewsState = { kind: "success", items: news };
+    state.modelChangelogState = { kind: "success", items: changelog };
+    state.exportsStatsState = { kind: "success", data: exportsStats };
+    state.recentUpdatesLastRefreshTime = Date.now();
   } catch (error) {
-    dashboardOverviewState = { kind: "error", message: String(error) };
-    platformNewsState = { kind: "error", message: String(error) };
-    modelChangelogState = { kind: "error", message: String(error) };
-    exportsStatsState = { kind: "error", message: String(error) };
+    state.dashboardOverviewState = { kind: "error", message: String(error) };
+    state.platformNewsState = { kind: "error", message: String(error) };
+    state.modelChangelogState = { kind: "error", message: String(error) };
+    state.exportsStatsState = { kind: "error", message: String(error) };
   }
   renderRecentUpdatesPanel();
 }
@@ -5608,7 +4994,7 @@ async function loadRecentUpdatesData() {
 function formatDateString(dateStr: string): string {
   try {
     const d = new Date(dateStr);
-    return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+    return new Intl.DateTimeFormat(state.currentLang === "zh" ? "zh-CN" : "en-US", {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -5619,7 +5005,7 @@ function formatDateString(dateStr: string): string {
 
 function formatTimestamp(ts: number | null): string {
   if (!ts) return t("empty_value");
-  return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+  return new Intl.DateTimeFormat(state.currentLang === "zh" ? "zh-CN" : "en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit"
@@ -5641,7 +5027,7 @@ async function handleFeedback2FormSubmit(event: SubmitEvent) {
   const auth = currentPlatformAuthPayload();
   if (!auth) return;
 
-  feedback2FormState = { kind: "submitting" };
+  state.feedback2FormState = { kind: "submitting" };
   renderFeedback2Panel();
   try {
     await invoke("submit_feedback", {
@@ -5650,11 +5036,11 @@ async function handleFeedback2FormSubmit(event: SubmitEvent) {
       content,
       category: categorySelect.value
     });
-    feedback2FormState = { kind: "success" };
+    state.feedback2FormState = { kind: "success" };
     titleInput.value = "";
     contentInput.value = "";
   } catch (error) {
-    feedback2FormState = { kind: "error", message: String(error) };
+    state.feedback2FormState = { kind: "error", message: String(error) };
   }
   renderFeedback2Panel();
 }
@@ -5672,7 +5058,7 @@ async function handlePasswordChange(event: SubmitEvent) {
   const confirmPassword = confirmInput.value;
 
   if (newPassword !== confirmPassword) {
-    passwordChangeState = { kind: "error", message: t("platform_password_mismatch") };
+    state.passwordChangeState = { kind: "error", message: t("platform_password_mismatch") };
     renderPasswordChangeForm();
     return;
   }
@@ -5680,7 +5066,7 @@ async function handlePasswordChange(event: SubmitEvent) {
   const auth = currentPlatformAuthPayload();
   if (!auth) return;
 
-  passwordChangeState = { kind: "submitting" };
+  state.passwordChangeState = { kind: "submitting" };
   renderPasswordChangeForm();
   try {
     await invoke<ChangePasswordResponse>("change_platform_password", {
@@ -5688,12 +5074,12 @@ async function handlePasswordChange(event: SubmitEvent) {
       currentPassword,
       newPassword
     });
-    passwordChangeState = { kind: "success" };
+    state.passwordChangeState = { kind: "success" };
     currentInput.value = "";
     newInput.value = "";
     confirmInput.value = "";
   } catch (error) {
-    passwordChangeState = { kind: "error", message: String(error) };
+    state.passwordChangeState = { kind: "error", message: String(error) };
   }
   renderPasswordChangeForm();
 }
@@ -5702,7 +5088,7 @@ function renderPasswordChangeForm() {
   const container = document.querySelector<HTMLElement>("#password-change-form-container");
   if (!container) return;
 
-  const state = passwordChangeState;
+  const pwState = state.passwordChangeState;
   container.innerHTML = `
     <form class="password-change-form" id="password-change-form">
       <p class="password-change-title">${escapeHtml(t("platform_change_password_title"))}</p>
@@ -5718,11 +5104,11 @@ function renderPasswordChangeForm() {
         <span>${escapeHtml(t("platform_confirm_password"))}</span>
         <input id="password-change-confirm" type="password" minlength="6" required />
       </label>
-      <button type="submit" class="feedback-submit-button" ${state.kind === "submitting" ? "disabled" : ""}>
-        ${state.kind === "submitting" ? escapeHtml(t("platform_password_submitting")) : escapeHtml(t("platform_password_submit"))}
+      <button type="submit" class="feedback-submit-button" ${pwState.kind === "submitting" ? "disabled" : ""}>
+        ${pwState.kind === "submitting" ? escapeHtml(t("platform_password_submitting")) : escapeHtml(t("platform_password_submit"))}
       </button>
-      ${state.kind === "success" ? `<p class="feedback-success">${escapeHtml(t("platform_password_success"))}</p>` : ""}
-      ${state.kind === "error" ? `<p class="feedback-error">${escapeHtml(state.message)}</p>` : ""}
+      ${pwState.kind === "success" ? `<p class="feedback-success">${escapeHtml(t("platform_password_success"))}</p>` : ""}
+      ${pwState.kind === "error" ? `<p class="feedback-error">${escapeHtml(pwState.message)}</p>` : ""}
     </form>
   `;
 
@@ -5733,7 +5119,7 @@ function renderPasswordChangeForm() {
 }
 
 function formatBrowsePageLabel(page: number, totalPages: number): string {
-  return currentLang === "zh"
+  return state.currentLang === "zh"
     ? `第 ${page} / ${totalPages} 页`
     : `Page ${page} / ${totalPages}`;
 }
@@ -5743,7 +5129,7 @@ function formatUpdatedAt(updatedAtMs: number | null): string {
     return t("empty_value");
   }
 
-  return new Intl.DateTimeFormat(currentLang === "zh" ? "zh-CN" : "en-US", {
+  return new Intl.DateTimeFormat(state.currentLang === "zh" ? "zh-CN" : "en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -5760,7 +5146,7 @@ function parseCotAnswerSections(
   answer: string,
   headers: string[] | null | undefined
 ): Array<{ label: string; value: string }> {
-  const normalizedHeaders = normalizeCotSectionHeaders(headers, currentLang);
+  const normalizedHeaders = normalizeCotSectionHeaders(headers, state.currentLang);
   const headingPattern = normalizedHeaders.map((heading) => escapeRegExp(heading)).join("|");
   const matcher = new RegExp(`^(${headingPattern})\\s*:\\s*`, "gm");
   const matches = Array.from(answer.matchAll(matcher));
@@ -5786,12 +5172,12 @@ function parseCotAnswerSections(
 }
 
 function renderBrowseView() {
-  if (browseView === "batches") {
+  if (state.browseView === "batches") {
     browseBackButton.hidden = true;
     browseBackButton.textContent = "";
     browseViewTitle.textContent = t("browse_batches_title");
-    browseViewMeta.textContent = browseBatches.length
-      ? `${t("browse_history_count")} ${formatCount(browseBatches.length)}`
+    browseViewMeta.textContent = state.browseBatches.length
+      ? `${t("browse_history_count")} ${formatCount(state.browseBatches.length)}`
       : t("browse_batches_empty");
     browseContent.innerHTML = renderBrowseBatches();
     return;
@@ -5799,24 +5185,24 @@ function renderBrowseView() {
 
   const batch = currentBrowseBatch();
 
-  if (browseView === "questions") {
+  if (state.browseView === "questions") {
     browseBackButton.hidden = false;
     browseBackButton.textContent = t("browse_back_batches");
     browseViewTitle.textContent = batch ? batch.topicName || batch.name : t("browse_questions_title");
-    browseViewMeta.textContent = browsePageData
-      ? `${t("browse_total_items")} ${formatCount(browsePageData.totalItems)} · ${formatBrowsePageLabel(browsePageData.page, browsePageData.totalPages)}`
-      : browseQuestionsLoading
+    browseViewMeta.textContent = state.browsePageData
+      ? `${t("browse_total_items")} ${formatCount(state.browsePageData.totalItems)} · ${formatBrowsePageLabel(state.browsePageData.page, state.browsePageData.totalPages)}`
+      : state.browseQuestionsLoading
         ? t("browse_questions_loading")
         : t("browse_questions_empty");
     browseContent.innerHTML = renderBrowseQaList();
     return;
   }
 
-  if (browseView === "review") {
+  if (state.browseView === "review") {
     browseBackButton.hidden = false;
     browseBackButton.textContent = t("browse_back_batches");
     browseViewTitle.textContent = batch ? `${batch.topicName || batch.name} · ${t("browse_review_title")}` : t("browse_review_title");
-    browseViewMeta.textContent = browseReviewLoading
+    browseViewMeta.textContent = state.browseReviewLoading
       ? t("browse_review_loading")
       : batch
         ? browseReviewSummaryLabel(batch)
@@ -5828,28 +5214,28 @@ function renderBrowseView() {
   browseBackButton.hidden = false;
   browseBackButton.textContent = t("browse_back_questions");
   browseViewTitle.textContent = t("browse_detail_title");
-  browseViewMeta.textContent = browseDetailData
-    ? `${batch ? `${batch.topicName || batch.name} · ` : ""}${truncateText(browseDetailData.review.effectiveQuestion, 88)}`
-    : browseDetailLoading
+  browseViewMeta.textContent = state.browseDetailData
+    ? `${batch ? `${batch.topicName || batch.name} · ` : ""}${truncateText(state.browseDetailData.review.effectiveQuestion, 88)}`
+    : state.browseDetailLoading
       ? t("browse_detail_loading")
       : t("browse_detail_empty");
   browseContent.innerHTML = renderBrowseDetail();
 }
 
 function renderBrowseBatches(): string {
-  if (!browseBatches.length) {
+  if (!state.browseBatches.length) {
     return `<div class="empty-state">${escapeHtml(t("browse_batches_empty"))}</div>`;
   }
 
   const hasUploadUrl = Boolean(currentQaPlatformUrl());
-  return `<div class="browse-list">${browseBatches
+  return `<div class="browse-list">${state.browseBatches
     .map((batch) => {
       const remoteVirtual = isRemoteVirtualBrowseBatch(batch.id);
-      const selected = batch.id === browseSelectedBatchId;
+      const selected = batch.id === state.browseSelectedBatchId;
       const platformStatus = currentBrowseBatchPlatformStatus(batch.id);
       const resumable = canResumeBrowseBatch(batch);
-      const uploadDisabled = remoteVirtual || !hasUploadUrl || browseUploadingBatchId !== null;
-      const uploadBusy = browseUploadingBatchId === batch.id;
+      const uploadDisabled = remoteVirtual || !hasUploadUrl || state.browseUploadingBatchId !== null;
+      const uploadBusy = state.browseUploadingBatchId === batch.id;
       const stats = [
         batch.targetCount !== null
           ? `${t("browse_target_items")} ${formatCount(batch.targetCount)}`
@@ -5923,23 +5309,23 @@ function renderBrowseBatches(): string {
 }
 
 function renderBrowseQaList(): string {
-  if (browseErrorMessage) {
-    return `<div class="empty-state">${escapeHtml(browseErrorMessage)}</div>`;
+  if (state.browseErrorMessage) {
+    return `<div class="empty-state">${escapeHtml(state.browseErrorMessage)}</div>`;
   }
 
-  if (browseQuestionsLoading) {
+  if (state.browseQuestionsLoading) {
     return `<div class="empty-state">${escapeHtml(t("browse_questions_loading"))}</div>`;
   }
 
-  if (!browsePageData || !browseSelectedBatchId) {
+  if (!state.browsePageData || !state.browseSelectedBatchId) {
     return `<div class="empty-state">${escapeHtml(t("browse_questions_empty"))}</div>`;
   }
 
-  const listHtml = !browsePageData.items.length
+  const listHtml = !state.browsePageData.items.length
     ? `<div class="empty-state">${escapeHtml(t("browse_questions_empty"))}</div>`
-    : `<div class="browse-list">${browsePageData.items
+    : `<div class="browse-list">${state.browsePageData.items
         .map((item) => {
-          const active = browseDetailData?.item.id === item.id;
+          const active = state.browseDetailData?.item.id === item.id;
           const meta = [item.subtopic, item.axis, item.questionType, item.difficulty]
             .filter(Boolean)
             .join(" · ");
@@ -5956,28 +5342,28 @@ function renderBrowseQaList(): string {
   return `
     ${listHtml}
     <div class="browse-pagination">
-      <button type="button" id="browse-prev-page" ${browsePageData.page <= 1 ? "disabled" : ""}>${escapeHtml(t("browse_prev"))}</button>
-      <span class="browse-page-label">${escapeHtml(formatBrowsePageLabel(browsePageData.page, browsePageData.totalPages))}</span>
-      <button type="button" id="browse-next-page" ${browsePageData.page >= browsePageData.totalPages ? "disabled" : ""}>${escapeHtml(t("browse_next"))}</button>
+      <button type="button" id="browse-prev-page" ${state.browsePageData.page <= 1 ? "disabled" : ""}>${escapeHtml(t("browse_prev"))}</button>
+      <span class="browse-page-label">${escapeHtml(formatBrowsePageLabel(state.browsePageData.page, state.browsePageData.totalPages))}</span>
+      <button type="button" id="browse-next-page" ${state.browsePageData.page >= state.browsePageData.totalPages ? "disabled" : ""}>${escapeHtml(t("browse_next"))}</button>
     </div>
   `;
 }
 
 function renderBrowseDetail(): string {
-  if (browseErrorMessage) {
-    return `<div class="empty-state">${escapeHtml(browseErrorMessage)}</div>`;
+  if (state.browseErrorMessage) {
+    return `<div class="empty-state">${escapeHtml(state.browseErrorMessage)}</div>`;
   }
 
-  if (browseDetailLoading) {
+  if (state.browseDetailLoading) {
     return `<div class="empty-state">${escapeHtml(t("browse_detail_loading"))}</div>`;
   }
 
-  if (!browseDetailData) {
+  if (!state.browseDetailData) {
     return `<div class="empty-state">${escapeHtml(t("browse_detail_empty"))}</div>`;
   }
 
-  const { batch, item } = browseDetailData;
-  const review = browseDetailData.review;
+  const { batch, item } = state.browseDetailData;
+  const review = state.browseDetailData.review;
   const cotSections =
     item.qa_mode === "cot" ? parseCotAnswerSections(item.answer, batch.cotSectionHeaders) : [];
   const cards = [
@@ -6036,11 +5422,11 @@ function renderBrowseDetail(): string {
 }
 
 function renderBrowseReview(): string {
-  if (browseErrorMessage) {
-    return `<div class="empty-state">${escapeHtml(browseErrorMessage)}</div>`;
+  if (state.browseErrorMessage) {
+    return `<div class="empty-state">${escapeHtml(state.browseErrorMessage)}</div>`;
   }
 
-  if (browseReviewLoading) {
+  if (state.browseReviewLoading) {
     return `<div class="empty-state">${escapeHtml(t("browse_review_loading"))}</div>`;
   }
 
@@ -6052,7 +5438,7 @@ function renderBrowseReview(): string {
 
   const draft = currentBrowseReviewDraft();
   const dirty = draft.trim() !== item.effectiveQuestion.trim();
-  const total = browseReviewItems.length;
+  const total = state.browseReviewItems.length;
   const meta = [item.subtopic, item.axis, item.questionType, item.difficulty]
     .filter(Boolean)
     .join(" · ");
@@ -6063,7 +5449,7 @@ function renderBrowseReview(): string {
         <div class="browse-review-header">
           <div class="browse-review-header-copy">
             <p class="result-card-label">${escapeHtml(t("browse_review_progress"))}</p>
-            <p class="browse-review-progress">${escapeHtml(`${formatCount(browseReviewIndex + 1)} / ${formatCount(total)}`)}</p>
+            <p class="browse-review-progress">${escapeHtml(`${formatCount(state.browseReviewIndex + 1)} / ${formatCount(total)}`)}</p>
             <p class="browse-row-meta">${escapeHtml(meta || t("empty_value"))}</p>
           </div>
           <span class="browse-review-badge ${escapeHtml(reviewStatusBadgeClass(item.reviewStatus))}">${escapeHtml(reviewStatusLabel(item.reviewStatus))}</span>
@@ -6078,15 +5464,15 @@ function renderBrowseReview(): string {
             : ""
         }
         <div class="browse-review-actions">
-          <button type="button" class="browse-mini-button${!dirty || browseReviewSaving ? " browse-mini-button-muted" : ""}" id="browse-review-save" ${!dirty || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t(browseReviewSaving ? "browse_review_saving" : "browse_review_save"))}</button>
-          <button type="button" class="browse-mini-button${item.reviewStatus === "kept" ? " active" : ""}" id="browse-review-keep" ${browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_keep"))}</button>
-          <button type="button" class="browse-mini-button browse-mini-button-danger${item.reviewStatus === "discarded" ? " active" : ""}" id="browse-review-discard" ${browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_discard"))}</button>
+          <button type="button" class="browse-mini-button${!dirty || state.browseReviewSaving ? " browse-mini-button-muted" : ""}" id="browse-review-save" ${!dirty || state.browseReviewSaving ? "disabled" : ""}>${escapeHtml(t(state.browseReviewSaving ? "browse_review_saving" : "browse_review_save"))}</button>
+          <button type="button" class="browse-mini-button${item.reviewStatus === "kept" ? " active" : ""}" id="browse-review-keep" ${state.browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_keep"))}</button>
+          <button type="button" class="browse-mini-button browse-mini-button-danger${item.reviewStatus === "discarded" ? " active" : ""}" id="browse-review-discard" ${state.browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_discard"))}</button>
         </div>
       </article>
       <div class="browse-review-nav">
-        <button type="button" class="browse-review-nav-button" id="browse-review-prev" ${browseReviewIndex <= 0 || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_prev_question"))}</button>
+        <button type="button" class="browse-review-nav-button" id="browse-review-prev" ${state.browseReviewIndex <= 0 || state.browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_prev_question"))}</button>
         <span class="browse-page-label">${escapeHtml(browseReviewSummaryLabel(batch))}</span>
-        <button type="button" class="browse-review-nav-button" id="browse-review-next" ${browseReviewIndex >= total - 1 || browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_next_question"))}</button>
+        <button type="button" class="browse-review-nav-button" id="browse-review-next" ${state.browseReviewIndex >= total - 1 || state.browseReviewSaving ? "disabled" : ""}>${escapeHtml(t("browse_review_next_question"))}</button>
       </div>
     </section>
   `;
@@ -6103,13 +5489,13 @@ async function deleteBrowseBatch(batchId: string) {
 
   try {
     await invoke("delete_qa_batch", { batchId });
-    if (browseSelectedBatchId === batchId) {
-      browseView = "batches";
-      browseSelectedBatchId = null;
-      browsePageData = null;
-      browseDetailData = null;
-      browseReviewItems = [];
-      browseReviewDrafts = new Map();
+    if (state.browseSelectedBatchId === batchId) {
+      state.browseView = "batches";
+      state.browseSelectedBatchId = null;
+      state.browsePageData = null;
+      state.browseDetailData = null;
+      state.browseReviewItems = [];
+      state.browseReviewDrafts = new Map();
     }
     await loadBrowseBatches();
     window.alert(t("browse_delete_success"));
@@ -6122,7 +5508,7 @@ async function uploadBrowseBatch(batchId: string) {
   if (isRemoteVirtualBrowseBatch(batchId)) {
     return;
   }
-  if (browseUploadingBatchId) {
+  if (state.browseUploadingBatchId) {
     return;
   }
   if (!hasQaPlatformCredentials()) {
@@ -6132,7 +5518,7 @@ async function uploadBrowseBatch(batchId: string) {
     return;
   }
 
-  browseUploadingBatchId = batchId;
+  state.browseUploadingBatchId = batchId;
   renderBrowseView();
   try {
     const response = await invoke<QaBatchUploadResponse>("upload_qa_batch", {
@@ -6147,7 +5533,7 @@ async function uploadBrowseBatch(batchId: string) {
     appendLog(
       `${message} · batch_id=${response.batchId ?? "n/a"} · app=${response.applicationId} · type=${response.technicalTypeCode}`
     );
-    platformHealthState = {
+    state.platformHealthState = {
       kind: "success",
       response: {
         reachable: true,
@@ -6169,23 +5555,23 @@ async function uploadBrowseBatch(batchId: string) {
       : `${t("browse_upload_failed")}: ${detail}`;
     window.alert(message);
   } finally {
-    browseUploadingBatchId = null;
+    state.browseUploadingBatchId = null;
     renderBrowseView();
   }
 }
 
 async function refreshPlatformHealth() {
-  platformHealthState = { kind: "loading" };
+  state.platformHealthState = { kind: "loading" };
   renderPlatformPanels();
   try {
     const platformUrl = currentQaPlatformUrl();
     const response = await invoke<PlatformHealthResponse>("check_platform_health", {
       platformUrl
     });
-    platformHealthState = { kind: "success", response };
+    state.platformHealthState = { kind: "success", response };
     appendLog(`${t("platform_health_ok")} ${response.endpoints.platformApiBaseUrl}`);
   } catch (error) {
-    platformHealthState = { kind: "error", message: String(error) };
+    state.platformHealthState = { kind: "error", message: String(error) };
     appendLog(`${t("platform_health_failed")}: ${String(error)}`);
   }
   renderPlatformPanels();
@@ -6199,7 +5585,7 @@ async function refreshPlatformLogin() {
     return;
   }
 
-  platformLoginState = { kind: "loading" };
+  state.platformLoginState = { kind: "loading" };
   renderPlatformPanels();
   try {
     const platformUrl = currentQaPlatformUrl();
@@ -6208,8 +5594,8 @@ async function refreshPlatformLogin() {
       username: qaPlatformUsernameInput.value.trim(),
       password: qaPlatformPasswordInput.value.trim()
     });
-    platformLoginState = { kind: "success", response };
-    platformHealthState = {
+    state.platformLoginState = { kind: "success", response };
+    state.platformHealthState = {
       kind: "success",
       response: {
         reachable: true,
@@ -6219,7 +5605,7 @@ async function refreshPlatformLogin() {
     };
     appendLog(`${t("platform_login_ok")} ${response.user.username}`);
   } catch (error) {
-    platformLoginState = { kind: "error", message: String(error) };
+    state.platformLoginState = { kind: "error", message: String(error) };
     appendLog(`${t("platform_login_failed")}: ${String(error)}`);
   }
   renderPlatformPanels();
@@ -6257,28 +5643,28 @@ async function loadRemoteVirtualBrowseBatchSummary(): Promise<QaBatchSummary | n
     return null;
   }
 
-  browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(remoteSummary);
-  browseRemoteVirtualBatchDetail = null;
-  return browseRemoteVirtualBatch;
+  state.browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(remoteSummary);
+  state.browseRemoteVirtualBatchDetail = null;
+  return state.browseRemoteVirtualBatch;
 }
 
 async function ensureRemoteVirtualBrowseBatchDetail(): Promise<PlatformImportBatchDetail> {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    throw new Error(currentLang === "zh" ? "请先填写平台地址、用户名和密码" : "Platform credentials are required");
+    throw new Error(state.currentLang === "zh" ? "请先填写平台地址、用户名和密码" : "Platform credentials are required");
   }
 
-  if (browseRemoteVirtualBatchDetail) {
-    return browseRemoteVirtualBatchDetail;
+  if (state.browseRemoteVirtualBatchDetail) {
+    return state.browseRemoteVirtualBatchDetail;
   }
 
   const detail = await invoke<PlatformImportBatchDetail>("get_platform_import_batch_detail", {
     ...auth,
     batchId: PLATFORM_REMOTE_VIRTUAL_BATCH_ID
   });
-  browseRemoteVirtualBatchDetail = detail;
-  browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(detail.batch);
-  browseBatches = mergeBrowseBatches(localBrowseBatches(), browseRemoteVirtualBatch);
+  state.browseRemoteVirtualBatchDetail = detail;
+  state.browseRemoteVirtualBatch = remoteVirtualBatchToBrowseSummary(detail.batch);
+  state.browseBatches = mergeBrowseBatches(localBrowseBatches(), state.browseRemoteVirtualBatch);
   return detail;
 }
 
@@ -6288,10 +5674,10 @@ async function loadModelTrialSessionDetail(sessionId: number, silent = false) {
     return;
   }
 
-  modelTrialDetailLoading = true;
+  state.modelTrialDetailLoading = true;
   if (!silent) {
-    modelTrialErrorMessage = null;
-    modelTrialNoticeMessage = null;
+    state.modelTrialErrorMessage = null;
+    state.modelTrialNoticeMessage = null;
   }
   renderPlatformPanels();
   try {
@@ -6299,52 +5685,52 @@ async function loadModelTrialSessionDetail(sessionId: number, silent = false) {
       ...auth,
       sessionId
     });
-    modelTrialDetail = detail;
-    modelTrialSelectedSessionId = detail.session.id;
-    modelTrialSelectedConfigId = detail.session.llmConfigId;
+    state.modelTrialDetail = detail;
+    state.modelTrialSelectedSessionId = detail.session.id;
+    state.modelTrialSelectedConfigId = detail.session.llmConfigId;
   } catch (error) {
-    modelTrialErrorMessage = `${t("model_trial_error_detail")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialErrorMessage = `${t("model_trial_error_detail")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
-    modelTrialDetailLoading = false;
+    state.modelTrialDetailLoading = false;
     renderPlatformPanels();
   }
 }
 
 async function loadModelTrialLocalBatches() {
   try {
-    modelTrialLocalBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
+    state.modelTrialLocalBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
     if (
-      modelTrialSelectedBatchId &&
-      !modelTrialLocalBatches.some((item) => item.id === modelTrialSelectedBatchId)
+      state.modelTrialSelectedBatchId &&
+      !state.modelTrialLocalBatches.some((item) => item.id === state.modelTrialSelectedBatchId)
     ) {
-      modelTrialSelectedBatchId = null;
-      modelTrialLocalQuestions = [];
-      modelTrialSelectedQuestionId = null;
-      modelTrialLocalQuestionDetail = null;
+      state.modelTrialSelectedBatchId = null;
+      state.modelTrialLocalQuestions = [];
+      state.modelTrialSelectedQuestionId = null;
+      state.modelTrialLocalQuestionDetail = null;
     }
   } catch (error) {
-    modelTrialErrorMessage = `${t("browse_tab_title")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialErrorMessage = `${t("browse_tab_title")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   }
 }
 
 async function loadModelTrialLocalQuestions(batchId: string) {
-  modelTrialLocalQuestionsLoading = true;
-  modelTrialSelectedBatchId = batchId;
-  modelTrialSelectedQuestionId = null;
-  modelTrialLocalQuestionDetail = null;
+  state.modelTrialLocalQuestionsLoading = true;
+  state.modelTrialSelectedBatchId = batchId;
+  state.modelTrialSelectedQuestionId = null;
+  state.modelTrialLocalQuestionDetail = null;
   renderPlatformPanels();
   try {
-    modelTrialLocalQuestions = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
+    state.modelTrialLocalQuestions = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
       batchId
     });
   } catch (error) {
-    modelTrialLocalQuestions = [];
-    modelTrialErrorMessage = `${t("model_trial_select_question")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialLocalQuestions = [];
+    state.modelTrialErrorMessage = `${t("model_trial_select_question")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
-    modelTrialLocalQuestionsLoading = false;
+    state.modelTrialLocalQuestionsLoading = false;
     renderPlatformPanels();
   }
 }
@@ -6355,12 +5741,12 @@ async function loadModelTrialLocalQuestionDetail(batchId: string, qaId: string) 
       batchId,
       qaId
     });
-    modelTrialLocalQuestionDetail = detail;
-    modelTrialSelectedQuestionId = qaId;
+    state.modelTrialLocalQuestionDetail = detail;
+    state.modelTrialSelectedQuestionId = qaId;
   } catch (error) {
-    modelTrialLocalQuestionDetail = null;
-    modelTrialErrorMessage = `${t("model_trial_source_card")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialLocalQuestionDetail = null;
+    state.modelTrialErrorMessage = `${t("model_trial_source_card")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
     renderPlatformPanels();
   }
@@ -6374,23 +5760,23 @@ async function loadModelTrialWorkspace(showNotice = false) {
     return;
   }
 
-  modelTrialWorkspaceLoading = true;
-  platformLoginState = { kind: "loading" };
-  modelTrialErrorMessage = null;
+  state.modelTrialWorkspaceLoading = true;
+  state.platformLoginState = { kind: "loading" };
+  state.modelTrialErrorMessage = null;
   if (!showNotice) {
-    modelTrialNoticeMessage = null;
+    state.modelTrialNoticeMessage = null;
   }
   renderPlatformPanels();
   try {
     const response = await invoke<TrialWorkspaceResponse>("load_model_trial_workspace", auth);
-    platformLoginState = {
+    state.platformLoginState = {
       kind: "success",
       response: {
         endpoints: response.endpoints,
         user: response.user
       }
     };
-    platformHealthState = {
+    state.platformHealthState = {
       kind: "success",
       response: {
         reachable: true,
@@ -6401,78 +5787,78 @@ async function loadModelTrialWorkspace(showNotice = false) {
 
     const nextConfigs = response.configs.filter((item) => item.isTrialEnabled && item.hasApiKey);
     const nextSessions = response.sessions;
-    modelTrialConfigs = nextConfigs;
-    modelTrialSessions = nextSessions;
+    state.modelTrialConfigs = nextConfigs;
+    state.modelTrialSessions = nextSessions;
 
     const defaultConfig =
-      nextConfigs.find((item) => item.id === modelTrialSelectedConfigId) ??
+      nextConfigs.find((item) => item.id === state.modelTrialSelectedConfigId) ??
       nextConfigs.find((item) => item.hasApiKey && item.isTrialEnabled) ??
       nextConfigs[0] ??
       null;
-    modelTrialSelectedConfigId = defaultConfig?.id ?? null;
+    state.modelTrialSelectedConfigId = defaultConfig?.id ?? null;
 
-    const selectedSessionStillExists = nextSessions.some((item) => item.id === modelTrialSelectedSessionId);
-    modelTrialSelectedSessionId = selectedSessionStillExists
-      ? modelTrialSelectedSessionId
+    const selectedSessionStillExists = nextSessions.some((item) => item.id === state.modelTrialSelectedSessionId);
+    state.modelTrialSelectedSessionId = selectedSessionStillExists
+      ? state.modelTrialSelectedSessionId
       : nextSessions[0]?.id ?? null;
-    if (!modelTrialSelectedSessionId) {
-      modelTrialDetail = null;
+    if (!state.modelTrialSelectedSessionId) {
+      state.modelTrialDetail = null;
     }
 
     if (showNotice) {
-      modelTrialNoticeMessage = t("model_trial_notice_refreshed");
+      state.modelTrialNoticeMessage = t("model_trial_notice_refreshed");
     }
   } catch (error) {
-    platformLoginState = { kind: "error", message: String(error) };
-    modelTrialErrorMessage = `${t("model_trial_error_load")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.platformLoginState = { kind: "error", message: String(error) };
+    state.modelTrialErrorMessage = `${t("model_trial_error_load")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
-    modelTrialWorkspaceLoading = false;
+    state.modelTrialWorkspaceLoading = false;
     renderPlatformPanels();
   }
 
-  if (modelTrialSelectedSessionId !== null) {
-    await loadModelTrialSessionDetail(modelTrialSelectedSessionId, true);
+  if (state.modelTrialSelectedSessionId !== null) {
+    await loadModelTrialSessionDetail(state.modelTrialSelectedSessionId, true);
   }
 }
 
 async function createModelTrialSession() {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    modelTrialErrorMessage = t("model_trial_settings_required");
+    state.modelTrialErrorMessage = t("model_trial_settings_required");
     renderPlatformPanels();
     return null;
   }
-  if (!modelTrialSelectedConfigId) {
-    modelTrialErrorMessage = t("model_trial_need_model");
+  if (!state.modelTrialSelectedConfigId) {
+    state.modelTrialErrorMessage = t("model_trial_need_model");
     renderPlatformPanels();
     return null;
   }
 
-  modelTrialCreating = true;
-  modelTrialErrorMessage = null;
-  modelTrialNoticeMessage = null;
+  state.modelTrialCreating = true;
+  state.modelTrialErrorMessage = null;
+  state.modelTrialNoticeMessage = null;
   renderPlatformPanels();
   try {
     const response = await invoke<TrialSessionCreateResponse>("create_model_trial_session", {
       ...auth,
-      llmConfigId: modelTrialSelectedConfigId,
+      llmConfigId: state.modelTrialSelectedConfigId,
       sourceQaItemId: null,
       sourceAnswerId: null,
-      title: modelTrialLocalQuestionDetail?.item.question ?? currentModelTrialSelectedQuestion()?.question ?? null
+      title: state.modelTrialLocalQuestionDetail?.item.question ?? currentModelTrialSelectedQuestion()?.question ?? null
     });
-    modelTrialSelectedSessionId = response.sessionId;
+    state.modelTrialSelectedSessionId = response.sessionId;
     await loadModelTrialWorkspace(false);
     await loadModelTrialSessionDetail(response.sessionId, true);
-    modelTrialNoticeMessage = t("model_trial_notice_created");
+    state.modelTrialNoticeMessage = t("model_trial_notice_created");
     return response.sessionId;
   } catch (error) {
-    modelTrialErrorMessage = `${t("model_trial_error_create")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialErrorMessage = `${t("model_trial_error_create")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
     renderPlatformPanels();
     return null;
   } finally {
-    modelTrialCreating = false;
+    state.modelTrialCreating = false;
     renderPlatformPanels();
   }
 }
@@ -6480,28 +5866,28 @@ async function createModelTrialSession() {
 async function sendModelTrialMessage() {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    modelTrialErrorMessage = t("model_trial_settings_required");
+    state.modelTrialErrorMessage = t("model_trial_settings_required");
     renderPlatformPanels();
     return;
   }
-  const content = modelTrialComposer.trim();
+  const content = state.modelTrialComposer.trim();
   if (!content) {
-    modelTrialErrorMessage = t("model_trial_need_message");
+    state.modelTrialErrorMessage = t("model_trial_need_message");
     renderPlatformPanels();
     return;
   }
-  if (!modelTrialSelectedConfigId) {
-    modelTrialErrorMessage = t("model_trial_need_model");
+  if (!state.modelTrialSelectedConfigId) {
+    state.modelTrialErrorMessage = t("model_trial_need_model");
     renderPlatformPanels();
     return;
   }
 
-  modelTrialSending = true;
-  modelTrialErrorMessage = null;
-  modelTrialNoticeMessage = null;
+  state.modelTrialSending = true;
+  state.modelTrialErrorMessage = null;
+  state.modelTrialNoticeMessage = null;
   renderPlatformPanels();
   try {
-    const sessionId = modelTrialSelectedSessionId ?? (await createModelTrialSession());
+    const sessionId = state.modelTrialSelectedSessionId ?? (await createModelTrialSession());
     if (!sessionId) {
       return;
     }
@@ -6510,14 +5896,14 @@ async function sendModelTrialMessage() {
       sessionId,
       content
     });
-    modelTrialComposer = "";
+    state.modelTrialComposer = "";
     await loadModelTrialWorkspace(false);
     await loadModelTrialSessionDetail(sessionId, true);
   } catch (error) {
-    modelTrialErrorMessage = `${t("model_trial_error_send")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialErrorMessage = `${t("model_trial_error_send")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
-    modelTrialSending = false;
+    state.modelTrialSending = false;
     renderPlatformPanels();
   }
 }
@@ -6525,7 +5911,7 @@ async function sendModelTrialMessage() {
 async function deleteModelTrialSession(sessionId: number) {
   const auth = currentPlatformAuthPayload();
   if (!auth) {
-    modelTrialErrorMessage = t("model_trial_settings_required");
+    state.modelTrialErrorMessage = t("model_trial_settings_required");
     renderPlatformPanels();
     return;
   }
@@ -6533,26 +5919,26 @@ async function deleteModelTrialSession(sessionId: number) {
     return;
   }
 
-  modelTrialDeletingSessionId = sessionId;
-  modelTrialErrorMessage = null;
-  modelTrialNoticeMessage = null;
+  state.modelTrialDeletingSessionId = sessionId;
+  state.modelTrialErrorMessage = null;
+  state.modelTrialNoticeMessage = null;
   renderPlatformPanels();
   try {
     await invoke("delete_model_trial_session", {
       ...auth,
       sessionId
     });
-    if (modelTrialSelectedSessionId === sessionId) {
-      modelTrialSelectedSessionId = null;
-      modelTrialDetail = null;
+    if (state.modelTrialSelectedSessionId === sessionId) {
+      state.modelTrialSelectedSessionId = null;
+      state.modelTrialDetail = null;
     }
     await loadModelTrialWorkspace(false);
-    modelTrialNoticeMessage = t("model_trial_notice_deleted");
+    state.modelTrialNoticeMessage = t("model_trial_notice_deleted");
   } catch (error) {
-    modelTrialErrorMessage = `${t("model_trial_error_delete")}: ${String(error)}`;
-    appendLog(modelTrialErrorMessage);
+    state.modelTrialErrorMessage = `${t("model_trial_error_delete")}: ${String(error)}`;
+    appendLog(state.modelTrialErrorMessage);
   } finally {
-    modelTrialDeletingSessionId = null;
+    state.modelTrialDeletingSessionId = null;
     renderPlatformPanels();
   }
 }
@@ -6579,7 +5965,7 @@ async function openPlatformArea(kind: "qa-evaluate" | "model-trial") {
 
 async function resumeBrowseBatch(batchId: string) {
   try {
-    const batch = browseBatches.find((item) => item.id === batchId) ?? null;
+    const batch = state.browseBatches.find((item) => item.id === batchId) ?? null;
     if (!batch || !canResumeBrowseBatch(batch)) {
       return;
     }
@@ -6597,27 +5983,27 @@ async function resumeBrowseBatch(batchId: string) {
       literatureApiAuthToken: currentRequest.literatureApiAuthToken
     };
 
-    managedResumeBatchId = batchId;
-    managedResumeBatchLabel = batch?.topicName || batch?.name || batchId;
+    state.managedResumeBatchId = batchId;
+    state.managedResumeBatchLabel = batch?.topicName || batch?.name || batchId;
     applyRequest(mergedRequest);
     syncManagedRunModeUi();
     setCurrentTab("topic");
     void persistCurrentConfig(true);
     appendLog(t("log_loaded_batch_task"));
   } catch (error) {
-    const batch = browseBatches.find((item) => item.id === batchId) ?? null;
+    const batch = state.browseBatches.find((item) => item.id === batchId) ?? null;
     window.alert(`${batch ? browseResumeActionLabel(batch) : t("browse_action_continue")}: ${String(error)}`);
   }
 }
 
 async function loadBrowseBatches() {
-  if (browseLoading) {
+  if (state.browseLoading) {
     return;
   }
 
-  browseLoading = true;
+  state.browseLoading = true;
   try {
-    browseErrorMessage = null;
+    state.browseErrorMessage = null;
     const localBatches = await invoke<QaBatchSummary[]>("list_qa_batches");
     const hasPlatformAuth = Boolean(currentPlatformAuthPayload());
     let remoteBatch: QaBatchSummary | null = null;
@@ -6628,36 +6014,36 @@ async function loadBrowseBatches() {
         clearBrowseRemoteVirtualBatch();
         appendLog(
           `${
-            currentLang === "zh" ? "远程任务同步失败" : "Remote browse sync failed"
+            state.currentLang === "zh" ? "远程任务同步失败" : "Remote browse sync failed"
           }: ${String(error)}`
         );
       }
     } else {
       clearBrowseRemoteVirtualBatch();
     }
-    browseBatches = mergeBrowseBatches(localBatches, remoteBatch);
+    state.browseBatches = mergeBrowseBatches(localBatches, remoteBatch);
     syncBrowsePlatformStatusCacheToCurrentBatches();
-    if (!browseBatches.length) {
-      browseView = "batches";
-      browseSelectedBatchId = null;
-      browsePageData = null;
-      browseDetailData = null;
-      browseReviewItems = [];
-      browseReviewDrafts = new Map();
-      browseQuestionsLoading = false;
-      browseDetailLoading = false;
-      browseReviewLoading = false;
+    if (!state.browseBatches.length) {
+      state.browseView = "batches";
+      state.browseSelectedBatchId = null;
+      state.browsePageData = null;
+      state.browseDetailData = null;
+      state.browseReviewItems = [];
+      state.browseReviewDrafts = new Map();
+      state.browseQuestionsLoading = false;
+      state.browseDetailLoading = false;
+      state.browseReviewLoading = false;
       clearBrowsePlatformStatuses();
-    } else if (!browseSelectedBatchId || !browseBatches.some((batch) => batch.id === browseSelectedBatchId)) {
-      browseView = "batches";
-      browseSelectedBatchId = null;
-      browsePageData = null;
-      browseDetailData = null;
-      browseReviewItems = [];
-      browseReviewDrafts = new Map();
-      browseQuestionsLoading = false;
-      browseDetailLoading = false;
-      browseReviewLoading = false;
+    } else if (!state.browseSelectedBatchId || !state.browseBatches.some((batch) => batch.id === state.browseSelectedBatchId)) {
+      state.browseView = "batches";
+      state.browseSelectedBatchId = null;
+      state.browsePageData = null;
+      state.browseDetailData = null;
+      state.browseReviewItems = [];
+      state.browseReviewDrafts = new Map();
+      state.browseQuestionsLoading = false;
+      state.browseDetailLoading = false;
+      state.browseReviewLoading = false;
     }
     const localBatchIds = localBrowseBatches().map((batch) => batch.id);
     if (localBatchIds.length && hasPlatformAuth) {
@@ -6669,66 +6055,66 @@ async function loadBrowseBatches() {
       clearBrowsePlatformStatuses();
     }
   } catch (error) {
-    browseView = "batches";
-    browseBatches = [];
+    state.browseView = "batches";
+    state.browseBatches = [];
     clearBrowseRemoteVirtualBatch();
     clearBrowsePlatformStatuses();
-    browseSelectedBatchId = null;
-    browsePageData = null;
-    browseDetailData = null;
-    browseReviewItems = [];
-    browseReviewDrafts = new Map();
-    browseQuestionsLoading = false;
-    browseDetailLoading = false;
-    browseReviewLoading = false;
-    browseErrorMessage = `Browse QA failed: ${String(error)}`;
+    state.browseSelectedBatchId = null;
+    state.browsePageData = null;
+    state.browseDetailData = null;
+    state.browseReviewItems = [];
+    state.browseReviewDrafts = new Map();
+    state.browseQuestionsLoading = false;
+    state.browseDetailLoading = false;
+    state.browseReviewLoading = false;
+    state.browseErrorMessage = `Browse QA failed: ${String(error)}`;
     appendLog(`Browse QA failed: ${String(error)}`);
   } finally {
-    browseLoading = false;
+    state.browseLoading = false;
     renderManagedRunPicker();
     renderBrowseView();
   }
 }
 
 async function loadBrowseQaPage(batchId: string, page: number) {
-  browseSelectedBatchId = batchId;
-  browseView = "questions";
-  browseQuestionsLoading = true;
-  browseDetailLoading = false;
-  browseReviewLoading = false;
-  browsePageData = null;
-  browseDetailData = null;
-  browseReviewItems = [];
-  browseReviewDrafts = new Map();
-  browseErrorMessage = null;
+  state.browseSelectedBatchId = batchId;
+  state.browseView = "questions";
+  state.browseQuestionsLoading = true;
+  state.browseDetailLoading = false;
+  state.browseReviewLoading = false;
+  state.browsePageData = null;
+  state.browseDetailData = null;
+  state.browseReviewItems = [];
+  state.browseReviewDrafts = new Map();
+  state.browseErrorMessage = null;
   renderBrowseView();
 
   try {
     if (isRemoteVirtualBrowseBatch(batchId)) {
       const detail = await ensureRemoteVirtualBrowseBatchDetail();
-      browsePageData = remoteVirtualBrowsePageFromDetail(detail, page, 10);
+      state.browsePageData = remoteVirtualBrowsePageFromDetail(detail, page, 10);
     } else {
-      browsePageData = await invoke<QaRecordPage>("list_batch_qa_records", {
+      state.browsePageData = await invoke<QaRecordPage>("list_batch_qa_records", {
         batchId,
         page,
         pageSize: 10
       });
     }
   } catch (error) {
-    browsePageData = null;
-    browseDetailData = null;
-    browseErrorMessage = `Load QA list failed: ${String(error)}`;
+    state.browsePageData = null;
+    state.browseDetailData = null;
+    state.browseErrorMessage = `Load QA list failed: ${String(error)}`;
     appendLog(`Browse QA page failed: ${String(error)}`);
   } finally {
-    browseQuestionsLoading = false;
+    state.browseQuestionsLoading = false;
     renderBrowseView();
   }
 }
 
 async function loadBrowseDetail(batchId: string, qaId: string) {
-  browseDetailLoading = true;
-  browseView = "detail";
-  browseErrorMessage = null;
+  state.browseDetailLoading = true;
+  state.browseView = "detail";
+  state.browseErrorMessage = null;
   renderBrowseView();
 
   try {
@@ -6739,20 +6125,20 @@ async function loadBrowseDetail(batchId: string, qaId: string) {
         throw new Error(`QA record not found: ${qaId}`);
       }
       const batch = remoteVirtualBatchToBrowseSummary(detail.batch);
-      browseDetailData = platformImportItemToQaRecordDetail(item, batch);
-      browsePageData = remoteVirtualBrowsePageFromDetail(detail, browsePageData?.page ?? 1, 10);
+      state.browseDetailData = platformImportItemToQaRecordDetail(item, batch);
+      state.browsePageData = remoteVirtualBrowsePageFromDetail(detail, state.browsePageData?.page ?? 1, 10);
     } else {
-      browseDetailData = await invoke<QaRecordDetail>("get_batch_qa_record", {
+      state.browseDetailData = await invoke<QaRecordDetail>("get_batch_qa_record", {
         batchId,
         qaId
       });
     }
   } catch (error) {
-    browseDetailData = null;
-    browseErrorMessage = `Load QA detail failed: ${String(error)}`;
+    state.browseDetailData = null;
+    state.browseErrorMessage = `Load QA detail failed: ${String(error)}`;
     appendLog(`Browse QA detail failed: ${String(error)}`);
   } finally {
-    browseDetailLoading = false;
+    state.browseDetailLoading = false;
     renderBrowseView();
   }
 }
@@ -6762,29 +6148,29 @@ async function loadBrowseReview(batchId: string) {
     return;
   }
 
-  browseSelectedBatchId = batchId;
-  browseView = "review";
-  browseReviewLoading = true;
-  browseDetailData = null;
-  browseReviewItems = [];
-  browseReviewIndex = 0;
-  browseReviewDrafts = new Map();
-  browseErrorMessage = null;
+  state.browseSelectedBatchId = batchId;
+  state.browseView = "review";
+  state.browseReviewLoading = true;
+  state.browseDetailData = null;
+  state.browseReviewItems = [];
+  state.browseReviewIndex = 0;
+  state.browseReviewDrafts = new Map();
+  state.browseErrorMessage = null;
   renderBrowseView();
 
   try {
-    browseReviewItems = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
+    state.browseReviewItems = await invoke<QaRecordSummary[]>("list_batch_qa_question_options", {
       batchId
     });
-    for (const item of browseReviewItems) {
-      browseReviewDrafts.set(item.id, item.effectiveQuestion);
+    for (const item of state.browseReviewItems) {
+      state.browseReviewDrafts.set(item.id, item.effectiveQuestion);
     }
   } catch (error) {
-    browseReviewItems = [];
-    browseErrorMessage = `Load QA review failed: ${String(error)}`;
+    state.browseReviewItems = [];
+    state.browseErrorMessage = `Load QA review failed: ${String(error)}`;
     appendLog(`Browse QA review failed: ${String(error)}`);
   } finally {
-    browseReviewLoading = false;
+    state.browseReviewLoading = false;
     renderBrowseView();
   }
 }
@@ -6794,16 +6180,16 @@ async function saveBrowseReview(
   qaId: string,
   nextStatus?: ReviewStatus
 ) {
-  if (browseReviewSaving) {
+  if (state.browseReviewSaving) {
     return;
   }
 
-  const item = browseReviewItems.find((entry) => entry.id === qaId);
+  const item = state.browseReviewItems.find((entry) => entry.id === qaId);
   if (!item) {
     return;
   }
 
-  browseReviewSaving = true;
+  state.browseReviewSaving = true;
   renderBrowseView();
   try {
     const response = await invoke<SaveBatchReviewItemResponse>("save_batch_review_item", {
@@ -6816,19 +6202,19 @@ async function saveBrowseReview(
     if (nextStatus === "kept" || nextStatus === "discarded") {
       moveToNextBrowseReviewItem();
     }
-    browseErrorMessage = null;
+    state.browseErrorMessage = null;
   } catch (error) {
     const message = `${t("browse_review_save_failed")}: ${String(error)}`;
     appendLog(message);
     window.alert(message);
   } finally {
-    browseReviewSaving = false;
+    state.browseReviewSaving = false;
     renderBrowseView();
   }
 }
 
 function currentRunResponse(): PipelineResponse | null {
-  return outputState.kind === "run_success" ? outputState.response : null;
+  return state.outputState.kind === "run_success" ? state.outputState.response : null;
 }
 
 function isPipelineCancelledMessage(message: string): boolean {
@@ -6850,7 +6236,7 @@ function renderOutput() {
   setText("raw-output-summary", t("raw_json"));
   updateRunOutputDirButton();
 
-  switch (outputState.kind) {
+  switch (state.outputState.kind) {
     case "idle":
       resultMode.textContent = t("output_mode_idle");
       renderEmptyCard(t("no_preview"));
@@ -6878,70 +6264,70 @@ function renderOutput() {
     case "preview_success":
       resultMode.textContent = t("output_mode_preview");
       renderCards([
-        { labelKey: "summary_topic_name", value: outputState.preview.topic_name },
-        { labelKey: "summary_target_count", value: formatCount(outputState.preview.target_count) },
-        { labelKey: "summary_keyword_count", value: formatCount(outputState.preview.keywords.length) },
-        { labelKey: "summary_subtopic_count", value: formatCount(outputState.preview.subtopics.length) },
-        { labelKey: "summary_axis_count", value: formatCount(outputState.preview.question_axes.length) },
-        { labelKey: "summary_goal", value: outputState.preview.goal, wide: true },
-        { labelKey: "summary_keywords", value: outputState.preview.keywords.join(", "), wide: true }
+        { labelKey: "summary_topic_name", value: state.outputState.preview.topic_name },
+        { labelKey: "summary_target_count", value: formatCount(state.outputState.preview.target_count) },
+        { labelKey: "summary_keyword_count", value: formatCount(state.outputState.preview.keywords.length) },
+        { labelKey: "summary_subtopic_count", value: formatCount(state.outputState.preview.subtopics.length) },
+        { labelKey: "summary_axis_count", value: formatCount(state.outputState.preview.question_axes.length) },
+        { labelKey: "summary_goal", value: state.outputState.preview.goal, wide: true },
+        { labelKey: "summary_keywords", value: state.outputState.preview.keywords.join(", "), wide: true }
       ]);
       renderActionButtons([]);
-      output.textContent = JSON.stringify(outputState.preview, null, 2);
+      output.textContent = JSON.stringify(state.outputState.preview, null, 2);
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "run_success":
       resultMode.textContent = t("output_mode_run");
       renderCards([
-        { labelKey: "summary_provider", value: outputState.response.generatedSummary.provider },
-        { labelKey: "summary_model", value: outputState.response.generatedSummary.model },
+        { labelKey: "summary_provider", value: state.outputState.response.generatedSummary.provider },
+        { labelKey: "summary_model", value: state.outputState.response.generatedSummary.model },
         {
           labelKey: "summary_generated_count",
-          value: formatCount(outputState.response.generatedSummary.generatedCount)
+          value: formatCount(state.outputState.response.generatedSummary.generatedCount)
         },
-        { labelKey: "summary_kept_count", value: formatCount(outputState.response.keptCount) },
+        { labelKey: "summary_kept_count", value: formatCount(state.outputState.response.keptCount) },
         {
           labelKey: "summary_shards",
-          value: `${formatCount(outputState.response.generatedSummary.completedShards)} / ${formatCount(outputState.response.generatedSummary.shardCount)} · ${t("skipped")} ${formatCount(outputState.response.generatedSummary.skippedShards)}`
+          value: `${formatCount(state.outputState.response.generatedSummary.completedShards)} / ${formatCount(state.outputState.response.generatedSummary.shardCount)} · ${t("skipped")} ${formatCount(state.outputState.response.generatedSummary.skippedShards)}`
         },
         {
           labelKey: "summary_request_count",
-          value: formatCount(outputState.response.generatedSummary.requestCount)
+          value: formatCount(state.outputState.response.generatedSummary.requestCount)
         },
-        { labelKey: "summary_dataset_path", value: outputState.response.datasetPath, wide: true },
-        { labelKey: "summary_output_dir", value: outputState.response.outputDir, wide: true }
+        { labelKey: "summary_dataset_path", value: state.outputState.response.datasetPath, wide: true },
+        { labelKey: "summary_output_dir", value: state.outputState.response.outputDir, wide: true }
       ]);
       renderActionButtons([
         { key: "action_open_dataset", action: "open-dataset" },
         { key: "action_open_pack_summary", action: "open-pack-summary" },
         { key: "action_copy_dataset_path", action: "copy-dataset-path" }
       ]);
-      output.textContent = JSON.stringify(outputState.response, null, 2);
+      output.textContent = JSON.stringify(state.outputState.response, null, 2);
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "cancelled":
       resultMode.textContent = t("output_mode_cancelled");
-      renderEmptyCard(outputState.message);
+      renderEmptyCard(state.outputState.message);
       renderActionButtons([]);
-      output.textContent = outputState.message;
+      output.textContent = state.outputState.message;
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "validation_error":
       resultMode.textContent = t("output_mode_validation");
-      renderValidationIssues(outputState.issues);
+      renderValidationIssues(state.outputState.issues);
       renderActionButtons([]);
-      output.textContent = [t("validation_failed"), ...outputState.issues.map((issue) => `- ${t(issue)}`)].join("\n");
+      output.textContent = [t("validation_failed"), ...state.outputState.issues.map((issue) => `- ${t(issue)}`)].join("\n");
       outputDetails.hidden = false;
       outputDetails.open = true;
       return;
     case "error":
       resultMode.textContent = t("output_mode_error");
-      renderEmptyCard(`${failureTitle(outputState.phase)}: ${outputState.message}`);
+      renderEmptyCard(`${failureTitle(state.outputState.phase)}: ${state.outputState.message}`);
       renderActionButtons([]);
-      output.textContent = `${failureTitle(outputState.phase)}: ${outputState.message}`;
+      output.textContent = `${failureTitle(state.outputState.phase)}: ${state.outputState.message}`;
       outputDetails.hidden = false;
       outputDetails.open = true;
   }
@@ -6955,9 +6341,9 @@ function setText(id: string, value: string) {
 }
 
 function applyTranslations() {
-  document.documentElement.lang = currentLang;
-  langSelect.value = currentLang;
-  topbarTabSelect.value = currentTab;
+  document.documentElement.lang = state.currentLang;
+  langSelect.value = state.currentLang;
+  topbarTabSelect.value = state.currentTab;
   setText("eyebrow", t("eyebrow"));
   setText("workspace-switch-label", t("nav_title"));
   setText("lang-label", t("lang_label"));
@@ -6989,7 +6375,7 @@ function applyTranslations() {
   setText("cot-section-headers-hint", t("cot_section_headers_hint"));
   setText(
     "settings-version",
-    currentLang === "zh" ? `当前版本：v${appVersion}` : `Current version: v${appVersion}`
+    state.currentLang === "zh" ? `当前版本：v${state.appVersion}` : `Current version: v${state.appVersion}`
   );
   setText("browse-tab-title", t("browse_tab_title"));
   setText("qa-evaluate-tab-title", t("qa_evaluate_tab_title"));
@@ -7097,7 +6483,7 @@ function applyTranslations() {
     button.title = t("field_help_button");
     button.setAttribute("aria-label", t("field_help_button"));
   }
-  customModelInput.placeholder = currentLang === "zh" ? "例如 glm-5.1" : "For example: glm-5.1";
+  customModelInput.placeholder = state.currentLang === "zh" ? "例如 glm-5.1" : "For example: glm-5.1";
   syncModelOptions(providerPresetInput.value as ProviderPresetId);
   setText("browse-questions-title", t("browse_questions_title"));
   setText("browse-detail-title", t("browse_detail_title"));
@@ -7107,10 +6493,10 @@ function applyTranslations() {
   setText("qa-platform-dev-label", t("qa_platform_dev"));
   setText("qa-platform-prod-label", t("qa_platform_prod"));
   platformLoginButton.textContent = t("platform_action_login");
-  qaPlatformUsernameInput.placeholder = currentLang === "zh" ? "你的平台账号" : "your account";
+  qaPlatformUsernameInput.placeholder = state.currentLang === "zh" ? "你的平台账号" : "your account";
   literatureApiUrlInput.placeholder = "https://example.com/literature/api";
   updateApiKeyVisibilityUi();
-  appVersionBadge.textContent = `v${appVersion}`;
+  appVersionBadge.textContent = `v${state.appVersion}`;
   renderPlatformPanels();
   const logPlaceholderKey = findMatchingTranslationKey(logs.textContent, [
     "no_run",
@@ -7120,9 +6506,9 @@ function applyTranslations() {
     logs.textContent = t(logPlaceholderKey);
   }
   updateRuntimeConstraintHint();
-  setStatus(currentStatus, currentStatus !== "idle");
-  renderProgressSnapshot(lastPipelineProgressEvent);
-  setCurrentTab(currentTab);
+  setStatus(state.currentStatus, state.currentStatus !== "idle");
+  renderProgressSnapshot(state.lastPipelineProgressEvent);
+  setCurrentTab(state.currentTab);
   renderTopicTags();
   renderTopicFieldModal();
   renderSetupSummary();
@@ -7191,7 +6577,7 @@ function syncRuntimeParameterInputBounds() {
 }
 
 function syncRuntimeParameterControlStates() {
-  if (isPipelineBusyStatus(currentStatus)) {
+  if (isPipelineBusyStatus(state.currentStatus)) {
     return;
   }
 
@@ -7206,9 +6592,9 @@ function syncRuntimeParameterControlStates() {
 }
 
 function syncManagedRunModeUi() {
-  managedRunBanner.hidden = !managedResumeBatchId;
-  managedRunModeCurrent.textContent = managedResumeBatchId
-    ? formatMessage("managed_run_mode_exact_hint", managedResumeBatchLabel ?? managedResumeBatchId)
+  managedRunBanner.hidden = !state.managedResumeBatchId;
+  managedRunModeCurrent.textContent = state.managedResumeBatchId
+    ? formatMessage("managed_run_mode_exact_hint", state.managedResumeBatchLabel ?? state.managedResumeBatchId)
     : "";
   clearManagedResumeBatchButton.textContent = t("managed_run_mode_clear");
   renderManagedRunPicker();
@@ -7233,14 +6619,14 @@ function renderManagedRunPicker() {
         `<option value="${escapeHtml(value)}"${value === "" ? "" : ""}>${escapeHtml(label)}</option>`
     )
     .join("");
-  managedRunPickInput.value = managedResumeBatchId ?? "";
+  managedRunPickInput.value = state.managedResumeBatchId ?? "";
   managedRunPickInput.disabled =
-    currentStatus === "running" || currentStatus === "stopping" || localBatches.length === 0;
+    state.currentStatus === "running" || state.currentStatus === "stopping" || localBatches.length === 0;
 }
 
 function clearManagedResumeBatch(logChange = false) {
-  managedResumeBatchId = null;
-  managedResumeBatchLabel = null;
+  state.managedResumeBatchId = null;
+  state.managedResumeBatchLabel = null;
   managedRunModeNewInput.checked = true;
   managedRunModeResumeLatestInput.checked = false;
   syncManagedRunModeUi();
@@ -7334,7 +6720,7 @@ function normalizeRuntimeParameterInputs(commit = false) {
 }
 
 async function showSettingHelp(helpKey: string) {
-  const content = SETTING_HELP_CONTENT[currentLang][helpKey];
+  const content = SETTING_HELP_CONTENT[state.currentLang][helpKey];
   if (!content) {
     return;
   }
@@ -7345,7 +6731,7 @@ async function showSettingHelp(helpKey: string) {
   });
 }
 
-function isPipelineBusyStatus(statusValue: typeof currentStatus): boolean {
+function isPipelineBusyStatus(statusValue: typeof state.currentStatus): boolean {
   return statusValue === "running" || statusValue === "stopping";
 }
 
@@ -7386,10 +6772,10 @@ function isRunReady() {
 }
 
 function updateRunButtonUi() {
-  runButton.dataset.intent = currentStatus === "running" || currentStatus === "stopping" ? "stop" : "run";
-  if (currentStatus === "running") {
+  runButton.dataset.intent = state.currentStatus === "running" || state.currentStatus === "stopping" ? "stop" : "run";
+  if (state.currentStatus === "running") {
     runButton.textContent = t("stop_run");
-  } else if (currentStatus === "stopping") {
+  } else if (state.currentStatus === "stopping") {
     runButton.textContent = t("stop_requested");
   } else if (shouldShowContinueRunButton()) {
     runButton.textContent = t("continue_run");
@@ -7398,10 +6784,10 @@ function updateRunButtonUi() {
   }
 
   runButton.disabled =
-    currentStatus === "previewing" ||
-    currentStatus === "updating" ||
-    currentStatus === "stopping" ||
-    (currentStatus !== "running" && !isRunReady());
+    state.currentStatus === "previewing" ||
+    state.currentStatus === "updating" ||
+    state.currentStatus === "stopping" ||
+    (state.currentStatus !== "running" && !isRunReady());
 }
 
 function buildLogExportFileName() {
@@ -7419,20 +6805,20 @@ function buildLogExportFileName() {
 }
 
 function clearBrowsePlatformStatuses() {
-  browsePlatformStatusRequestId += 1;
-  browsePlatformStatusLoading = false;
-  browsePlatformStatusMap = new Map();
+  state.browsePlatformStatusRequestId += 1;
+  state.browsePlatformStatusLoading = false;
+  state.browsePlatformStatusMap = new Map();
 }
 
 function syncBrowsePlatformStatusCacheToCurrentBatches() {
   const validIds = new Set(localBrowseBatches().map((batch) => batch.id));
-  browsePlatformStatusMap = new Map(
-    [...browsePlatformStatusMap.entries()].filter(([batchId]) => validIds.has(batchId))
+  state.browsePlatformStatusMap = new Map(
+    [...state.browsePlatformStatusMap.entries()].filter(([batchId]) => validIds.has(batchId))
   );
 }
 
 async function syncBrowseBatchPlatformStatuses(
-  batchIds: string[] = browseBatches.map((batch) => batch.id),
+  batchIds: string[] = state.browseBatches.map((batch) => batch.id),
   silent = true
 ) {
   const auth = currentPlatformAuthPayload();
@@ -7450,8 +6836,8 @@ async function syncBrowseBatchPlatformStatuses(
     return;
   }
 
-  const requestId = ++browsePlatformStatusRequestId;
-  browsePlatformStatusLoading = true;
+  const requestId = ++state.browsePlatformStatusRequestId;
+  state.browsePlatformStatusLoading = true;
   if (!silent) {
     renderBrowseView();
   }
@@ -7461,17 +6847,17 @@ async function syncBrowseBatchPlatformStatuses(
       ...auth,
       batchIds: normalizedBatchIds
     });
-    if (requestId !== browsePlatformStatusRequestId) {
+    if (requestId !== state.browsePlatformStatusRequestId) {
       return;
     }
 
-    const nextMap = new Map(browsePlatformStatusMap);
+    const nextMap = new Map(state.browsePlatformStatusMap);
     for (const item of response.items) {
       nextMap.set(item.externalBatchId, item);
     }
-    browsePlatformStatusMap = nextMap;
+    state.browsePlatformStatusMap = nextMap;
     syncBrowsePlatformStatusCacheToCurrentBatches();
-    platformHealthState = {
+    state.platformHealthState = {
       kind: "success",
       response: {
         reachable: true,
@@ -7480,15 +6866,15 @@ async function syncBrowseBatchPlatformStatuses(
       }
     };
   } catch (error) {
-    if (requestId !== browsePlatformStatusRequestId) {
+    if (requestId !== state.browsePlatformStatusRequestId) {
       return;
     }
     if (!silent) {
       appendLog(`${t("browse_platform_status_sync_failed")}: ${String(error)}`);
     }
   } finally {
-    if (requestId === browsePlatformStatusRequestId) {
-      browsePlatformStatusLoading = false;
+    if (requestId === state.browsePlatformStatusRequestId) {
+      state.browsePlatformStatusLoading = false;
       renderBrowseView();
     }
   }
@@ -7534,7 +6920,7 @@ function formatProgressSummary(payload: PipelineProgressEvent | null): string {
     return payload ? `${payload.currentStep} / ${payload.totalSteps}` : "0 / 5";
   }
 
-  return currentLang === "zh"
+  return state.currentLang === "zh"
     ? `分片 ${payload.shardIndex} / ${payload.shardCount}`
     : `Shard ${payload.shardIndex} / ${payload.shardCount}`;
 }
@@ -7548,7 +6934,7 @@ function formatProgressDetail(payload: PipelineProgressEvent | null): string {
   const totalGenerated = payload.totalGenerated ?? 0;
   const targetCount = payload.targetCount ?? 0;
 
-  return currentLang === "zh"
+  return state.currentLang === "zh"
     ? `当前 shard ${formatCount(shardCompleted)} / ${formatCount(payload.shardItemTotal)} · 总计 ${formatCount(totalGenerated)} / ${formatCount(targetCount)}`
     : `Current shard ${formatCount(shardCompleted)} / ${formatCount(payload.shardItemTotal)} · Total ${formatCount(totalGenerated)} / ${formatCount(targetCount)}`;
 }
@@ -7566,37 +6952,37 @@ function setProgressFill(percent: number) {
 
 function updateProgressFromEvent(payload: PipelineProgressEvent) {
   const mergedPayload: PipelineProgressEvent =
-    lastPipelineProgressEvent === null
+    state.lastPipelineProgressEvent === null
       ? payload
       : {
-          ...lastPipelineProgressEvent,
+          ...state.lastPipelineProgressEvent,
           ...payload,
-          runtimeKind: payload.runtimeKind ?? lastPipelineProgressEvent.runtimeKind ?? null,
-          retryAttempt: payload.retryAttempt ?? lastPipelineProgressEvent.retryAttempt ?? null,
-          retryLimit: payload.retryLimit ?? lastPipelineProgressEvent.retryLimit ?? null,
-          attemptNumber: payload.attemptNumber ?? lastPipelineProgressEvent.attemptNumber ?? null,
-          attemptLimit: payload.attemptLimit ?? lastPipelineProgressEvent.attemptLimit ?? null,
-          errorMessage: payload.errorMessage ?? lastPipelineProgressEvent.errorMessage ?? null,
-          shardIndex: payload.shardIndex ?? lastPipelineProgressEvent.shardIndex ?? null,
-          shardCount: payload.shardCount ?? lastPipelineProgressEvent.shardCount ?? null,
+          runtimeKind: payload.runtimeKind ?? state.lastPipelineProgressEvent.runtimeKind ?? null,
+          retryAttempt: payload.retryAttempt ?? state.lastPipelineProgressEvent.retryAttempt ?? null,
+          retryLimit: payload.retryLimit ?? state.lastPipelineProgressEvent.retryLimit ?? null,
+          attemptNumber: payload.attemptNumber ?? state.lastPipelineProgressEvent.attemptNumber ?? null,
+          attemptLimit: payload.attemptLimit ?? state.lastPipelineProgressEvent.attemptLimit ?? null,
+          errorMessage: payload.errorMessage ?? state.lastPipelineProgressEvent.errorMessage ?? null,
+          shardIndex: payload.shardIndex ?? state.lastPipelineProgressEvent.shardIndex ?? null,
+          shardCount: payload.shardCount ?? state.lastPipelineProgressEvent.shardCount ?? null,
           shardItemCompleted:
-            payload.shardItemCompleted ?? lastPipelineProgressEvent.shardItemCompleted ?? null,
-          shardItemTotal: payload.shardItemTotal ?? lastPipelineProgressEvent.shardItemTotal ?? null,
-          totalGenerated: payload.totalGenerated ?? lastPipelineProgressEvent.totalGenerated ?? null,
-          targetCount: payload.targetCount ?? lastPipelineProgressEvent.targetCount ?? null,
-          batchIndex: payload.batchIndex ?? lastPipelineProgressEvent.batchIndex ?? null,
+            payload.shardItemCompleted ?? state.lastPipelineProgressEvent.shardItemCompleted ?? null,
+          shardItemTotal: payload.shardItemTotal ?? state.lastPipelineProgressEvent.shardItemTotal ?? null,
+          totalGenerated: payload.totalGenerated ?? state.lastPipelineProgressEvent.totalGenerated ?? null,
+          targetCount: payload.targetCount ?? state.lastPipelineProgressEvent.targetCount ?? null,
+          batchIndex: payload.batchIndex ?? state.lastPipelineProgressEvent.batchIndex ?? null,
           batchCountInShard:
-            payload.batchCountInShard ?? lastPipelineProgressEvent.batchCountInShard ?? null,
-          batchSize: payload.batchSize ?? lastPipelineProgressEvent.batchSize ?? null,
-          durationMs: payload.durationMs ?? lastPipelineProgressEvent.durationMs ?? null,
-          backoffSecs: payload.backoffSecs ?? lastPipelineProgressEvent.backoffSecs ?? null,
-          subtopic: payload.subtopic ?? lastPipelineProgressEvent.subtopic ?? null,
-          axis: payload.axis ?? lastPipelineProgressEvent.axis ?? null,
-          questionType: payload.questionType ?? lastPipelineProgressEvent.questionType ?? null,
-          difficulty: payload.difficulty ?? lastPipelineProgressEvent.difficulty ?? null,
-          audience: payload.audience ?? lastPipelineProgressEvent.audience ?? null
+            payload.batchCountInShard ?? state.lastPipelineProgressEvent.batchCountInShard ?? null,
+          batchSize: payload.batchSize ?? state.lastPipelineProgressEvent.batchSize ?? null,
+          durationMs: payload.durationMs ?? state.lastPipelineProgressEvent.durationMs ?? null,
+          backoffSecs: payload.backoffSecs ?? state.lastPipelineProgressEvent.backoffSecs ?? null,
+          subtopic: payload.subtopic ?? state.lastPipelineProgressEvent.subtopic ?? null,
+          axis: payload.axis ?? state.lastPipelineProgressEvent.axis ?? null,
+          questionType: payload.questionType ?? state.lastPipelineProgressEvent.questionType ?? null,
+          difficulty: payload.difficulty ?? state.lastPipelineProgressEvent.difficulty ?? null,
+          audience: payload.audience ?? state.lastPipelineProgressEvent.audience ?? null
         };
-  lastPipelineProgressEvent = mergedPayload;
+  state.lastPipelineProgressEvent = mergedPayload;
   updateRunStatsFromEvent(payload);
 
   if (
@@ -7617,7 +7003,7 @@ function updateProgressFromEvent(payload: PipelineProgressEvent) {
 }
 
 function setStatus(nextStatus: "idle" | "previewing" | "running" | "stopping" | "updating", busy = false) {
-  currentStatus = nextStatus;
+  state.currentStatus = nextStatus;
   status.textContent = t(`status_${nextStatus}`);
   status.dataset.busy = busy ? "true" : "false";
   checkUpdateButton.disabled = busy;
@@ -7636,7 +7022,7 @@ function appendLog(line: string) {
 }
 
 function resetTelemetry() {
-  lastPipelineProgressEvent = null;
+  state.lastPipelineProgressEvent = null;
   logs.textContent = t("waiting_events");
   setProgressFill(0);
   resetRunStats();
@@ -7721,10 +7107,10 @@ function collectRequest() {
 
   const request: PipelineFormRequest = {
     prompt: promptInput.value.trim(),
-    topicTags: [...topicTags],
+    topicTags: [...state.topicTags],
     qaMode: currentQaMode(),
-    outputLanguage: currentLang,
-    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/), currentLang),
+    outputLanguage: state.currentLang,
+    cotSectionHeaders: normalizeCotSectionHeaders(cotSectionHeadersInput.value.split(/\r?\n/), state.currentLang),
     targetCount: readNumber(targetCountInput),
     planLimit: readNumber(planLimitInput),
     outputDir: MANAGED_OUTPUT_DIR,
@@ -7747,7 +7133,7 @@ function collectRequest() {
     requestTimeoutSecs: readNumber(timeoutInput),
     resume: resumeInput.checked,
     managedRunMode: currentManagedRunMode(),
-    managedRunBatchId: managedResumeBatchId,
+    managedRunBatchId: state.managedResumeBatchId,
     qaPlatformUrl: currentQaPlatformUrl() || null,
     qaPlatformUsername: qaPlatformUsernameInput.value.trim() || null,
     qaPlatformPassword: qaPlatformPasswordInput.value.trim() || null,
@@ -7799,10 +7185,10 @@ function validateRequest(request: PipelineFormRequest): ValidationIssueKey[] {
 
 function applyRequest(request: PipelineFormRequest) {
   promptInput.value = request.prompt;
-  topicTags = [...request.topicTags];
+  state.topicTags = [...request.topicTags];
   qaModeNormalInput.checked = (request.qaMode ?? "normal") !== "cot";
   qaModeCotInput.checked = (request.qaMode ?? "normal") === "cot";
-  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders, currentLang);
+  cotSectionHeadersInput.value = formatCotSectionHeaders(request.cotSectionHeaders, state.currentLang);
   targetCountInput.value = String(request.targetCount);
   planLimitInput.value = String(request.planLimit);
   if (request.managedOutputRoot?.trim()) {
@@ -7824,8 +7210,8 @@ function applyRequest(request: PipelineFormRequest) {
   maxRetriesInput.value = String(request.maxRetries);
   timeoutInput.value = String(request.requestTimeoutSecs);
   resumeInput.checked = request.resume;
-  managedResumeBatchId = request.managedRunMode === "resume-batch" ? request.managedRunBatchId ?? null : null;
-  managedResumeBatchLabel = null;
+  state.managedResumeBatchId = request.managedRunMode === "resume-batch" ? request.managedRunBatchId ?? null : null;
+  state.managedResumeBatchLabel = null;
   managedRunModeNewInput.checked = (request.managedRunMode ?? "new") === "new";
   managedRunModeResumeLatestInput.checked = (request.managedRunMode ?? "new") !== "new";
   const presetId = detectProviderPreset({
@@ -7853,9 +7239,9 @@ void listen<PipelineProgressEvent>("pipeline-progress", (event) => {
 
 void listen<AppUpdateProgressEvent>("app-update-progress", (event) => {
   if (event.payload.status === "failed") {
-    appUpdateLastError = event.payload.message;
+    state.appUpdateLastError = event.payload.message;
   } else if (event.payload.status === "completed") {
-    appUpdateLastError = null;
+    state.appUpdateLastError = null;
   }
   appendLog(event.payload.message);
   updateCheckButtonUi();
@@ -7863,16 +7249,16 @@ void listen<AppUpdateProgressEvent>("app-update-progress", (event) => {
 
 void listen<{ step: string; chunkIndex: number; totalChunks: number; status: string; itemCount: number; message: string }>("paper-qa-progress", (event) => {
   const p = event.payload;
-  paperQaProgressPercent = p.totalChunks > 0 ? Math.round(((p.chunkIndex + (p.step === "qa" ? 1 : 0.5)) / p.totalChunks) * 100) : 0;
-  paperQaProgressMessage = p.message;
-  paperQaLogLines.push(p.message);
-  if (paperQaLogLines.length > 50) paperQaLogLines.shift();
+  state.paperQaProgressPercent = p.totalChunks > 0 ? Math.round(((p.chunkIndex + (p.step === "qa" ? 1 : 0.5)) / p.totalChunks) * 100) : 0;
+  state.paperQaProgressMessage = p.message;
+  state.paperQaLogLines.push(p.message);
+  if (state.paperQaLogLines.length > 50) state.paperQaLogLines.shift();
   renderPaperQaPanel();
 });
 
 void listen<{ message: string }>("paper-qa-log", (event) => {
-  paperQaLogLines.push(event.payload.message);
-  if (paperQaLogLines.length > 50) paperQaLogLines.shift();
+  state.paperQaLogLines.push(event.payload.message);
+  if (state.paperQaLogLines.length > 50) state.paperQaLogLines.shift();
   renderPaperQaPanel();
 });
 
@@ -7936,16 +7322,16 @@ async function restorePlatformPasswordFromKeychain() {
 }
 
 function scheduleAutoSave() {
-  if (!autoSaveEnabled) {
+  if (!state.autoSaveEnabled) {
     return;
   }
 
-  if (autoSaveTimer !== null) {
-    window.clearTimeout(autoSaveTimer);
+  if (state.autoSaveTimer !== null) {
+    window.clearTimeout(state.autoSaveTimer);
   }
 
-  autoSaveTimer = window.setTimeout(() => {
-    autoSaveTimer = null;
+  state.autoSaveTimer = window.setTimeout(() => {
+    state.autoSaveTimer = null;
     void persistCurrentConfig(true);
   }, AUTO_SAVE_DELAY_MS);
 }
@@ -7985,11 +7371,11 @@ async function loadConfig(auto = false) {
 }
 
 langSelect.addEventListener("change", () => {
-  const shouldSyncCotHeaders = isDefaultCotSectionHeaderText(cotSectionHeadersInput.value, currentLang);
-  currentLang = langSelect.value === "zh" ? "zh" : "en";
-  window.localStorage.setItem(LANG_STORAGE_KEY, currentLang);
+  const shouldSyncCotHeaders = isDefaultCotSectionHeaderText(cotSectionHeadersInput.value, state.currentLang);
+  state.currentLang = langSelect.value === "zh" ? "zh" : "en";
+  window.localStorage.setItem(LANG_STORAGE_KEY, state.currentLang);
   if (shouldSyncCotHeaders) {
-    cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(currentLang), currentLang);
+    cotSectionHeadersInput.value = formatCotSectionHeaders(defaultCotSectionHeadersForLang(state.currentLang), state.currentLang);
   }
   applyTranslations();
 });
@@ -8045,7 +7431,7 @@ topicTagSuggestions.addEventListener("click", (event) => {
     return;
   }
 
-  if (topicTags.includes(tag)) {
+  if (state.topicTags.includes(tag)) {
     removeTopicTag(tag);
     return;
   }
@@ -8069,7 +7455,7 @@ topicFieldModal.addEventListener("click", (event) => {
 
   const primaryButton = target.closest<HTMLElement>("[data-field-primary]");
   if (primaryButton?.dataset.fieldPrimary) {
-    topicFieldModalPrimaryId = primaryButton.dataset.fieldPrimary;
+    state.topicFieldModalPrimaryId = primaryButton.dataset.fieldPrimary;
     renderTopicFieldModal();
     return;
   }
@@ -8095,7 +7481,7 @@ cancelTopicFieldSelectionButton.addEventListener("click", () => {
 });
 
 confirmTopicFieldSelectionButton.addEventListener("click", () => {
-  for (const tag of pendingTopicFieldTags) {
+  for (const tag of state.pendingTopicFieldTags) {
     addTopicTag(tag);
   }
   closeTopicFieldModal();
@@ -8162,8 +7548,8 @@ managedRunModeNewInput.addEventListener("change", () => {
 
 managedRunModeResumeLatestInput.addEventListener("change", () => {
   if (managedRunModeResumeLatestInput.checked) {
-    managedResumeBatchId = null;
-    managedResumeBatchLabel = null;
+    state.managedResumeBatchId = null;
+    state.managedResumeBatchLabel = null;
     appendLog(t("log_resuming_latest_task"));
   }
   syncManagedRunModeUi();
@@ -8208,15 +7594,15 @@ modelInput.addEventListener("change", () => {
     customModelInput.value = "";
   }
 
-  // Detect platform model by looking it up in platformGenerateModels
+  // Detect platform model by looking it up in state.platformGenerateModels
   const modelId = Number(modelInput.value);
-  const pm = platformGenerateModels.find(m => m.id === modelId);
-  if (pm && platformLoginState.kind === "success") {
-    selectedPlatformModelId = modelId;
+  const pm = state.platformGenerateModels.find(m => m.id === modelId);
+  if (pm && state.platformLoginState.kind === "success") {
+    state.selectedPlatformModelId = modelId;
     batchSizeInput.value = String(pm.batchSize);
     maxInFlightInput.value = String(pm.maxInFlight);
   } else {
-    selectedPlatformModelId = null;
+    state.selectedPlatformModelId = null;
   }
 
   syncProviderPresetInput();
@@ -8272,7 +7658,7 @@ literatureApiUrlInput.addEventListener("input", () => {
 });
 literatureApiAuthInput.addEventListener("input", scheduleAutoSave);
 toggleApiKeyVisibilityButton.addEventListener("click", () => {
-  apiKeyVisible = !apiKeyVisible;
+  state.apiKeyVisible = !state.apiKeyVisible;
   updateApiKeyVisibilityUi();
 });
 promptInput.addEventListener("input", () => {
@@ -8359,17 +7745,17 @@ resumeInput.addEventListener("change", () => {
 
 function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
   const lines = [
-    currentLang === "zh"
+    state.currentLang === "zh"
       ? `当前版本：${response.currentVersion}`
       : `Current version: ${response.currentVersion}`,
-    currentLang === "zh"
+    state.currentLang === "zh"
       ? `最新版本：${response.version ?? "unknown"}`
       : `Latest version: ${response.version ?? "unknown"}`
   ];
 
   if (response.date) {
     lines.push(
-      currentLang === "zh"
+      state.currentLang === "zh"
         ? `发布时间：${response.date}`
         : `Release date: ${response.date}`
     );
@@ -8379,19 +7765,19 @@ function buildUpdatePrompt(response: AppUpdateCheckResponse): string {
     const notes = response.body.trim();
     if (notes) {
       lines.push("");
-      lines.push(currentLang === "zh" ? "更新说明：" : "Release notes:");
+      lines.push(state.currentLang === "zh" ? "更新说明：" : "Release notes:");
       lines.push(notes);
     }
   }
 
   lines.push("");
-  lines.push(currentLang === "zh" ? "现在安装这个更新吗？" : "Install this update now?");
+  lines.push(state.currentLang === "zh" ? "现在安装这个更新吗？" : "Install this update now?");
   return lines.join("\n");
 }
 
 function updateCheckButtonUi() {
-  if (pendingAppUpdate?.updateAvailable) {
-    checkUpdateButton.textContent = appUpdateLastError ? t("action_retry_update") : t("action_install_update");
+  if (state.pendingAppUpdate?.updateAvailable) {
+    checkUpdateButton.textContent = state.appUpdateLastError ? t("action_retry_update") : t("action_install_update");
     return;
   }
 
@@ -8407,7 +7793,7 @@ function classifyUpdateErrorMessage(errorText: string): string {
 
 async function offerManualUpdateFallback() {
   const manualUrl =
-    pendingAppUpdate?.manualDownloadUrl?.trim() || appUpdateManualDownloadUrl?.trim() || "";
+    state.pendingAppUpdate?.manualDownloadUrl?.trim() || state.appUpdateManualDownloadUrl?.trim() || "";
   if (!manualUrl) {
     return;
   }
@@ -8445,7 +7831,7 @@ browseContent.addEventListener("click", (event) => {
       return;
     }
     if (action === "open") {
-      browseDetailData = null;
+      state.browseDetailData = null;
       void loadBrowseQaPage(actionBatchId, 1);
       return;
     }
@@ -8466,13 +7852,13 @@ browseContent.addEventListener("click", (event) => {
   const batchButton = target.closest<HTMLElement>("[data-batch-id]");
   const batchId = batchButton?.dataset.batchId;
   if (batchId) {
-    if (batchId === browseSelectedBatchId && browsePageData) {
-      browseView = "questions";
+    if (batchId === state.browseSelectedBatchId && state.browsePageData) {
+      state.browseView = "questions";
       renderBrowseView();
       return;
     }
 
-    browseDetailData = null;
+    state.browseDetailData = null;
     void loadBrowseQaPage(batchId, 1);
     return;
   }
@@ -8480,19 +7866,19 @@ browseContent.addEventListener("click", (event) => {
   const qaButton = target.closest<HTMLElement>("[data-qa-id]");
   const qaId = qaButton?.dataset.qaId;
   if (qaId) {
-    if (!browseSelectedBatchId) {
+    if (!state.browseSelectedBatchId) {
       return;
     }
 
-    if (qaId === browseDetailData?.item.id && browseView === "detail") {
+    if (qaId === state.browseDetailData?.item.id && state.browseView === "detail") {
       return;
     }
 
-    void loadBrowseDetail(browseSelectedBatchId, qaId);
+    void loadBrowseDetail(state.browseSelectedBatchId, qaId);
     return;
   }
 
-  if (browseView === "review" && browseSelectedBatchId) {
+  if (state.browseView === "review" && state.browseSelectedBatchId) {
     const reviewItem = currentBrowseReviewItem();
     if (!reviewItem) {
       return;
@@ -8502,30 +7888,30 @@ browseContent.addEventListener("click", (event) => {
       return;
     }
     if (button.id === "browse-review-save") {
-      void saveBrowseReview(browseSelectedBatchId, reviewItem.id);
+      void saveBrowseReview(state.browseSelectedBatchId, reviewItem.id);
       return;
     }
     if (button.id === "browse-review-keep") {
-      void saveBrowseReview(browseSelectedBatchId, reviewItem.id, "kept");
+      void saveBrowseReview(state.browseSelectedBatchId, reviewItem.id, "kept");
       return;
     }
     if (button.id === "browse-review-discard") {
-      void saveBrowseReview(browseSelectedBatchId, reviewItem.id, "discarded");
+      void saveBrowseReview(state.browseSelectedBatchId, reviewItem.id, "discarded");
       return;
     }
-    if (button.id === "browse-review-prev" && browseReviewIndex > 0) {
-      browseReviewIndex -= 1;
+    if (button.id === "browse-review-prev" && state.browseReviewIndex > 0) {
+      state.browseReviewIndex -= 1;
       renderBrowseView();
       return;
     }
-    if (button.id === "browse-review-next" && browseReviewIndex < browseReviewItems.length - 1) {
-      browseReviewIndex += 1;
+    if (button.id === "browse-review-next" && state.browseReviewIndex < state.browseReviewItems.length - 1) {
+      state.browseReviewIndex += 1;
       renderBrowseView();
       return;
     }
   }
 
-  if (!browsePageData || !browseSelectedBatchId) {
+  if (!state.browsePageData || !state.browseSelectedBatchId) {
     return;
   }
 
@@ -8534,12 +7920,12 @@ browseContent.addEventListener("click", (event) => {
     return;
   }
 
-  if (button.id === "browse-prev-page" && browsePageData.page > 1) {
-    void loadBrowseQaPage(browseSelectedBatchId, browsePageData.page - 1);
+  if (button.id === "browse-prev-page" && state.browsePageData.page > 1) {
+    void loadBrowseQaPage(state.browseSelectedBatchId, state.browsePageData.page - 1);
   }
 
-  if (button.id === "browse-next-page" && browsePageData.page < browsePageData.totalPages) {
-    void loadBrowseQaPage(browseSelectedBatchId, browsePageData.page + 1);
+  if (button.id === "browse-next-page" && state.browsePageData.page < state.browsePageData.totalPages) {
+    void loadBrowseQaPage(state.browseSelectedBatchId, state.browsePageData.page + 1);
   }
 });
 
@@ -8555,24 +7941,24 @@ browseContent.addEventListener("input", (event) => {
   if (!item) {
     return;
   }
-  browseReviewDrafts.set(item.id, target.value);
+  state.browseReviewDrafts.set(item.id, target.value);
   const saveButton = browseContent.querySelector<HTMLButtonElement>("#browse-review-save");
   if (saveButton) {
     const dirty = target.value.trim() !== item.effectiveQuestion.trim();
-    saveButton.disabled = !dirty || browseReviewSaving;
-    saveButton.classList.toggle("browse-mini-button-muted", !dirty || browseReviewSaving);
-    saveButton.textContent = t(browseReviewSaving ? "browse_review_saving" : "browse_review_save");
+    saveButton.disabled = !dirty || state.browseReviewSaving;
+    saveButton.classList.toggle("browse-mini-button-muted", !dirty || state.browseReviewSaving);
+    saveButton.textContent = t(state.browseReviewSaving ? "browse_review_saving" : "browse_review_save");
   }
 });
 
 browseBackButton.addEventListener("click", () => {
-  browseErrorMessage = null;
-  if (browseView === "detail") {
-    browseView = "questions";
-  } else if (browseView === "review") {
-    browseView = "batches";
-  } else if (browseView === "questions") {
-    browseView = "batches";
+  state.browseErrorMessage = null;
+  if (state.browseView === "detail") {
+    state.browseView = "questions";
+  } else if (state.browseView === "review") {
+    state.browseView = "batches";
+  } else if (state.browseView === "questions") {
+    state.browseView = "batches";
   }
 
   renderBrowseView();
@@ -8635,7 +8021,7 @@ modelTrialPanel.addEventListener("click", (event) => {
   if (action === "select-session") {
     const sessionId = Number(button.dataset.sessionId);
     if (Number.isFinite(sessionId) && sessionId > 0) {
-      modelTrialSelectedSessionId = sessionId;
+      state.modelTrialSelectedSessionId = sessionId;
       void loadModelTrialSessionDetail(sessionId);
     }
     return;
@@ -8659,9 +8045,9 @@ modelTrialPanel.addEventListener("change", (event) => {
   }
 
   if (target instanceof HTMLSelectElement && target.id === "model-trial-config-select") {
-    modelTrialSelectedConfigId = Number(target.value) || null;
-    modelTrialNoticeMessage = null;
-    modelTrialErrorMessage = null;
+    state.modelTrialSelectedConfigId = Number(target.value) || null;
+    state.modelTrialNoticeMessage = null;
+    state.modelTrialErrorMessage = null;
     renderPlatformPanels();
     return;
   }
@@ -8669,10 +8055,10 @@ modelTrialPanel.addEventListener("change", (event) => {
   if (target instanceof HTMLSelectElement && target.id === "model-trial-batch-select") {
     const batchId = target.value;
     if (!batchId) {
-      modelTrialSelectedBatchId = null;
-      modelTrialLocalQuestions = [];
-      modelTrialSelectedQuestionId = null;
-      modelTrialLocalQuestionDetail = null;
+      state.modelTrialSelectedBatchId = null;
+      state.modelTrialLocalQuestions = [];
+      state.modelTrialSelectedQuestionId = null;
+      state.modelTrialLocalQuestionDetail = null;
       renderPlatformPanels();
       return;
     }
@@ -8682,18 +8068,18 @@ modelTrialPanel.addEventListener("change", (event) => {
 
   if (target instanceof HTMLSelectElement && target.id === "model-trial-question-select") {
     const qaId = target.value;
-    modelTrialSelectedQuestionId = qaId || null;
-    modelTrialLocalQuestionDetail = null;
-    if (modelTrialSelectedBatchId && qaId) {
+    state.modelTrialSelectedQuestionId = qaId || null;
+    state.modelTrialLocalQuestionDetail = null;
+    if (state.modelTrialSelectedBatchId && qaId) {
       const selectedQuestion = currentModelTrialSelectedQuestion();
-      if (selectedQuestion && !modelTrialComposer.trim()) {
-        modelTrialComposer = selectedQuestion.question;
+      if (selectedQuestion && !state.modelTrialComposer.trim()) {
+        state.modelTrialComposer = selectedQuestion.question;
       }
-      void loadModelTrialLocalQuestionDetail(modelTrialSelectedBatchId, qaId);
+      void loadModelTrialLocalQuestionDetail(state.modelTrialSelectedBatchId, qaId);
       return;
     }
-    modelTrialNoticeMessage = null;
-    modelTrialErrorMessage = null;
+    state.modelTrialNoticeMessage = null;
+    state.modelTrialErrorMessage = null;
     renderPlatformPanels();
   }
 });
@@ -8701,7 +8087,7 @@ modelTrialPanel.addEventListener("change", (event) => {
 modelTrialPanel.addEventListener("input", (event) => {
   const target = event.target;
   if (target instanceof HTMLTextAreaElement && target.id === "model-trial-composer") {
-    modelTrialComposer = target.value;
+    state.modelTrialComposer = target.value;
   }
 });
 
@@ -8722,25 +8108,25 @@ checkUpdateButton.addEventListener("click", async () => {
   setStatus("updating", true);
 
   try {
-    if (pendingAppUpdate?.updateAvailable) {
-      const shouldInstall = window.confirm(buildUpdatePrompt(pendingAppUpdate));
+    if (state.pendingAppUpdate?.updateAvailable) {
+      const shouldInstall = window.confirm(buildUpdatePrompt(state.pendingAppUpdate));
       if (!shouldInstall) {
         appendLog(t("log_update_declined"));
         setStatus("idle", false);
         return;
       }
 
-      appUpdateLastError = null;
+      state.appUpdateLastError = null;
       updateCheckButtonUi();
-      await startInstallPendingUpdate(pendingAppUpdate);
+      await startInstallPendingUpdate(state.pendingAppUpdate);
       return;
     }
 
     const response = await invoke<AppUpdateCheckResponse>("check_for_app_update");
-    appUpdateManualDownloadUrl = response.manualDownloadUrl ?? appUpdateManualDownloadUrl;
+    state.appUpdateManualDownloadUrl = response.manualDownloadUrl ?? state.appUpdateManualDownloadUrl;
     if (!response.configured) {
-      pendingAppUpdate = null;
-      appUpdateLastError = null;
+      state.pendingAppUpdate = null;
+      state.appUpdateLastError = null;
       appendLog(t("log_update_not_configured"));
       setStatus("idle", false);
       return;
@@ -8751,8 +8137,8 @@ checkUpdateButton.addEventListener("click", async () => {
     }
 
     if (!response.updateAvailable) {
-      pendingAppUpdate = null;
-      appUpdateLastError = null;
+      state.pendingAppUpdate = null;
+      state.appUpdateLastError = null;
       appendLog(`${t("log_update_not_available")} (${response.currentVersion})`);
       await message(`${t("log_update_not_available")} (${response.currentVersion})`, {
         title: t("action_check_update"),
@@ -8762,8 +8148,8 @@ checkUpdateButton.addEventListener("click", async () => {
       return;
     }
 
-    pendingAppUpdate = response;
-    appUpdateLastError = null;
+    state.pendingAppUpdate = response;
+    state.appUpdateLastError = null;
     updateCheckButtonUi();
     appendLog(`${t("log_update_available")} ${response.version ?? ""}`.trim());
     const shouldInstall = window.confirm(buildUpdatePrompt(response));
@@ -8777,10 +8163,10 @@ checkUpdateButton.addEventListener("click", async () => {
   } catch (error) {
     const errorText = String(error);
     if (errorText.includes("No update is currently available.")) {
-      pendingAppUpdate = null;
+      state.pendingAppUpdate = null;
     }
     const displayMessage = classifyUpdateErrorMessage(errorText);
-    appUpdateLastError = displayMessage;
+    state.appUpdateLastError = displayMessage;
     appendLog(displayMessage);
     await message(displayMessage, {
       title: t("action_check_update"),
@@ -8838,7 +8224,7 @@ resultActions.addEventListener("click", async (event) => {
 });
 
 runButton.addEventListener("click", async () => {
-  if (currentStatus === "running") {
+  if (state.currentStatus === "running") {
     setStatus("stopping", true);
     appendLog(t("log_stop_requested"));
 
@@ -8855,21 +8241,21 @@ runButton.addEventListener("click", async () => {
     return;
   }
 
-  if (currentStatus === "stopping" || currentStatus === "updating" || currentStatus === "previewing") {
+  if (state.currentStatus === "stopping" || state.currentStatus === "updating" || state.currentStatus === "previewing") {
     return;
   }
 
   const request = collectRequest();
   const issues = validateRequest(request);
   if (issues.length > 0) {
-    outputState = { kind: "validation_error", issues };
+    state.outputState = { kind: "validation_error", issues };
     renderOutput();
     appendLog(`${t("log_validation_failed")}: ${issues.map((issue) => t(issue)).join(" ")}`);
     return;
   }
 
   setStatus("running", true);
-  outputState = { kind: "run_loading" };
+  state.outputState = { kind: "run_loading" };
   renderOutput();
   resetTelemetry();
   beginRunStats(request);
@@ -8885,21 +8271,21 @@ runButton.addEventListener("click", async () => {
       }
     });
     clearManagedResumeBatch(false);
-    outputState = { kind: "run_success", response };
+    state.outputState = { kind: "run_success", response };
     renderOutput();
-    browseSelectedBatchId = null;
+    state.browseSelectedBatchId = null;
     void loadBrowseBatches();
     appendLog(formatMessage("log_pipeline_completed", response.datasetPath));
   } catch (error) {
     const message = String(error);
     if (isPipelineCancelledMessage(message)) {
       await armResumeBatchForRequest(request);
-      outputState = { kind: "cancelled", message: t("pipeline_cancelled") };
+      state.outputState = { kind: "cancelled", message: t("pipeline_cancelled") };
       renderOutput();
       appendLog(t("log_pipeline_cancelled"));
     } else {
       await armResumeBatchForRequest(request);
-      outputState = { kind: "error", phase: "run", message };
+      state.outputState = { kind: "error", phase: "run", message };
       renderOutput();
       appendLog(`${t("pipeline_failed")}: ${message}`);
     }
@@ -8913,7 +8299,7 @@ runButton.addEventListener("click", async () => {
 async function initializeApp() {
   try {
     const metadata = await invoke<AppMetadataResponse>("get_app_metadata");
-    appVersion = metadata.version;
+    state.appVersion = metadata.version;
   } catch (error) {
     appendLog(`app metadata failed: ${String(error)}`);
   }
@@ -8931,13 +8317,13 @@ async function initializeApp() {
   restorePaperQaState();
   await restorePlatformPasswordFromKeychain();
   normalizeRuntimeParameterInputs(true);
-  autoSaveEnabled = true;
+  state.autoSaveEnabled = true;
   renderRunStats();
   try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels: ${String(e)}`); }
   void loadBrowseBatches();
   // Auto-login if platform credentials are saved
   if (currentQaPlatformUrl() && hasQaPlatformCredentials()) {
-    platformLoginState = { kind: "loading" };
+    state.platformLoginState = { kind: "loading" };
     try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels(auth): ${String(e)}`); }
     try {
       const response = await invoke<PlatformLoginResponse>("login_platform", {
@@ -8945,8 +8331,8 @@ async function initializeApp() {
         username: qaPlatformUsernameInput.value.trim(),
         password: qaPlatformPasswordInput.value.trim()
       });
-      platformLoginState = { kind: "success", response };
-      platformHealthState = {
+      state.platformLoginState = { kind: "success", response };
+      state.platformHealthState = {
         kind: "success",
         response: {
           reachable: true,
@@ -8955,12 +8341,12 @@ async function initializeApp() {
         }
       };
     } catch {
-      platformLoginState = { kind: "idle" };
+      state.platformLoginState = { kind: "idle" };
     }
     try { renderPlatformPanels(); } catch (e) { appendLog(`renderPlatformPanels(auth): ${String(e)}`); }
   }
   // Pre-render all lazy panels so they are populated before the user clicks them
-  if (chatSessions.length === 0) createChatSession();
+  if (state.chatSessions.length === 0) createChatSession();
   try { renderChatQaPanel(); } catch (e) { appendLog(`renderChatQaPanel(init): ${String(e)}`); }
   try { renderFeedback2Panel(); } catch (e) { appendLog(`renderFeedback2Panel(init): ${String(e)}`); }
   try { renderRecentUpdatesPanel(); } catch (e) { appendLog(`renderRecentUpdatesPanel(init): ${String(e)}`); }
@@ -9085,7 +8471,7 @@ paperQaPanelEl?.addEventListener("click", (event) => {
   const fileCard = target.closest<HTMLElement>(".paper-file-card");
   if (fileCard && !(target.closest("[data-remove-file]"))) {
     const fId = fileCard.dataset.fileId;
-    paperQaSelectedFileId = paperQaSelectedFileId === fId ? null : (fId ?? null);
+    state.paperQaSelectedFileId = state.paperQaSelectedFileId === fId ? null : (fId ?? null);
     renderPaperQaPanel();
     return;
   }
@@ -9094,7 +8480,7 @@ paperQaPanelEl?.addEventListener("click", (event) => {
 // Paper QA: Tauri native drag & drop (provides real file paths)
 void listen("tauri://drag-drop", (event: { payload: { type: string; paths: string[] } }) => {
   if (event.payload.type !== "drop") return;
-  if (currentTab !== "paper-qa") return;
+  if (state.currentTab !== "paper-qa") return;
   const pdfs = (event.payload.paths ?? []).filter((p: string) => p.toLowerCase().endsWith(".pdf"));
   if (pdfs.length > 0) {
     addPaperFiles(pdfs);
@@ -9104,7 +8490,7 @@ void listen("tauri://drag-drop", (event: { payload: { type: string; paths: strin
 // Paper QA: CoT ratio slider
 document.querySelector("#paper-qa-cot-ratio")?.addEventListener("input", (event) => {
   const slider = event.target as HTMLInputElement;
-  paperQaCotRatio = parseFloat(slider.value);
+  state.paperQaCotRatio = parseFloat(slider.value);
   const valEl = document.querySelector("#paper-qa-cot-ratio-value");
-  if (valEl) valEl.textContent = String(paperQaCotRatio);
+  if (valEl) valEl.textContent = String(state.paperQaCotRatio);
 });
