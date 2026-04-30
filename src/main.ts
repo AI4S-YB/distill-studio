@@ -101,6 +101,37 @@ import {
   formatCountTemplate,
 } from "./translations";
 
+import {
+  escapeHtml,
+  escapeRegExp,
+  formatCount,
+  formatDuration,
+  formatRate,
+  displayValue,
+  formatPlatformTime,
+  parseTimestampMs,
+  parsePlatformMetadataJson,
+  metadataString,
+  currentPresetLabel,
+  qaModeLabel,
+  batchStatusLabel,
+  reviewStatusLabel,
+  reviewStatusBadgeClass,
+  browseReviewSummaryLabel,
+  changeTypeLabel,
+  browseResumeActionLabel,
+  batchPlatformStatusLabel,
+  isRemoteVirtualBrowseBatch,
+  currentBrowseBatchPlatformStatus,
+  browseBatchPlatformBadgeHtml,
+  canResumeBrowseBatch,
+  currentModelValue,
+  renderEmptyCard,
+  renderValidationIssues,
+  renderCards,
+  renderActionButtons,
+} from "./utils";
+
 
 const DEFAULT_COT_SHARD_SIZE = 10;
 const COT_SAFE_SHARD_SIZE_CAP = 10;
@@ -1512,7 +1543,7 @@ function resolveLLMProvider(): ResolvedLLMProvider {
       provider: providerInput.value.trim() || "openai-compatible",
       baseUrl: settingsBaseUrl,
       apiKey: settingsApiKey,
-      model: currentModelValue(),
+      model: currentModelValue(modelInput, customModelInput),
     };
   }
 
@@ -1846,39 +1877,6 @@ function composeEffectivePrompt(prompt: string, tags: string[]): string {
   ].join("\n");
 }
 
-function currentPresetLabel(presetId: ProviderPresetId): string {
-  return t(`preset_${presetId}`);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function currentModelValue(): string {
-  return modelInput.value === CUSTOM_MODEL_VALUE ? customModelInput.value.trim() : modelInput.value.trim();
-}
-
-function qaModeLabel(qaMode: string | null | undefined): string {
-  return qaMode === "cot" ? t("qa_mode_cot") : t("qa_mode_normal");
-}
-
-function batchStatusLabel(status: string | null | undefined): string {
-  switch (status) {
-    case "completed":
-      return t("browse_status_completed");
-    case "running":
-      return t("browse_status_running");
-    case "generated":
-      return t("browse_status_generated");
-    default:
-      return t("browse_status_prepared");
-  }
-}
-
-function isRemoteVirtualBrowseBatch(batchId: string | null | undefined): boolean {
-  return batchId === PLATFORM_REMOTE_VIRTUAL_BATCH_SYNTHETIC_ID;
-}
-
 function localBrowseBatches(): QaBatchSummary[] {
   return state.browseBatches.filter((batch) => !isRemoteVirtualBrowseBatch(batch.id));
 }
@@ -1896,41 +1894,6 @@ function platformBatchQaMode(
   return fallback;
 }
 
-function parseTimestampMs(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function parsePlatformMetadataJson(value: string | null | undefined): Record<string, unknown> {
-  if (!value) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function metadataString(metadata: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = metadata[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-    if (typeof value === "number" || typeof value === "boolean") {
-      return String(value);
-    }
-  }
-  return "";
-}
 
 function remoteVirtualBatchPrompt(summary: PlatformImportBatchSummary): string {
   const scope = [summary.applicationName, summary.technicalTypeName].filter(Boolean).join(" · ");
@@ -2060,78 +2023,12 @@ function remoteVirtualBrowsePageFromDetail(
   };
 }
 
-function canResumeBrowseBatch(batch: QaBatchSummary): boolean {
-  return !isRemoteVirtualBrowseBatch(batch.id) && batch.status !== "completed";
-}
-
-function browseResumeActionLabel(batch: QaBatchSummary): string {
-  return batch.status === "prepared"
-    ? t("browse_action_load_generate")
-    : t("browse_action_continue_run");
-}
-
-function batchPlatformStatusLabel(status: PlatformBatchStatusKind | null | undefined): string {
-  switch (status) {
-    case "uploaded":
-      return t("browse_platform_status_uploaded");
-    case "processing":
-      return t("browse_platform_status_processing");
-    case "parsed":
-      return t("browse_platform_status_parsed");
-    case "failed":
-      return t("browse_platform_status_failed");
-    default:
-      return "";
-  }
-}
-
-function currentBrowseBatchPlatformStatus(batchId: string): PlatformImportBatchStatus | null {
-  return state.browsePlatformStatusMap.get(batchId) ?? null;
-}
-
-function browseBatchPlatformBadgeHtml(batchId: string): string {
-  const status = currentBrowseBatchPlatformStatus(batchId);
-  if (!status || status.batchStatus === "missing") {
-    return "";
-  }
-  const label =
-    status.batchStatus === "uploaded" ? t("browse_uploaded_badge") : batchPlatformStatusLabel(status.batchStatus);
-  return ` <span class="browse-inline-badge">${escapeHtml(label)}</span>`;
-}
-
-function reviewStatusLabel(status: ReviewStatus): string {
-  switch (status) {
-    case "kept":
-      return t("browse_review_status_kept");
-    case "discarded":
-      return t("browse_review_status_discarded");
-    default:
-      return t("browse_review_status_unreviewed");
-  }
-}
-
-function reviewStatusBadgeClass(status: ReviewStatus): string {
-  switch (status) {
-    case "kept":
-      return "kept";
-    case "discarded":
-      return "discarded";
-    default:
-      return "unreviewed";
-  }
-}
-
-function browseReviewSummaryLabel(batch: QaBatchSummary): string {
-  const total = batch.generatedCount || batch.totalCount;
-  return `${t("browse_review_progress")} ${formatCount(batch.reviewedCount)} / ${formatCount(total)} · ${t("browse_review_kept")} ${formatCount(batch.reviewKeptCount)} · ${t("browse_review_discarded")} ${formatCount(batch.discardedCount)}`;
-}
-
 function syncProviderFieldVisibility(presetId: ProviderPresetId) {
   providerField.hidden = presetId !== "custom";
 }
 
 function syncModelOptions(presetId: ProviderPresetId, preferredModel?: string | null) {
-  const resolvedModel = preferredModel?.trim() ?? currentModelValue();
+  const resolvedModel = preferredModel?.trim() ?? currentModelValue(modelInput, customModelInput);
   const preset = presetId === "custom" ? null : PROVIDER_PRESETS[presetId];
   const models = preset?.models ?? [];
 
@@ -2355,98 +2252,6 @@ function applyProviderPreset(presetId: ProviderPresetId, logChange = false) {
   }
 }
 
-function formatCount(value: number): string {
-  return new Intl.NumberFormat(state.currentLang === "zh" ? "zh-CN" : "en-US").format(value);
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null || ms < 0) {
-    return t("stats_not_available");
-  }
-
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function formatRate(itemsPerMinute: number | null): string {
-  if (itemsPerMinute === null || !Number.isFinite(itemsPerMinute) || itemsPerMinute <= 0) {
-    return t("stats_not_available");
-  }
-
-  return state.currentLang === "zh"
-    ? `${formatCount(Math.round(itemsPerMinute))} 条/分钟`
-    : `${formatCount(Math.round(itemsPerMinute))} items/min`;
-}
-
-function escapeHtml(value: string): string {
-  if (value == null || typeof value !== "string") return "";
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function displayValue(value: string): string {
-  return value.trim() ? value : t("empty_value");
-}
-
-function renderEmptyCard(message: string) {
-  resultCards.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
-}
-
-function renderValidationIssues(issues: ValidationIssueKey[]) {
-  resultCards.innerHTML = `
-    <article class="result-card wide">
-      <p class="result-card-label">${escapeHtml(t("validation_issues"))}</p>
-      <ul class="validation-list">
-        ${issues.map((issue) => `<li class="validation-item">${escapeHtml(t(issue))}</li>`).join("")}
-      </ul>
-    </article>
-  `;
-}
-
-function renderCards(cards: Array<{ labelKey: string; value: string; wide?: boolean }>) {
-  resultCards.innerHTML = cards
-    .map(
-      ({ labelKey, value, wide }) => `
-        <article class="result-card${wide ? " wide" : ""}">
-          <p class="result-card-label">${escapeHtml(t(labelKey))}</p>
-          <p class="result-card-value">${escapeHtml(displayValue(value))}</p>
-        </article>
-      `
-    )
-    .join("");
-}
-
-function renderActionButtons(actions: Array<{ key: string; action: string }>) {
-  if (!actions.length) {
-    resultActions.innerHTML = "";
-    return;
-  }
-
-  resultActions.innerHTML = `
-    <p class="result-actions-title">${escapeHtml(t("result_actions"))}</p>
-    <div class="result-action-list">
-      ${actions
-        .map(
-          ({ key, action }) =>
-            `<button class="action-button" type="button" data-result-action="${escapeHtml(action)}">${escapeHtml(t(key))}</button>`
-        )
-        .join("")}
-    </div>
-  `;
-}
-
 function renderSetupSummary() {
   const resolved = resolveLLMProvider();
   const providerReady = resolved.mode !== "none";
@@ -2496,7 +2301,7 @@ function renderSetupSummary() {
       label: t("settings_checklist_model"),
       status: modelReady,
       detail: modelReady
-        ? formatMessage("settings_checklist_model_ready", currentModelValue())
+        ? formatMessage("settings_checklist_model_ready", currentModelValue(modelInput, customModelInput))
         : t("settings_checklist_model_pending")
     },
     {
@@ -2871,23 +2676,6 @@ function currentModelTrialSelectedQuestion(): QaRecordSummary | null {
 
 function currentModelTrialSelectedConfig(): TrialLlmConfigOption | null {
   return state.modelTrialConfigs.find((item) => item.id === state.modelTrialSelectedConfigId) ?? null;
-}
-
-function formatPlatformTime(value: string | null | undefined): string {
-  if (!value) {
-    return t("empty_value");
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(state.currentLang === "zh" ? "zh-CN" : "en-US", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
 }
 
 function renderPlatformStateBlock(platformState: typeof state.platformHealthState | typeof state.platformLoginState, kind: "health" | "login"): string {
@@ -3512,14 +3300,6 @@ function renderWeeklyStats(data: ExportsStatsData): string {
         </div>
       </div>
     </div>`;
-}
-
-function changeTypeLabel(type: string): string {
-  if (type === "added") return state.currentLang === "zh" ? "新增" : "Added";
-  if (type === "updated") return state.currentLang === "zh" ? "更新" : "Updated";
-  if (type === "deprecated") return state.currentLang === "zh" ? "弃用" : "Deprecated";
-  if (type === "status_changed") return state.currentLang === "zh" ? "状态变更" : "Changed";
-  return type;
 }
 
 function getCurrentSession(): ChatSession | undefined {
@@ -5085,31 +4865,31 @@ function renderOutput() {
   switch (state.outputState.kind) {
     case "idle":
       resultMode.textContent = t("output_mode_idle");
-      renderEmptyCard(t("no_preview"));
-      renderActionButtons([]);
+      renderEmptyCard(resultCards,t("no_preview"));
+      renderActionButtons(resultActions,[]);
       output.textContent = t("no_preview");
       outputDetails.hidden = true;
       outputDetails.open = false;
       return;
     case "preview_loading":
       resultMode.textContent = t("output_mode_preview");
-      renderEmptyCard(t("preview_generating"));
-      renderActionButtons([]);
+      renderEmptyCard(resultCards,t("preview_generating"));
+      renderActionButtons(resultActions,[]);
       output.textContent = t("preview_generating");
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "run_loading":
       resultMode.textContent = t("output_mode_run");
-      renderEmptyCard(t("running_pipeline"));
-      renderActionButtons([]);
+      renderEmptyCard(resultCards,t("running_pipeline"));
+      renderActionButtons(resultActions,[]);
       output.textContent = t("running_pipeline");
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "preview_success":
       resultMode.textContent = t("output_mode_preview");
-      renderCards([
+      renderCards(resultCards,[
         { labelKey: "summary_topic_name", value: state.outputState.preview.topic_name },
         { labelKey: "summary_target_count", value: formatCount(state.outputState.preview.target_count) },
         { labelKey: "summary_keyword_count", value: formatCount(state.outputState.preview.keywords.length) },
@@ -5118,14 +4898,14 @@ function renderOutput() {
         { labelKey: "summary_goal", value: state.outputState.preview.goal, wide: true },
         { labelKey: "summary_keywords", value: state.outputState.preview.keywords.join(", "), wide: true }
       ]);
-      renderActionButtons([]);
+      renderActionButtons(resultActions,[]);
       output.textContent = JSON.stringify(state.outputState.preview, null, 2);
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "run_success":
       resultMode.textContent = t("output_mode_run");
-      renderCards([
+      renderCards(resultCards,[
         { labelKey: "summary_provider", value: state.outputState.response.generatedSummary.provider },
         { labelKey: "summary_model", value: state.outputState.response.generatedSummary.model },
         {
@@ -5144,7 +4924,7 @@ function renderOutput() {
         { labelKey: "summary_dataset_path", value: state.outputState.response.datasetPath, wide: true },
         { labelKey: "summary_output_dir", value: state.outputState.response.outputDir, wide: true }
       ]);
-      renderActionButtons([
+      renderActionButtons(resultActions,[
         { key: "action_open_dataset", action: "open-dataset" },
         { key: "action_open_pack_summary", action: "open-pack-summary" },
         { key: "action_copy_dataset_path", action: "copy-dataset-path" }
@@ -5155,24 +4935,24 @@ function renderOutput() {
       return;
     case "cancelled":
       resultMode.textContent = t("output_mode_cancelled");
-      renderEmptyCard(state.outputState.message);
-      renderActionButtons([]);
+      renderEmptyCard(resultCards,state.outputState.message);
+      renderActionButtons(resultActions,[]);
       output.textContent = state.outputState.message;
       outputDetails.hidden = false;
       outputDetails.open = false;
       return;
     case "validation_error":
       resultMode.textContent = t("output_mode_validation");
-      renderValidationIssues(state.outputState.issues);
-      renderActionButtons([]);
+      renderValidationIssues(resultCards,state.outputState.issues);
+      renderActionButtons(resultActions,[]);
       output.textContent = [t("validation_failed"), ...state.outputState.issues.map((issue) => `- ${t(issue)}`)].join("\n");
       outputDetails.hidden = false;
       outputDetails.open = true;
       return;
     case "error":
       resultMode.textContent = t("output_mode_error");
-      renderEmptyCard(`${failureTitle(state.outputState.phase)}: ${state.outputState.message}`);
-      renderActionButtons([]);
+      renderEmptyCard(resultCards,`${failureTitle(state.outputState.phase)}: ${state.outputState.message}`);
+      renderActionButtons(resultActions,[]);
       output.textContent = `${failureTitle(state.outputState.phase)}: ${state.outputState.message}`;
       outputDetails.hidden = false;
       outputDetails.open = true;
