@@ -25,5 +25,6 @@ url = "2"
 regex = "1"
 zip = "2"
 uuid = { version = "1", features = ["v4"] }
+keyring = "3"
 distill-core = { path = "../crates/distill-core" }
 distill-runtime = { path = "../crates/distill-runtime" }

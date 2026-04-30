@@ -296,7 +296,7 @@ type ProviderPresetId =
   | "baidu_qianfan"
   | "stub_local";
 
-type ProviderPresetConfigKey = Exclude<ProviderPresetId, "custom">;
+type ProviderPresetConfigKey = Exclude<ProviderPresetId, "custom" | "platform">;
 type ProviderPresetConfig = {
   provider: string;
   defaultModel: string;
@@ -2545,6 +2545,7 @@ app.innerHTML = `
           <button class="tab-button" type="button" data-tab="settings" id="tab-settings">
             <span class="tab-button-title" id="tab-settings-label">Settings</span>
           </button>
+          <div class="tab-separator"></div>
           <button class="tab-button tab-button-plain" type="button" data-tab="feedback2" id="tab-feedback2">
             <span class="tab-button-title" id="tab-feedback2-label">Feedback 2</span>
           </button>
@@ -8410,16 +8411,50 @@ void listen<{ token: string; fullContent: string }>("chat-qa-token", (event) => 
 
 async function persistCurrentConfig(silent = true) {
   try {
+    const request = collectRequest();
+
+    // Store password in OS keychain instead of config JSON
+    const pw = request.qaPlatformPassword;
+    const un = request.qaPlatformUsername;
+    const url = request.qaPlatformUrl;
+    request.qaPlatformPassword = null;
+
     await invoke("save_local_pipeline_config", {
       profileName: DEFAULT_PROFILE_NAME,
-      request: collectRequest()
+      request
     });
+
+    // Restore password on the in-memory request object and persist to keychain
+    if (pw && un && url) {
+      request.qaPlatformPassword = pw;
+      void invoke("store_platform_password", {
+        platformUrl: url,
+        username: un,
+        password: pw
+      }).catch(() => { /* keychain unavailable — non-blocking */ });
+    }
+
     if (!silent) {
       appendLog(t("log_saved_config"));
     }
   } catch (error) {
     appendLog(`${t("log_save_failed")}: ${String(error)}`);
   }
+}
+
+async function restorePlatformPasswordFromKeychain() {
+  const url = currentQaPlatformUrl();
+  const username = qaPlatformUsernameInput.value.trim();
+  if (!url || !username) return;
+  try {
+    const pw = await invoke<string | null>("load_platform_password", {
+      platformUrl: url,
+      username,
+    });
+    if (pw) {
+      qaPlatformPasswordInput.value = pw;
+    }
+  } catch { /* keychain unavailable — ignored */ }
 }
 
 function scheduleAutoSave() {
@@ -9416,6 +9451,7 @@ async function initializeApp() {
   await loadConfig(true);
   restoreChatSessions();
   restorePaperQaState();
+  await restorePlatformPasswordFromKeychain();
   normalizeRuntimeParameterInputs(true);
   autoSaveEnabled = true;
   renderRunStats();

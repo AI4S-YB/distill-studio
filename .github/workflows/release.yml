@@ -31,9 +31,15 @@ jobs:
       - name: install rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust clippy (informational, not blocking)
+      - name: Rust clippy (informational)
         continue-on-error: true
         run: cargo clippy --manifest-path src-tauri/Cargo.toml
+
+      - name: Frontend unit tests
+        run: npm test
+
+      - name: Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   build-tauri:
     needs: lint

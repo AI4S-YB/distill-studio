@@ -25,6 +25,7 @@ const COT_SAFE_BATCH_SIZE: usize = 1;
 const COT_SAFE_MAX_IN_FLIGHT: usize = 2;
 const COT_SAFE_SHARD_SIZE_CAP: usize = 10;
 const QA_PLATFORM_BATCH_SOURCE: &str = "qa-xiaozhao";
+const PAPER_QA_SAVE_SHARD_SIZE: usize = 1;
 const DEFAULT_RELEASES_PAGE_URL: &str = "https://github.com/AI4S-YB/distill-studio/releases/latest";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1660,6 +1661,31 @@ async fn login_platform(
     Ok(PlatformLoginResponse { endpoints, user })
 }
 
+#[tauri::command]
+fn store_platform_password(
+    platform_url: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let entry = keyring::Entry::new("distill-studio", &format!("{}/{}", platform_url, username))
+        .map_err(|e| format!("keyring error: {}", e))?;
+    entry.set_password(&password).map_err(|e| format!("keyring error: {}", e))
+}
+
+#[tauri::command]
+fn load_platform_password(
+    platform_url: String,
+    username: String,
+) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new("distill-studio", &format!("{}/{}", platform_url, username))
+        .map_err(|e| format!("keyring error: {}", e))?;
+    match entry.get_password() {
+        Ok(pw) => Ok(Some(pw)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(format!("keyring error: {}", e)),
+    }
+}
+
 // ---- v0.1.8: News, Dashboard, Password, Logout ----
 
 #[tauri::command]
@@ -2630,7 +2656,7 @@ async fn save_paper_qa_batch(
         },
         runtime: RuntimeConfig {
             target_count: items.len(),
-            shard_size: 1,
+            shard_size: PAPER_QA_SAVE_SHARD_SIZE,
             batch_size: 1,
             max_in_flight: 1,
             max_retries: 0,
@@ -5040,7 +5066,54 @@ pub fn run() {
             convert_pdf_via_mineru,
             chunk_paper_md,
             generate_paper_qa,
+            store_platform_password,
+            load_platform_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mineru_base_url_missing_env() {
+        std::env::remove_var("MINERU_BASE_URL");
+        let result = paper_qa_mineru_base_url();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("MINERU_BASE_URL"));
+    }
+
+    #[test]
+    fn mineru_base_url_set_env() {
+        std::env::set_var("MINERU_BASE_URL", "https://mineru.example.com");
+        let result = paper_qa_mineru_base_url();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "https://mineru.example.com");
+    }
+
+    #[test]
+    fn legacy_external_batch_id_empty() {
+        assert_eq!(legacy_platform_external_batch_id(""), None);
+        assert_eq!(legacy_platform_external_batch_id("  "), None);
+    }
+
+    #[test]
+    fn legacy_external_batch_id_output_prefix() {
+        assert_eq!(legacy_platform_external_batch_id("output/foo"), None);
+        assert_eq!(legacy_platform_external_batch_id("output/"), None);
+    }
+
+    #[test]
+    fn legacy_external_batch_id_normal() {
+        assert_eq!(
+            legacy_platform_external_batch_id("my-batch-id"),
+            Some("output/my-batch-id".to_string())
+        );
+        assert_eq!(
+            legacy_platform_external_batch_id("  some-batch  "),
+            Some("output/some-batch".to_string())
+        );
+    }
 }
