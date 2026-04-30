@@ -43,7 +43,8 @@ import {
   browseBatchPlatformBadgeHtml,
   canResumeBrowseBatch,
 } from "./utils";
-import { currentPlatformAuthPayload, appendLog, setCurrentTab, collectRequest, applyRequest, persistCurrentConfig, syncManagedRunModeUi, renderManagedRunPicker, renderPlatformPanels } from "./main";
+import { currentPlatformAuthPayload, renderPlatformPanels } from "./platform";
+import { appendLog, setCurrentTab, collectRequest, applyRequest, persistCurrentConfig, syncManagedRunModeUi, renderManagedRunPicker } from "./main";
 
 // ---- Constants (used only by browse QA) ----
 const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;

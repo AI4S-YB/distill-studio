@@ -7,7 +7,8 @@ import { CHAT_SESSIONS_STORAGE_KEY } from "./constants";
 import { t } from "./translations";
 import { escapeHtml, currentPresetLabel } from "./utils";
 import { resolveLLMProvider, providerPresetInput } from "./provider";
-import { currentPlatformAuthPayload, appendLog } from "./main";
+import { currentPlatformAuthPayload } from "./platform";
+import { appendLog } from "./main";
 
 // ---- DOM element references (owned by main.ts, assigned at init) ----
 export let chatQaPanel: HTMLElement | null;

@@ -4,7 +4,8 @@ import type { AppUpdateCheckResponse, Lang } from "./types";
 import { state } from "./state";
 import { t, formatMessage, findMatchingTranslationKey } from "./translations";
 import { escapeHtml } from "./utils";
-import { currentPlatformAuthPayload, appendLog, setStatus, setText } from "./main";
+import { currentPlatformAuthPayload } from "./platform";
+import { appendLog, setStatus, setText } from "./main";
 
 // ---- Feedback ----
 
