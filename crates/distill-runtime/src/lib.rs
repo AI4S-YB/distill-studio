@@ -297,6 +297,7 @@ pub async fn generate_to_directory_with_progress(
     Ok(summary)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn generate_one_shard(
     topic: &TopicSpec,
     plans: &[QuestionPlan],
@@ -332,7 +333,6 @@ async fn generate_one_shard(
         let topic = topic.clone();
         let config = config.clone();
         let request = request.clone();
-        let progress = progress;
         let semaphore = semaphore.clone();
         inflight.push(async move {
             let permit = run_with_cancel(semaphore.acquire_owned(), cancel_flag).await?;
@@ -562,6 +562,7 @@ async fn run_batch_request(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn generate_batch_with_retries(
     client: &reqwest::Client,
     topic: &TopicSpec,

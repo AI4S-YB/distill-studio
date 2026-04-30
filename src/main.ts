@@ -479,6 +479,8 @@ function isDefaultCotSectionHeaderText(value: string): boolean {
 }
 
 const LANG_STORAGE_KEY = "distill-studio.lang";
+const CHAT_SESSIONS_STORAGE_KEY = "distill-studio.chat-sessions";
+const PAPER_QA_STORAGE_KEY = "distill-studio.paper-qa";
 const DEFAULT_PROFILE_NAME = "default";
 const AUTO_SAVE_DELAY_MS = 600;
 const MANAGED_OUTPUT_DIR = "__managed__";
@@ -3681,6 +3683,8 @@ function renderPaperQaPanel() {
   if (tabLabel) tabLabel.textContent = t("paper_qa_tab");
   if (tabTitle) tabTitle.textContent = t("paper_qa_tab");
   if (tabCopy) tabCopy.textContent = t("paper_qa_empty");
+
+  persistPaperQaState();
 }
 
 function addPaperFiles(filesOrPaths: FileList | File[] | string[]) {
@@ -3903,10 +3907,9 @@ async function handlePaperQaSaveBatch() {
   try {
     const chunkedFiles = paperFiles.filter(f => f.status === "chunked" && f.chunks);
     const paperTitle = chunkedFiles.map(f => f.name).join(", ");
-    const provider = providerInput.value.trim() || "openai-compatible";
-    const model = isUsingPlatformModel()
-      ? (currentPlatformGenerateModel()?.model ?? "unknown")
-      : currentModelValue();
+    const resolved = resolveLLMProvider();
+    const provider = resolved.mode === "settings" ? resolved.provider : "openai-compatible";
+    const model = resolved.model;
 
     const batch = await invoke<QaBatchSummary>("save_paper_qa_batch", {
       items: paperQaResult.items,
@@ -4576,12 +4579,8 @@ function updatePlatformPresetOption() {
   }
 }
 
-function isUsingPlatformModel(): boolean {
-  return selectedPlatformModelId !== null && platformLoginState.kind === "success";
-}
-
 function currentPlatformGenerateModel(): PlatformGenerateModel | null {
-  if (!isUsingPlatformModel()) return null;
+  if (!(selectedPlatformModelId !== null && platformLoginState.kind === "success")) return null;
   return platformGenerateModels.find(m => m.id === selectedPlatformModelId) ?? null;
 }
 
@@ -5819,12 +5818,14 @@ function createChatSession() {
   };
   chatSessions.push(session);
   currentChatSessionId = session.id;
+  persistChatSessions();
   renderChatQaPanel();
 }
 
 function switchChatSession(id: string) {
   if (chatSessions.some(s => s.id === id)) {
     currentChatSessionId = id;
+    persistChatSessions();
     renderChatQaPanel();
   }
 }
@@ -5840,11 +5841,58 @@ function deleteChatSession(id: string) {
       currentChatSessionId = null;
     }
   }
+  persistChatSessions();
   if (chatSessions.length === 0) {
     createChatSession();
   } else {
     renderChatQaPanel();
   }
+}
+
+function persistChatSessions() {
+  try {
+    const data = JSON.stringify({
+      sessions: chatSessions,
+      currentId: currentChatSessionId,
+      counter: sessionCounter,
+    });
+    window.localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, data);
+  } catch { /* quota exceeded — silently skip */ }
+}
+
+function restoreChatSessions() {
+  try {
+    const raw = window.localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.sessions) && data.sessions.length > 0) {
+      chatSessions = data.sessions;
+      currentChatSessionId = data.currentId ?? chatSessions[0]?.id ?? null;
+      sessionCounter = data.counter ?? chatSessions.length;
+    }
+  } catch { /* corrupted data — ignore */ }
+}
+
+function persistPaperQaState() {
+  try {
+    const data = JSON.stringify({
+      files: paperFiles,
+      result: paperQaResult,
+      cotRatio: paperQaCotRatio,
+    });
+    window.localStorage.setItem(PAPER_QA_STORAGE_KEY, data);
+  } catch { /* quota exceeded — silently skip */ }
+}
+
+function restorePaperQaState() {
+  try {
+    const raw = window.localStorage.getItem(PAPER_QA_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.files)) paperFiles = data.files;
+    if (data.result) paperQaResult = data.result;
+    if (typeof data.cotRatio === "number") paperQaCotRatio = data.cotRatio;
+  } catch { /* corrupted data — ignore */ }
 }
 
 function renderChatSessionsBar() {
@@ -5973,6 +6021,7 @@ async function handleChatSend() {
     chatError = `${t("chat_qa_send_failed")}: ${String(error)}`;
   } finally {
     chatSending = false;
+    persistChatSessions();
     renderChatQaPanel();
   }
 }
@@ -9365,6 +9414,8 @@ async function initializeApp() {
   syncProviderPresetInput();
   normalizeRuntimeParameterInputs(true);
   await loadConfig(true);
+  restoreChatSessions();
+  restorePaperQaState();
   normalizeRuntimeParameterInputs(true);
   autoSaveEnabled = true;
   renderRunStats();

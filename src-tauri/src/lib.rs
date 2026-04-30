@@ -579,6 +579,7 @@ struct MinerUExtractResult {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct MinerUExtractBatchData {
     batch_id: String,
     extract_result: Vec<MinerUExtractResult>,
@@ -2554,13 +2555,15 @@ fn extract_paper_qa_json(content: &str) -> Result<serde_json::Value, String> {
                 depth += 1;
             }
             b'}' => {
-                if depth > 0 { depth -= 1; }
-                if depth == 0 && start.is_some() {
-                    let json_slice = &trimmed[start.unwrap()..=i];
-                    if let Ok(value) = serde_json::from_str(json_slice) {
-                        return Ok(value);
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    if let Some(start_idx) = start {
+                        let json_slice = &trimmed[start_idx..=i];
+                        if let Ok(value) = serde_json::from_str(json_slice) {
+                            return Ok(value);
+                        }
+                        start = None;
                     }
-                    start = None;
                 }
             }
             _ => {}
@@ -2883,7 +2886,7 @@ fn filter_paper_qa_inner(items: Vec<PaperQaItem>, cot_ratio: f64, warnings: Vec<
             !item.instruction.is_empty()
                 && !item.output.is_empty()
                 && item.output.len() >= 30
-                && (item.qa_type != "cot" || item.reasoning.as_ref().map_or(false, |r| !r.is_empty()))
+                && (item.qa_type != "cot" || item.reasoning.as_ref().is_some_and(|r| !r.is_empty()))
         })
         .collect();
 
@@ -3086,7 +3089,7 @@ fn list_batch_qa_records(
     let total_pages = if total_items == 0 {
         1
     } else {
-        (total_items + page_size - 1) / page_size
+        total_items.div_ceil(page_size)
     };
     let page = requested_page.min(total_pages);
     let start = (page - 1) * page_size;
@@ -3576,7 +3579,7 @@ async fn run_pipeline_inner(
         request.qa_platform_username.as_ref(),
         request.qa_platform_password.as_ref(),
     ) {
-        if config.provider.base_url.as_ref().map_or(true, |u| u.trim().is_empty()) {
+        if config.provider.base_url.as_ref().is_none_or(|u| u.trim().is_empty()) {
             let (_endpoints, token, _user) =
                 platform_login_with_token(platform_url, username, password).await?;
             config.provider.base_url = Some(format!(
@@ -4274,7 +4277,7 @@ fn system_time_to_ms(time: SystemTime) -> Option<u64> {
 }
 
 fn next_managed_output_dir(output_root: &Path, topic_name: &str) -> anyhow::Result<PathBuf> {
-    fs::create_dir_all(&output_root)?;
+    fs::create_dir_all(output_root)?;
 
     let slug = slugify_for_path(topic_name);
     let timestamp = system_time_to_ms(SystemTime::now()).unwrap_or(0);

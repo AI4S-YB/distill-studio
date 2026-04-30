@@ -10,7 +10,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: TypeScript type check (informational, not blocking)
+        continue-on-error: true
+        run: npx tsc --noEmit
+
+      - name: install rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust clippy (informational, not blocking)
+        continue-on-error: true
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml
+
   build-tauri:
+    needs: lint
     permissions:
       contents: read
     strategy:
