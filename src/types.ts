@@ -302,6 +302,11 @@ type ProviderPresetConfig = {
   requestTimeoutSecs: number;
 };
 
+type ResolvedLLMProvider =
+  | { mode: "settings"; provider: string; baseUrl: string; apiKey: string; model: string }
+  | { mode: "platform"; platformUrl: string; username: string; password: string; model: string }
+  | { mode: "none"; model: string };
+
 type ResearchFieldNode = {
   id: string;
   zh: string;
@@ -488,6 +493,7 @@ export type {
   ProviderPresetId,
   ProviderPresetConfigKey,
   ProviderPresetConfig,
+  ResolvedLLMProvider,
   ResearchFieldNode,
   ResearchFieldLabelMeta,
   ValidationIssueKey,

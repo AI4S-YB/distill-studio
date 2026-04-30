@@ -1,4 +1,4 @@
-import type { Lang, ProviderPresetConfigKey, ProviderPresetConfig, ResearchFieldNode } from "./types";
+import type { Lang, ProviderPresetId, ProviderPresetConfigKey, ProviderPresetConfig, ResearchFieldNode } from "./types";
 
 const DEFAULT_COT_SECTION_HEADERS_EN = [
   "Workflow Summary",
@@ -54,6 +54,11 @@ const MANAGED_OUTPUT_DIR = "__managed__";
 const CUSTOM_MODEL_VALUE = "__custom__";
 const DEFAULT_COT_TARGET_COUNT = 10;
 const COT_TARGET_COUNT_CAP = 100;
+const DEFAULT_COT_SHARD_SIZE = 10;
+const COT_SAFE_SHARD_SIZE_CAP = 10;
+const DEFAULT_COT_BATCH_SIZE = 1;
+const DEFAULT_COT_MAX_IN_FLIGHT = 2;
+const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetConfigKey = "qwen_dashscope";
 
 const PROVIDER_PRESETS: Record<ProviderPresetConfigKey, ProviderPresetConfig> = {
   qwen_dashscope: {
@@ -505,6 +510,11 @@ export {
   CUSTOM_MODEL_VALUE,
   DEFAULT_COT_TARGET_COUNT,
   COT_TARGET_COUNT_CAP,
+  DEFAULT_COT_SHARD_SIZE,
+  COT_SAFE_SHARD_SIZE_CAP,
+  DEFAULT_COT_BATCH_SIZE,
+  DEFAULT_COT_MAX_IN_FLIGHT,
+  FALLBACK_REAL_PROVIDER_PRESET,
   PROVIDER_PRESETS,
   DEFAULT_COT_SECTION_HEADERS_ZH,
   DEFAULT_COT_SECTION_HEADERS_EN,

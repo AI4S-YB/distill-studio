@@ -65,6 +65,10 @@ import {
   CUSTOM_MODEL_VALUE,
   DEFAULT_COT_TARGET_COUNT,
   COT_TARGET_COUNT_CAP,
+  DEFAULT_COT_SHARD_SIZE,
+  COT_SAFE_SHARD_SIZE_CAP,
+  DEFAULT_COT_BATCH_SIZE,
+  DEFAULT_COT_MAX_IN_FLIGHT,
   PROVIDER_PRESETS,
   DEFAULT_COT_SECTION_HEADERS_ZH,
   DEFAULT_COT_SECTION_HEADERS_EN,
@@ -132,13 +136,22 @@ import {
   renderActionButtons,
 } from "./utils";
 import { injectAppHtml } from "./html-template";
+import {
+  initProviderDomRefs,
+  resolveLLMProvider,
+  syncProviderFieldVisibility,
+  syncModelOptions,
+  detectProviderPreset,
+  migrateLegacyStubRequest,
+  normalizeLoadedCotRequest,
+  loadPlatformGenerateModels,
+  updatePlatformPresetOption,
+  currentPlatformGenerateModel,
+  syncProviderPresetInput,
+  applyProviderPreset,
+} from "./provider";
 
 
-const DEFAULT_COT_SHARD_SIZE = 10;
-const COT_SAFE_SHARD_SIZE_CAP = 10;
-const DEFAULT_COT_BATCH_SIZE = 1;
-const DEFAULT_COT_MAX_IN_FLIGHT = 2;
-const FALLBACK_REAL_PROVIDER_PRESET: ProviderPresetId = "qwen_dashscope";
 const DEFAULT_QA_PLATFORM_URL = "http://182.92.166.143";
 const PLATFORM_REMOTE_VIRTUAL_BATCH_ID = -1;
 const PLATFORM_REMOTE_VIRTUAL_BATCH_SOURCE = "remote-server";
@@ -401,6 +414,21 @@ const batchSizeInput = document.querySelector<HTMLInputElement>("#batch-size");
 const maxInFlightInput = document.querySelector<HTMLInputElement>("#max-in-flight");
 const maxRetriesInput = document.querySelector<HTMLInputElement>("#max-retries");
 const timeoutInput = document.querySelector<HTMLInputElement>("#request-timeout-secs");
+
+initProviderDomRefs({
+  baseUrlInput: baseUrlInput!,
+  apiKeyInput: apiKeyInput!,
+  providerInput: providerInput!,
+  providerField: providerField!,
+  modelInput: modelInput!,
+  customModelInput: customModelInput!,
+  customModelField: customModelField!,
+  batchSizeInput: batchSizeInput!,
+  maxInFlightInput: maxInFlightInput!,
+  timeoutInput: timeoutInput!,
+  providerPresetInput: providerPresetInput!,
+});
+
 const resumeInput = document.querySelector<HTMLInputElement>("#resume");
 const progressFill = document.querySelector<HTMLElement>("#progress-fill");
 const progressMeta = document.querySelector<HTMLElement>("#progress-meta");
@@ -887,43 +915,6 @@ async function handlePaperQaConvert() {
   renderPaperQaPanel();
 }
 
-type ResolvedLLMProvider =
-  | { mode: "settings"; provider: string; baseUrl: string; apiKey: string; model: string }
-  | { mode: "platform"; platformUrl: string; username: string; password: string; model: string }
-  | { mode: "none"; model: string };
-
-function resolveLLMProvider(): ResolvedLLMProvider {
-  const settingsBaseUrl = baseUrlInput.value.trim();
-  const settingsApiKey = apiKeyInput.value.trim();
-  if (settingsBaseUrl && settingsApiKey) {
-    return {
-      mode: "settings",
-      provider: providerInput.value.trim() || "openai-compatible",
-      baseUrl: settingsBaseUrl,
-      apiKey: settingsApiKey,
-      model: currentModelValue(modelInput, customModelInput),
-    };
-  }
-
-  const platformAuth = currentPlatformAuthPayload();
-  if (state.platformLoginState.kind === "success" && platformAuth !== null) {
-    const platformModel = currentPlatformGenerateModel();
-    const model = platformModel?.model
-      ?? (state.platformGenerateModels.length > 0 ? state.platformGenerateModels[0].model : "");
-    if (model) {
-      return {
-        mode: "platform",
-        platformUrl: platformAuth.platformUrl,
-        username: platformAuth.username,
-        password: platformAuth.password,
-        model,
-      };
-    }
-  }
-
-  return { mode: "none", model: "" };
-}
-
 async function handlePaperQaGenerate() {
   if (state.paperQaConverting || state.paperQaGenerating) return;
   const chunkedFiles = state.paperFiles.filter(f => f.status === "chunked" && f.chunks);
@@ -1381,236 +1372,8 @@ function remoteVirtualBrowsePageFromDetail(
   };
 }
 
-function syncProviderFieldVisibility(presetId: ProviderPresetId) {
-  providerField.hidden = presetId !== "custom";
-}
 
-function syncModelOptions(presetId: ProviderPresetId, preferredModel?: string | null) {
-  const resolvedModel = preferredModel?.trim() ?? currentModelValue(modelInput, customModelInput);
-  const preset = presetId === "custom" ? null : PROVIDER_PRESETS[presetId];
-  const models = preset?.models ?? [];
-
-  modelInput.replaceChildren();
-
-  // Platform preset: populate from fetched platform models
-  const resolved = resolveLLMProvider();
-  if (presetId === "platform" || (resolved.mode === "platform" && state.platformGenerateModels.length > 0)) {
-    for (const pm of state.platformGenerateModels) {
-      const option = document.createElement("option");
-      option.value = String(pm.id);
-      option.textContent = `${pm.name} (${pm.model})`;
-      option.dataset.platformModelId = String(pm.id);
-      modelInput.append(option);
-    }
-    if (state.platformGenerateModels.length > 0) {
-      const firstId = String(state.platformGenerateModels[0].id);
-      modelInput.value = resolvedModel && state.platformGenerateModels.some(m => String(m.id) === resolvedModel) ? resolvedModel : firstId;
-      modelInput.dispatchEvent(new Event("change"));
-    }
-    customModelField.hidden = true;
-    return;
-  }
-
-  for (const model of models) {
-    const option = document.createElement("option");
-    option.value = model;
-    option.textContent = model;
-    modelInput.append(option);
-  }
-
-  const customOption = document.createElement("option");
-  customOption.value = CUSTOM_MODEL_VALUE;
-  customOption.textContent = t("model_custom_option");
-  modelInput.append(customOption);
-
-  const shouldUseCustomModel =
-    presetId === "custom" || Boolean(resolvedModel && !models.includes(resolvedModel));
-
-  if (shouldUseCustomModel) {
-    modelInput.value = CUSTOM_MODEL_VALUE;
-    customModelField.hidden = false;
-    customModelInput.value = resolvedModel;
-    return;
-  }
-
-  customModelField.hidden = true;
-  customModelInput.value = "";
-  modelInput.value = resolvedModel && models.includes(resolvedModel) ? resolvedModel : preset?.defaultModel ?? "";
-}
-
-function detectProviderPreset(fields: {
-  provider: string;
-  baseUrl: string | null;
-}): ProviderPresetId {
-  const provider = fields.provider.trim();
-  const baseUrl = (fields.baseUrl ?? "").trim();
-
-  for (const [presetId, preset] of Object.entries(PROVIDER_PRESETS) as Array<
-    [ProviderPresetConfigKey, ProviderPresetConfig]
-  >) {
-    if (provider === preset.provider && baseUrl === preset.baseUrl) {
-      return presetId;
-    }
-  }
-
-  return "custom";
-}
-
-function migrateLegacyStubRequest(request: PipelineFormRequest): PipelineFormRequest {
-  const presetId = detectProviderPreset({
-    provider: request.provider,
-    baseUrl: request.baseUrl
-  });
-  if (request.provider !== "stub" && presetId !== "stub_local") {
-    return request;
-  }
-
-  const preset = PROVIDER_PRESETS[FALLBACK_REAL_PROVIDER_PRESET];
-  return {
-    ...request,
-    provider: preset.provider,
-    model: preset.defaultModel,
-    baseUrl: preset.baseUrl,
-    apiKey: null,
-    batchSize: preset.batchSize,
-    maxInFlight: preset.maxInFlight,
-    requestTimeoutSecs: preset.requestTimeoutSecs
-  };
-}
-
-function normalizeLoadedCotRequest(request: PipelineFormRequest): PipelineFormRequest {
-  const normalizedHeaders = (() => {
-    const normalized = (request.cotSectionHeaders ?? [])
-      .map((value) => value.trim().replace(/:+$/, "").trim())
-      .filter(Boolean);
-    return normalized.length
-      ? normalized
-      : defaultCotSectionHeadersForLang(request.outputLanguage ?? state.currentLang);
-  })();
-  if (request.qaMode !== "cot") {
-    const currentHeaders = request.cotSectionHeaders ?? [];
-    return currentHeaders.length === normalizedHeaders.length &&
-      currentHeaders.every((value, index) => value === normalizedHeaders[index])
-      ? request
-      : { ...request, cotSectionHeaders: normalizedHeaders };
-  }
-
-  const nextTargetCount = Math.min(request.targetCount || DEFAULT_COT_TARGET_COUNT, COT_TARGET_COUNT_CAP);
-  const nextShardSize = Math.min(
-    Math.max(request.shardSize || DEFAULT_COT_SHARD_SIZE, 1),
-    Math.min(nextTargetCount, COT_SAFE_SHARD_SIZE_CAP)
-  );
-  const nextBatchSize = DEFAULT_COT_BATCH_SIZE;
-  const nextMaxInFlight = DEFAULT_COT_MAX_IN_FLIGHT;
-
-  if (
-    nextTargetCount === request.targetCount &&
-    nextShardSize === request.shardSize &&
-    nextBatchSize === request.batchSize &&
-    nextMaxInFlight === request.maxInFlight
-  ) {
-    return request;
-  }
-
-  return {
-    ...request,
-    cotSectionHeaders: normalizedHeaders,
-    targetCount: nextTargetCount,
-    shardSize: nextShardSize,
-    batchSize: nextBatchSize,
-    maxInFlight: nextMaxInFlight
-  };
-}
-
-async function loadPlatformGenerateModels() {
-  const auth = currentPlatformAuthPayload();
-  if (!auth) {
-    state.platformGenerateModels = [];
-    state.selectedPlatformModelId = null;
-    return;
-  }
-  try {
-    state.platformGenerateModels = await invoke<PlatformGenerateModel[]>("get_generate_models", auth);
-  } catch {
-    state.platformGenerateModels = [];
-  }
-}
-
-function updatePlatformPresetOption() {
-  const opt = document.querySelector<HTMLOptionElement>("#provider-preset-option-platform");
-  if (!opt) return;
-  // Always keep "platform" hidden as a manual option — it is auto-detected.
-  opt.hidden = true;
-  // If current preset is "platform" but no longer valid, reset to first available
-  const resolved = resolveLLMProvider();
-  if (providerPresetInput.value === "platform" && resolved.mode !== "platform") {
-    const firstPreset = providerPresetInput.querySelector<HTMLOptionElement>("option:not([hidden]):not([value=platform])");
-    if (firstPreset) {
-      providerPresetInput.value = firstPreset.value;
-      applyProviderPreset(firstPreset.value as ProviderPresetId);
-    }
-  }
-}
-
-function currentPlatformGenerateModel(): PlatformGenerateModel | null {
-  if (!(state.selectedPlatformModelId !== null && state.platformLoginState.kind === "success")) return null;
-  return state.platformGenerateModels.find(m => m.id === state.selectedPlatformModelId) ?? null;
-}
-
-function syncProviderPresetInput() {
-  updatePlatformPresetOption();
-  const resolved = resolveLLMProvider();
-  let presetId: ProviderPresetId;
-  if (resolved.mode === "platform") {
-    presetId = "platform";
-  } else {
-    presetId = detectProviderPreset({
-      provider: providerInput.value,
-      baseUrl: baseUrlInput.value
-    });
-  }
-  providerPresetInput.value = presetId;
-  syncProviderFieldVisibility(presetId);
-  syncModelOptions(presetId);
-}
-
-function applyProviderPreset(presetId: ProviderPresetId, logChange = false) {
-  if (presetId === "custom") {
-    providerPresetInput.value = "custom";
-    syncProviderFieldVisibility("custom");
-    syncModelOptions("custom");
-    normalizeRuntimeParameterInputs(true);
-    renderSetupSummary();
-    return;
-  }
-
-  if (presetId === "platform") {
-    providerPresetInput.value = "platform";
-    syncProviderFieldVisibility("platform");
-    syncModelOptions("platform");
-    normalizeRuntimeParameterInputs(true);
-    renderSetupSummary();
-    return;
-  }
-
-  const preset = PROVIDER_PRESETS[presetId];
-  providerInput.value = preset.provider;
-  baseUrlInput.value = preset.baseUrl;
-  batchSizeInput.value = String(preset.batchSize);
-  maxInFlightInput.value = String(preset.maxInFlight);
-  timeoutInput.value = String(preset.requestTimeoutSecs);
-  providerPresetInput.value = presetId;
-  syncProviderFieldVisibility(presetId);
-  syncModelOptions(presetId, preset.defaultModel);
-  normalizeRuntimeParameterInputs(true);
-  renderSetupSummary();
-
-  if (logChange) {
-    appendLog(formatMessage("log_applied_preset", currentPresetLabel(presetId)));
-  }
-}
-
-function renderSetupSummary() {
+export function renderSetupSummary() {
   const resolved = resolveLLMProvider();
   const providerReady = resolved.mode !== "none";
   const modelReady = resolved.model.length > 0;
@@ -3595,7 +3358,7 @@ async function refreshPlatformLogin() {
   renderPlatformPanels();
 }
 
-function currentPlatformAuthPayload():
+export function currentPlatformAuthPayload():
   | { platformUrl: string; username: string; password: string }
   | null {
   const platformUrl = currentQaPlatformUrl();
@@ -4620,7 +4383,7 @@ function clearManagedResumeBatch(logChange = false) {
   }
 }
 
-function normalizeRuntimeParameterInputs(commit = false) {
+export function normalizeRuntimeParameterInputs(commit = false) {
   const cotMode = currentQaMode() === "cot";
   const fallbackTarget = cotMode ? DEFAULT_COT_TARGET_COUNT : defaultNumberValue(targetCountInput);
   const fallbackShard = cotMode ? DEFAULT_COT_SHARD_SIZE : defaultNumberValue(shardSizeInput);
@@ -4996,7 +4759,7 @@ function setStatus(nextStatus: "idle" | "previewing" | "running" | "stopping" | 
   updateCheckButtonUi();
 }
 
-function appendLog(line: string) {
+export function appendLog(line: string) {
   const now = new Date().toLocaleTimeString();
   const next = `[${now}] ${line}`;
   logs.textContent = matchesAnyTranslation(logs.textContent, ["no_run", "waiting_events"])
