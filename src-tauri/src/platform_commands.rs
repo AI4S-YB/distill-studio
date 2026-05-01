@@ -253,7 +253,7 @@ fn platform_status_lookup_candidates(batch_id: &str) -> Vec<String> {
     candidates
 }
 
-fn legacy_platform_external_batch_id(batch_id: &str) -> Option<String> {
+pub(crate) fn legacy_platform_external_batch_id(batch_id: &str) -> Option<String> {
     let batch_id = batch_id.trim();
     if batch_id.is_empty() || batch_id.starts_with("output/") {
         return None;

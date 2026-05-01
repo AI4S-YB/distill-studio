@@ -116,7 +116,6 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -141,5 +140,41 @@ mod tests {
         let result = crate::paper_qa_commands::paper_qa_mineru_base_url();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "https://mineru.example.com");
+    }
+
+    #[test]
+    fn legacy_external_batch_id_empty() {
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id(""),
+            None
+        );
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id("  "),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_external_batch_id_output_prefix() {
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id("output/foo"),
+            None
+        );
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id("output/"),
+            None
+        );
+    }
+
+    #[test]
+    fn legacy_external_batch_id_normal() {
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id("my-batch-id"),
+            Some("output/my-batch-id".to_string())
+        );
+        assert_eq!(
+            crate::platform_commands::legacy_platform_external_batch_id("  some-batch  "),
+            Some("output/some-batch".to_string())
+        );
     }
 }
