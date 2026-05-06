@@ -122,6 +122,18 @@
         "修复 Paper QA 批次保存时 shard_size=0 导致的除零崩溃。",
         "修复 resolveLLMProvider mode='none' 时的 TypeError 崩溃。"
       ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-05-06",
+      "highlights": [
+        "巨石文件模块化拆分：main.ts 从 9632 行拆分为 15 个文件（入口 1989 行），lib.rs 从 5119 行拆分为 10 个模块（入口 145 行），按功能域自包含。",
+        "引入 vitest + jsdom 前端单元测试框架，覆盖 escapeHtml、t()、resolveLLMProvider 等核心工具函数（17 个测试）。",
+        "使用 OS 原生密钥链（macOS Keychain / Windows Credential Manager）存储平台密码，不再明文写入本地配置文件。",
+        "前端 XSS 防护审计：新增 escape-html 回归检查脚本，确认所有 innerHTML 注入点均已转义。",
+        "Model-trial 死代码清理：移除无按钮触发的死事件处理器和翻译键，修复 sourceQaItemId 始终为 null 的断裂连接。",
+        "CI 流程新增 lint 前置 job，TypeScript 类型检查和 Rust clippy 作为参考项，前端与 Rust 单元测试为阻断项。"
+      ]
     }
   ]
 }
