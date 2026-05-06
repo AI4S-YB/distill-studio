@@ -1622,9 +1622,6 @@ for (const panel of [qaEvaluatePanel, modelTrialPanel]) {
       void openPlatformArea("qa-evaluate");
       return;
     }
-    if (action === "open-trial") {
-      void openPlatformArea("model-trial");
-    }
   });
 }
 
@@ -1640,13 +1637,6 @@ modelTrialPanel.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "refresh-workspace") {
-    void (async () => {
-      await loadModelTrialLocalBatches();
-      await loadModelTrialWorkspace(true);
-    })();
-    return;
-  }
   if (action === "create-session") {
     void createModelTrialSession();
     return;

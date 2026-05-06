@@ -225,6 +225,7 @@ export const state = {
   modelTrialLocalQuestions: [] as QaRecordSummary[],
   modelTrialSelectedQuestionId: null as string | null,
   modelTrialLocalQuestionDetail: null as QaRecordDetail | null,
+  modelTrialSources: [] as import("./types").TrialSourceItem[],
   modelTrialLocalQuestionsLoading: false,
   runStatsTimer: null as number | null,
 

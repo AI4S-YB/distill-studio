@@ -768,6 +768,7 @@ export async function loadModelTrialWorkspace(showNotice = false) {
     const nextSessions = response.sessions;
     state.modelTrialConfigs = nextConfigs;
     state.modelTrialSessions = nextSessions;
+    state.modelTrialSources = response.sources;
 
     const defaultConfig =
       nextConfigs.find((item) => item.id === state.modelTrialSelectedConfigId) ??
@@ -819,11 +820,15 @@ export async function createModelTrialSession() {
   state.modelTrialNoticeMessage = null;
   renderPlatformPanels();
   try {
+    const selectedQuestion = state.modelTrialLocalQuestionDetail?.item.question ?? currentModelTrialSelectedQuestion()?.question ?? null;
+    const matchedSource = selectedQuestion
+      ? state.modelTrialSources.find((s) => s.questionText === selectedQuestion)
+      : null;
     const response = await invoke<TrialSessionCreateResponse>("create_model_trial_session", {
       ...auth,
       llmConfigId: state.modelTrialSelectedConfigId,
-      sourceQaItemId: null,
-      sourceAnswerId: null,
+      sourceQaItemId: matchedSource?.qaItemId ?? null,
+      sourceAnswerId: matchedSource?.answerId ?? null,
       title: state.modelTrialLocalQuestionDetail?.item.question ?? currentModelTrialSelectedQuestion()?.question ?? null
     });
     state.modelTrialSelectedSessionId = response.sessionId;
